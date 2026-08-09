@@ -118,12 +118,24 @@ function Assert-SafeInstallRoot {
     }
 }
 
+function Ensure-RegistryKey {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+}
+
 function Set-RegistryString {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
 
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string]$Name,
 
         [Parameter(Mandatory = $true)]
@@ -131,7 +143,7 @@ function Set-RegistryString {
         [string]$Value
     )
 
-    New-Item -Path $Path -Force | Out-Null
+    Ensure-RegistryKey -Path $Path
     if ($Name.Length -eq 0) {
         Set-Item -Path $Path -Value $Value
     }
@@ -150,9 +162,126 @@ function Set-RegistryDword {
         [Parameter(Mandatory = $true)]
         [int]$Value
     )
-    New-Item -Path $Path -Force | Out-Null
+    Ensure-RegistryKey -Path $Path
     New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType DWord -Force |
         Out-Null
+}
+
+function Get-RegistryDefaultState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return [pscustomobject]@{ Present = $false; Value = $null }
+    }
+
+    $key = Get-Item -LiteralPath $Path
+    try {
+        $present = @($key.GetValueNames()) -contains ''
+        $value = if ($present) { $key.GetValue('', $null) } else { $null }
+        return [pscustomobject]@{ Present = $present; Value = $value }
+    }
+    finally {
+        $key.Dispose()
+    }
+}
+
+function Get-RegistryNamedValueState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return [pscustomobject]@{ Present = $false; Value = $null; Kind = $null }
+    }
+
+    $key = Get-Item -LiteralPath $Path
+    try {
+        if (@($key.GetValueNames()) -notcontains $Name) {
+            return [pscustomobject]@{ Present = $false; Value = $null; Kind = $null }
+        }
+        return [pscustomobject]@{
+            Present = $true
+            Value = $key.GetValue($Name, $null)
+            Kind = $key.GetValueKind($Name)
+        }
+    }
+    finally {
+        $key.Dispose()
+    }
+}
+
+function Set-ExtensionDefault {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Extension,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ClassesRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FileExtsRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InstallStateRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ProgId
+    )
+
+    $userChoicePath = Join-Path (Join-Path $FileExtsRoot $Extension) 'UserChoice'
+    if (Test-Path -LiteralPath $userChoicePath) {
+        $selection = Get-RegistryNamedValueState -Path $userChoicePath -Name 'ProgId'
+        if ($selection.Present -and
+            $selection.Kind -eq [Microsoft.Win32.RegistryValueKind]::String -and
+            [string]$selection.Value -eq $ProgId) {
+            return 'AlreadySelected'
+        }
+        return 'UserChoicePreserved'
+    }
+
+    $extensionPath = Join-Path $ClassesRoot $Extension
+    $oldDefault = Get-RegistryDefaultState -Path $extensionPath
+    $stem = $Extension.TrimStart('.')
+    $hadPreviousName = $stem + '_HadPrevious'
+    $previousName = $stem + '_Previous'
+    $hadPrevious = Get-RegistryNamedValueState `
+        -Path $InstallStateRoot -Name $hadPreviousName
+    $previous = Get-RegistryNamedValueState `
+        -Path $InstallStateRoot -Name $previousName
+    $hadPreviousValid = $hadPrevious.Present -and
+        $hadPrevious.Kind -eq [Microsoft.Win32.RegistryValueKind]::DWord -and
+        ([int]$hadPrevious.Value -eq 0 -or [int]$hadPrevious.Value -eq 1)
+    $previousValid = $previous.Present -and
+        $previous.Kind -eq [Microsoft.Win32.RegistryValueKind]::String
+    $stateValid = $hadPreviousValid -and $previousValid
+    $recordedSelfAsPrevious =
+        $stateValid -and [int]$hadPrevious.Value -eq 1 -and
+        [string]$previous.Value -eq $ProgId
+
+    # Preserve the first pre-LeanRows default across reinstalls. Repair partial
+    # or older state that incorrectly captured LeanRows as its own predecessor.
+    if ($oldDefault.Present -and [string]$oldDefault.Value -eq $ProgId) {
+        if (-not $stateValid -or $recordedSelfAsPrevious) {
+            Set-RegistryString -Path $InstallStateRoot -Name $previousName -Value ''
+            Set-RegistryDword -Path $InstallStateRoot -Name $hadPreviousName -Value 0
+        }
+    }
+    elseif (-not $stateValid -or $recordedSelfAsPrevious) {
+        Set-RegistryString -Path $InstallStateRoot -Name $previousName `
+            -Value ([string]$oldDefault.Value)
+        Set-RegistryDword -Path $InstallStateRoot -Name $hadPreviousName `
+            -Value ([int]$oldDefault.Present)
+    }
+
+    Set-RegistryString -Path $extensionPath -Name '' -Value $ProgId
+    return 'DefaultSet'
 }
 
 function Install-StartMenuShortcut {
@@ -258,9 +387,11 @@ Copy-Item -LiteralPath (Join-Path $packageRoot 'manifest.json') `
 $executablePath = Join-Path $installRoot 'leanrows.exe'
 $openCommand = '"' + $executablePath + '" "%1"'
 $classesRoot = 'HKCU:\Software\Classes'
+$fileExtsRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts'
+$installStateRoot = 'HKCU:\Software\LeanRows\InstallState'
 $progIdRoot = Join-Path $classesRoot $progId
 
-New-Item -Path $progIdRoot -Force | Out-Null
+Ensure-RegistryKey -Path $progIdRoot
 Set-Item -Path $progIdRoot -Value 'LeanRows data file'
 Set-RegistryString -Path (Join-Path $progIdRoot 'DefaultIcon') -Name '' `
     -Value ($executablePath + ',0')
@@ -272,10 +403,25 @@ Set-RegistryString -Path $applicationRoot -Name 'FriendlyAppName' -Value $produc
 Set-RegistryString -Path (Join-Path $applicationRoot 'shell\open\command') `
     -Name '' -Value $openCommand
 $supportedTypesRoot = Join-Path $applicationRoot 'SupportedTypes'
+$directDefaultsSet = @()
+$alreadySelected = @()
+$protectedSelections = @()
 foreach ($extension in $supportedExtensions) {
     Set-RegistryString -Path $supportedTypesRoot -Name $extension -Value ''
     Set-RegistryString -Path (Join-Path $classesRoot "$extension\OpenWithProgids") `
         -Name $progId -Value ''
+    $defaultResult = Set-ExtensionDefault -Extension $extension `
+        -ClassesRoot $classesRoot -FileExtsRoot $fileExtsRoot `
+        -InstallStateRoot $installStateRoot -ProgId $progId
+    if ($defaultResult -eq 'DefaultSet') {
+        $directDefaultsSet += $extension
+    }
+    elseif ($defaultResult -eq 'AlreadySelected') {
+        $alreadySelected += $extension
+    }
+    else {
+        $protectedSelections += $extension
+    }
 }
 
 $capabilitiesRoot = 'HKCU:\Software\LeanRows\Capabilities'
@@ -319,8 +465,22 @@ Notify-ShellAssociationChange
 
 Write-Output "Installed LeanRows v$($manifest.version) for the current user at: $installRoot"
 Write-Output 'This build is unsigned. Its package checksum should be verified before installation.'
-Write-Output 'LeanRows is registered as an available handler; Windows defaults were not changed.'
+Write-Output ('LeanRows is registered in Open With for: {0}.' -f `
+        ($supportedExtensions -join ', '))
+if ($directDefaultsSet.Count -gt 0) {
+    Write-Output ('LeanRows set the direct per-user default for: {0}.' -f `
+            ($directDefaultsSet -join ', '))
+}
+if ($alreadySelected.Count -gt 0) {
+    Write-Output ('Windows already selected LeanRows for: {0}.' -f `
+            ($alreadySelected -join ', '))
+}
+if ($protectedSelections.Count -gt 0) {
+    Write-Warning ('Windows protected UserChoice selections were preserved for: {0}.' -f `
+            ($protectedSelections -join ', '))
+    Write-Output 'Use Windows Default Apps to change those selections with user consent.'
+}
 
-if ($OpenDefaultApps) {
+if ($OpenDefaultApps -and $protectedSelections.Count -gt 0) {
     Start-Process 'ms-settings:defaultapps?registeredAppUser=LeanRows'
 }

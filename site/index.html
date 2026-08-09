@@ -33,7 +33,7 @@
         "description": "A bounded, offline, native Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files.",
         "applicationCategory": "UtilitiesApplication",
         "operatingSystem": "Windows 10 and Windows 11 (x64)",
-        "softwareVersion": "0.1.0",
+        "softwareVersion": "0.1.1",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -342,11 +342,11 @@
               matching SHA-256 sidecar from the same GitHub Release, then compare the
               published value before running or installing LeanRows.
             </p>
-            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.1.0-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
+            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.1.1-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
             <p class="small-copy">
-              Installation is per-user, requires no administrator access, and registers
-              LeanRows as an available handler without silently replacing Windows default
-              applications.
+              Installation is per-user and requires no administrator access. Protected
+              Windows choices are preserved; direct defaults are recorded and changed
+              only where no protected choice exists.
             </p>
           </div>
         </div>

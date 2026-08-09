@@ -89,14 +89,516 @@ function Test-InstallerContract {
     $installText = [System.IO.File]::ReadAllText($installPath)
     $uninstallText = [System.IO.File]::ReadAllText($uninstallPath)
 
+    $tokens = $null
+    $parseErrors = $null
+    $installAst = [System.Management.Automation.Language.Parser]::ParseFile(
+        $installPath, [ref]$tokens, [ref]$parseErrors
+    )
+    Assert-True -Condition (@($parseErrors).Count -eq 0) `
+        -Message 'Installer could not be parsed for its registry binding contract.'
+    $setRegistryString = $installAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Set-RegistryString'
+        }, $true)
+    Assert-True -Condition ($null -ne $setRegistryString) `
+        -Message 'Set-RegistryString was not found in the installer.'
+    $installGetNamedState = $installAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Get-RegistryNamedValueState'
+        }, $true)
+    Assert-True -Condition ($null -ne $installGetNamedState) `
+        -Message 'Installer named registry-state reader was not found.'
+    $installGetDefaultState = $installAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Get-RegistryDefaultState'
+        }, $true)
+    Assert-True -Condition ($null -ne $installGetDefaultState) `
+        -Message 'Installer default registry-state reader was not found.'
+    $nameParameter = @($setRegistryString.Body.ParamBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq 'Name' })
+    Assert-True -Condition ($nameParameter.Count -eq 1 -and
+        @($nameParameter[0].Attributes.TypeName.FullName) -contains 'AllowEmptyString') `
+        -Message 'Set-RegistryString Name must allow an empty registry default-value name.'
+
+    $ensureRegistryKey = $installAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Ensure-RegistryKey'
+        }, $true)
+    $setRegistryDword = $installAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Set-RegistryDword'
+        }, $true)
+    Assert-True -Condition ($null -ne $ensureRegistryKey -and
+        $null -ne $setRegistryDword) `
+        -Message 'Safe registry-key creation or DWORD writing helper is missing.'
+
+    $registryProbe = @{
+        Values = @{}
+        NewItems = 0
+        DestructiveRecreates = 0
+    }
+    & {
+        param($ensureText, $stringText, $dwordText, $state)
+
+        function Test-Path {
+            param([string]$LiteralPath)
+            return $state.Values.ContainsKey($LiteralPath)
+        }
+
+        function New-Item {
+            param([string]$Path, [switch]$Force)
+            if ($state.Values.ContainsKey($Path)) {
+                # Model the registry provider behavior that triggered the live
+                # defect: force-creating an existing key clears its values.
+                $state.DestructiveRecreates++
+                $state.Values[$Path] = @{}
+            }
+            else {
+                $state.NewItems++
+                $state.Values[$Path] = @{}
+            }
+        }
+        function Set-Item {
+            param([string]$Path, [AllowEmptyString()][string]$Value)
+            if (-not $state.Values.ContainsKey($Path)) {
+                throw 'Mocked default-value write targeted a missing key.'
+            }
+            $state.Values[$Path][''] = $Value
+        }
+        function New-ItemProperty {
+            param(
+                [string]$Path,
+                [string]$Name,
+                [AllowEmptyString()][string]$Value,
+                [string]$PropertyType,
+                [switch]$Force
+            )
+            if (-not $state.Values.ContainsKey($Path)) {
+                throw 'Mocked named-value write targeted a missing key.'
+            }
+            $state.Values[$Path][$Name] = $Value
+        }
+
+        . ([scriptblock]::Create($ensureText))
+        . ([scriptblock]::Create($stringText))
+        . ([scriptblock]::Create($dwordText))
+        Set-RegistryString -Path 'HKCU:\LeanRowsBindingTest\DefaultIcon' `
+            -Name '' -Value 'leanrows.exe,0'
+        Set-RegistryString -Path 'HKCU:\LeanRowsBindingTest\SupportedTypes' `
+            -Name '.csv' -Value ''
+        Set-RegistryString -Path 'HKCU:\LeanRowsBindingTest\SupportedTypes' `
+            -Name '.tsv' -Value ''
+        Set-RegistryString -Path 'HKCU:\LeanRowsBindingTest\Uninstall' `
+            -Name 'DisplayName' -Value 'LeanRows'
+        Set-RegistryDword -Path 'HKCU:\LeanRowsBindingTest\Uninstall' `
+            -Name 'NoModify' -Value 1
+    } $ensureRegistryKey.Extent.Text $setRegistryString.Extent.Text `
+        $setRegistryDword.Extent.Text $registryProbe
+    Assert-True -Condition ($registryProbe.NewItems -eq 3 -and
+        $registryProbe.DestructiveRecreates -eq 0 -and
+        $registryProbe.Values['HKCU:\LeanRowsBindingTest\DefaultIcon'][''] -eq
+            'leanrows.exe,0' -and
+        $registryProbe.Values['HKCU:\LeanRowsBindingTest\SupportedTypes'].ContainsKey('.csv') -and
+        $registryProbe.Values['HKCU:\LeanRowsBindingTest\SupportedTypes'].ContainsKey('.tsv') -and
+        $registryProbe.Values['HKCU:\LeanRowsBindingTest\Uninstall']['DisplayName'] -eq
+            'LeanRows' -and
+        $registryProbe.Values['HKCU:\LeanRowsBindingTest\Uninstall']['NoModify'] -eq 1) `
+        -Message 'Repeated registry writes recreated a key or cleared a prior value.'
+
+    $setExtensionDefault = $installAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Set-ExtensionDefault'
+        }, $true)
+    Assert-True -Condition ($null -ne $setExtensionDefault) `
+        -Message 'Set-ExtensionDefault was not found in the installer.'
+
+    $uninstallTokens = $null
+    $uninstallParseErrors = $null
+    $uninstallAst = [System.Management.Automation.Language.Parser]::ParseFile(
+        $uninstallPath, [ref]$uninstallTokens, [ref]$uninstallParseErrors
+    )
+    Assert-True -Condition (@($uninstallParseErrors).Count -eq 0) `
+        -Message 'Uninstaller could not be parsed for its default-restore contract.'
+    $restoreExtensionDefault = $uninstallAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Restore-ExtensionDefault'
+        }, $true)
+    Assert-True -Condition ($null -ne $restoreExtensionDefault) `
+        -Message 'Restore-ExtensionDefault was not found in the uninstaller.'
+    $uninstallGetNamedState = $uninstallAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Get-RegistryNamedValueState'
+        }, $true)
+    Assert-True -Condition ($null -ne $uninstallGetNamedState) `
+        -Message 'Uninstaller named registry-state reader was not found.'
+    $removeRegistryKeyIfEmpty = $uninstallAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Remove-RegistryKeyIfEmpty'
+        }, $true)
+    Assert-True -Condition ($null -ne $removeRegistryKeyIfEmpty) `
+        -Message 'Conditional application-root cleanup helper was not found.'
+    $setRegistryDefaultValue = $uninstallAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Set-RegistryDefaultValue'
+        }, $true)
+    $removeRegistryDefaultValue = $uninstallAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Remove-RegistryDefaultValue'
+        }, $true)
+    Assert-True -Condition ($null -ne $setRegistryDefaultValue -and
+        $null -ne $removeRegistryDefaultValue) `
+        -Message 'Writable default-value restoration helpers are missing.'
+
+    # Exercise the install/restore algorithms against an in-memory model. The
+    # probe intentionally never opens or writes the real current-user registry.
+    $associationProbe = @{
+        Defaults = @{}
+        Named = @{}
+        UserChoices = @{}
+        StateWrites = 0
+    }
+    & {
+        param($installFunctionText, $restoreFunctionText, $state)
+
+        $classesRoot = 'classes'
+        $classesSubKeyRoot = 'Software\Classes'
+        $fileExtsRoot = 'file-exts'
+        $installStateRoot = 'state'
+        $probeProgId = 'LeanRows.AssocFile.v1'
+        $supportedExtensions = @('.csv', '.tsv', '.jsonl', '.ndjson', '.log')
+
+        function Test-Path {
+            param([string]$LiteralPath)
+            return $state.UserChoices.ContainsKey($LiteralPath)
+        }
+        function Get-RegistryDefaultState {
+            param([string]$Path, [string]$SubKey)
+            $modelPath = $Path
+            if ($PSBoundParameters.ContainsKey('SubKey')) {
+                if (-not $SubKey.StartsWith($classesSubKeyRoot + '\')) {
+                    throw 'Mocked restore escaped the approved Classes subkey.'
+                }
+                $modelPath = $classesRoot + $SubKey.Substring($classesSubKeyRoot.Length)
+            }
+            if ($state.Defaults.ContainsKey($modelPath)) {
+                return [pscustomobject]@{
+                    Present = $true
+                    Value = $state.Defaults[$modelPath]
+                }
+            }
+            return [pscustomobject]@{ Present = $false; Value = $null }
+        }
+        function Get-RegistryNamedValueState {
+            param([string]$Path, [string]$Name)
+            if ($Name -eq 'ProgId' -and $state.UserChoices.ContainsKey($Path)) {
+                return [pscustomobject]@{
+                    Present = $true
+                    Value = $state.UserChoices[$Path]
+                    Kind = [Microsoft.Win32.RegistryValueKind]::String
+                }
+            }
+            $key = $Path + '|' + $Name
+            if ($state.Named.ContainsKey($key)) {
+                $entry = $state.Named[$key]
+                return [pscustomobject]@{
+                    Present = $true
+                    Value = $entry.Value
+                    Kind = $entry.Kind
+                }
+            }
+            return [pscustomobject]@{
+                Present = $false
+                Value = $null
+                Kind = $null
+            }
+        }
+        function Set-RegistryString {
+            param(
+                [string]$Path,
+                [AllowEmptyString()][string]$Name,
+                [AllowEmptyString()][string]$Value
+            )
+            if ($Name.Length -eq 0) {
+                $state.Defaults[$Path] = $Value
+            }
+            else {
+                $state.Named[$Path + '|' + $Name] = [pscustomobject]@{
+                    Value = $Value
+                    Kind = [Microsoft.Win32.RegistryValueKind]::String
+                }
+                $state.StateWrites++
+            }
+        }
+        function Set-RegistryDword {
+            param([string]$Path, [string]$Name, [int]$Value)
+            $state.Named[$Path + '|' + $Name] = [pscustomobject]@{
+                Value = $Value
+                Kind = [Microsoft.Win32.RegistryValueKind]::DWord
+            }
+            $state.StateWrites++
+        }
+        function Set-RegistryDefaultValue {
+            param([string]$SubKey, [AllowEmptyString()][string]$Value)
+            if (-not $SubKey.StartsWith($classesSubKeyRoot + '\')) {
+                throw 'Mocked default restore escaped the approved Classes subkey.'
+            }
+            $modelPath = $classesRoot + $SubKey.Substring($classesSubKeyRoot.Length)
+            $state.Defaults[$modelPath] = $Value
+        }
+        function Remove-RegistryDefaultValue {
+            param([string]$SubKey)
+            if (-not $SubKey.StartsWith($classesSubKeyRoot + '\')) {
+                throw 'Mocked default removal escaped the approved Classes subkey.'
+            }
+            $modelPath = $classesRoot + $SubKey.Substring($classesSubKeyRoot.Length)
+            [void]$state.Defaults.Remove($modelPath)
+        }
+
+        . ([scriptblock]::Create($installFunctionText))
+        . ([scriptblock]::Create($restoreFunctionText))
+
+        $csvPath = Join-Path $classesRoot '.csv'
+        $state.Named['state|csv_HadPrevious'] = [pscustomobject]@{
+            Value = 1
+            Kind = [Microsoft.Win32.RegistryValueKind]::DWord
+        }
+        $state.Named['state|csv_Previous'] = [pscustomobject]@{
+            Value = 7
+            Kind = [Microsoft.Win32.RegistryValueKind]::DWord
+        }
+        $csvResult = Set-ExtensionDefault -Extension '.csv' `
+            -ClassesRoot $classesRoot -FileExtsRoot $fileExtsRoot `
+            -InstallStateRoot $installStateRoot -ProgId $probeProgId
+        Assert-True -Condition ($csvResult -eq 'DefaultSet' -and
+            $state.Defaults[$csvPath] -eq $probeProgId -and
+            $state.Named['state|csv_HadPrevious'].Value -eq 0 -and
+            $state.Named['state|csv_HadPrevious'].Kind -eq
+                [Microsoft.Win32.RegistryValueKind]::DWord -and
+            $state.Named['state|csv_Previous'].Value -eq '' -and
+            $state.Named['state|csv_Previous'].Kind -eq
+                [Microsoft.Win32.RegistryValueKind]::String) `
+            -Message 'Empty direct-default state was not captured safely.'
+
+        $writesAfterFirstInstall = $state.StateWrites
+        $csvReinstallResult = Set-ExtensionDefault -Extension '.csv' `
+            -ClassesRoot $classesRoot -FileExtsRoot $fileExtsRoot `
+            -InstallStateRoot $installStateRoot -ProgId $probeProgId
+        Assert-True -Condition ($csvReinstallResult -eq 'DefaultSet' -and
+            $state.StateWrites -eq $writesAfterFirstInstall -and
+            $state.Named['state|csv_HadPrevious'].Value -eq 0 -and
+            $state.Named['state|csv_Previous'].Value -ne $probeProgId) `
+            -Message 'Reinstall recorded LeanRows as its own previous handler.'
+
+        $tsvPath = Join-Path $classesRoot '.tsv'
+        $state.Defaults[$tsvPath] = 'Excel.CSV'
+        $state.Named['state|tsv_HadPrevious'] = [pscustomobject]@{
+            Value = 1
+            Kind = [Microsoft.Win32.RegistryValueKind]::DWord
+        }
+        $state.Named['state|tsv_Previous'] = [pscustomobject]@{
+            Value = $probeProgId
+            Kind = [Microsoft.Win32.RegistryValueKind]::String
+        }
+        $tsvResult = Set-ExtensionDefault -Extension '.tsv' `
+            -ClassesRoot $classesRoot -FileExtsRoot $fileExtsRoot `
+            -InstallStateRoot $installStateRoot -ProgId $probeProgId
+        Assert-True -Condition ($tsvResult -eq 'DefaultSet' -and
+            $state.Defaults[$tsvPath] -eq $probeProgId -and
+            $state.Named['state|tsv_HadPrevious'].Value -eq 1 -and
+            $state.Named['state|tsv_HadPrevious'].Kind -eq
+                [Microsoft.Win32.RegistryValueKind]::DWord -and
+            $state.Named['state|tsv_Previous'].Value -eq 'Excel.CSV' -and
+            $state.Named['state|tsv_Previous'].Kind -eq
+                [Microsoft.Win32.RegistryValueKind]::String) `
+            -Message 'A legacy self-predecessor was not replaced by the current handler.'
+
+        $logPath = Join-Path $classesRoot '.log'
+        $logChoicePath = Join-Path (Join-Path $fileExtsRoot '.log') 'UserChoice'
+        $state.UserChoices[$logChoicePath] = 'Applications\notepad.exe'
+        $logResult = Set-ExtensionDefault -Extension '.log' `
+            -ClassesRoot $classesRoot -FileExtsRoot $fileExtsRoot `
+            -InstallStateRoot $installStateRoot -ProgId $probeProgId
+        Assert-True -Condition ($logResult -eq 'UserChoicePreserved' -and
+            -not $state.Defaults.ContainsKey($logPath) -and
+            -not $state.Named.ContainsKey('state|log_HadPrevious') -and
+            $state.UserChoices[$logChoicePath] -eq 'Applications\notepad.exe') `
+            -Message 'A protected UserChoice was not preserved without direct-default writes.'
+
+        $jsonlPath = Join-Path $classesRoot '.jsonl'
+        $jsonlChoicePath = Join-Path (Join-Path $fileExtsRoot '.jsonl') 'UserChoice'
+        $state.UserChoices[$jsonlChoicePath] = $probeProgId
+        $jsonlResult = Set-ExtensionDefault -Extension '.jsonl' `
+            -ClassesRoot $classesRoot -FileExtsRoot $fileExtsRoot `
+            -InstallStateRoot $installStateRoot -ProgId $probeProgId
+        Assert-True -Condition ($jsonlResult -eq 'AlreadySelected' -and
+            -not $state.Defaults.ContainsKey($jsonlPath)) `
+            -Message 'An existing protected LeanRows selection was not recognized.'
+
+        $ndjsonPath = Join-Path $classesRoot '.ndjson'
+        $state.Named['state|ndjson_HadPrevious'] = [pscustomobject]@{
+            Value = '1'
+            Kind = [Microsoft.Win32.RegistryValueKind]::String
+        }
+        $state.Named['state|ndjson_Previous'] = [pscustomobject]@{
+            Value = $probeProgId
+            Kind = [Microsoft.Win32.RegistryValueKind]::String
+        }
+        [void](Set-ExtensionDefault -Extension '.ndjson' `
+                -ClassesRoot $classesRoot -FileExtsRoot $fileExtsRoot `
+                -InstallStateRoot $installStateRoot -ProgId $probeProgId)
+        Assert-True -Condition (
+            $state.Named['state|ndjson_HadPrevious'].Value -eq 0 -and
+            $state.Named['state|ndjson_HadPrevious'].Kind -eq
+                [Microsoft.Win32.RegistryValueKind]::DWord -and
+            $state.Named['state|ndjson_Previous'].Value -eq '' -and
+            $state.Named['state|ndjson_Previous'].Kind -eq
+                [Microsoft.Win32.RegistryValueKind]::String) `
+            -Message 'Installer trusted a REG_SZ HadPrevious flag during repair.'
+        $state.Defaults[$ndjsonPath] = 'User.NewHandler'
+
+        $state.Named['state|csv_HadPrevious'] = [pscustomobject]@{
+            Value = '1'
+            Kind = [Microsoft.Win32.RegistryValueKind]::String
+        }
+        $state.Named['state|csv_Previous'] = [pscustomobject]@{
+            Value = 'Hijacked.Handler'
+            Kind = [Microsoft.Win32.RegistryValueKind]::String
+        }
+
+        $tsvRestore = Restore-ExtensionDefault -Extension '.tsv' `
+            -ClassesSubKeyRoot $classesSubKeyRoot `
+            -InstallStateRoot $installStateRoot `
+            -ProgId $probeProgId
+        $csvRestore = Restore-ExtensionDefault -Extension '.csv' `
+            -ClassesSubKeyRoot $classesSubKeyRoot `
+            -InstallStateRoot $installStateRoot `
+            -ProgId $probeProgId
+        $ndjsonRestore = Restore-ExtensionDefault -Extension '.ndjson' `
+            -ClassesSubKeyRoot $classesSubKeyRoot `
+            -InstallStateRoot $installStateRoot `
+            -ProgId $probeProgId
+        Assert-True -Condition ($tsvRestore -eq 'Restored' -and
+            $state.Defaults[$tsvPath] -eq 'Excel.CSV') `
+            -Message 'Uninstall did not restore the recorded direct default.'
+        Assert-True -Condition ($csvRestore -eq 'Removed' -and
+            -not $state.Defaults.ContainsKey($csvPath)) `
+            -Message 'Uninstall did not remove a LeanRows default with no predecessor.'
+        Assert-True -Condition ($ndjsonRestore -eq 'Preserved' -and
+            $state.Defaults[$ndjsonPath] -eq 'User.NewHandler') `
+            -Message 'Uninstall overwrote a later user default selection.'
+    } $setExtensionDefault.Extent.Text $restoreExtensionDefault.Extent.Text $associationProbe
+
+    foreach ($valueWriter in @(
+            $setRegistryString,
+            $setRegistryDword,
+            $setRegistryDefaultValue
+        )) {
+        Assert-True -Condition (-not [regex]::IsMatch(
+                $valueWriter.Extent.Text,
+                '(?im)^\s*New-Item\s+[^\r\n]*-Force')) `
+            -Message "$($valueWriter.Name) must not force-create an existing registry key."
+    }
+    Assert-Matches -Text $ensureRegistryKey.Extent.Text `
+        -Pattern '(?s)if\s*\(-not\s*\(Test-Path\s+-LiteralPath\s+\$Path\)\).*?New-Item\s+-Path\s+\$Path\s+-Force' `
+        -Message 'Registry key creation is not gated on exact key absence.'
+    $installerForceCreates = @([regex]::Matches(
+            $installText,
+            '(?im)^\s*New-Item\s+[^\r\n]*-Force'))
+    Assert-True -Condition ($installerForceCreates.Count -eq 1) `
+        -Message 'Installer has an unaudited force-create outside Ensure-RegistryKey.'
+    Assert-True -Condition (-not [regex]::IsMatch(
+            $uninstallText,
+            '(?im)^\s*New-Item\s+[^\r\n]*-Force')) `
+        -Message 'Uninstaller must not force-create registry keys during restoration.'
+
+    Assert-Matches -Text $setRegistryDefaultValue.Extent.Text `
+        -Pattern 'CurrentUser\.CreateSubKey\(\$SubKey\)' `
+        -Message 'Default restoration does not open the exact HKCU subkey safely.'
+    Assert-Matches -Text $removeRegistryDefaultValue.Extent.Text `
+        -Pattern 'CurrentUser\.OpenSubKey\(\$SubKey,\s*\$true\)' `
+        -Message 'Default removal does not open the exact HKCU subkey writable.'
+    Assert-Matches -Text $removeRegistryDefaultValue.Extent.Text `
+        -Pattern '\.DeleteValue\('''',\s*\$false\)' `
+        -Message 'Default removal does not delete only the unnamed registry value.'
+    foreach ($writableHelper in @(
+            $setRegistryDefaultValue,
+            $removeRegistryDefaultValue
+        )) {
+        Assert-True -Condition (-not $writableHelper.Extent.Text.Contains('Get-Item')) `
+            -Message "$($writableHelper.Name) must not use a read-only provider key."
+        Assert-Matches -Text $writableHelper.Extent.Text `
+            -Pattern '(?s)finally\s*\{\s*\$key\.Dispose\(\)' `
+            -Message "$($writableHelper.Name) does not dispose its writable registry key."
+    }
+    Assert-Matches -Text $restoreExtensionDefault.Extent.Text `
+        -Pattern '\$ClassesSubKeyRoot\s+-ne\s+''Software\\Classes''' `
+        -Message 'Default restore is not pinned to the per-user Classes subkey.'
+    Assert-Matches -Text $restoreExtensionDefault.Extent.Text `
+        -Pattern '\$supportedExtensions\s+-notcontains\s+\$Extension' `
+        -Message 'Default restore does not enforce the supported-extension allow-list.'
+    foreach ($namedStateReader in @(
+            $installGetNamedState,
+            $uninstallGetNamedState
+        )) {
+        Assert-Matches -Text $namedStateReader.Extent.Text `
+            -Pattern '\.GetValueKind\(\$Name\)' `
+            -Message "$($namedStateReader.Name) does not preserve registry value kinds."
+        Assert-Matches -Text $namedStateReader.Extent.Text `
+            -Pattern '(?s)finally\s*\{\s*\$key\.Dispose\(\)' `
+            -Message "$($namedStateReader.Name) does not dispose its registry key."
+    }
+    Assert-Matches -Text $installGetDefaultState.Extent.Text `
+        -Pattern '(?s)finally\s*\{\s*\$key\.Dispose\(\)' `
+        -Message 'Installer default-state reader does not dispose its registry key.'
+    Assert-Matches -Text $removeRegistryKeyIfEmpty.Extent.Text `
+        -Pattern '\.GetSubKeyNames\(\)' `
+        -Message 'Application-root cleanup does not inspect children through its key.'
+    Assert-Matches -Text $removeRegistryKeyIfEmpty.Extent.Text `
+        -Pattern '(?s)finally\s*\{\s*\$key\.Dispose\(\).*?Remove-Item' `
+        -Message 'Application-root cleanup does not dispose its key before removal.'
+    Assert-Matches -Text $setExtensionDefault.Extent.Text `
+        -Pattern 'elseif\s*\(-not\s+\$stateValid\s+-or\s+\$recordedSelfAsPrevious\)' `
+        -Message 'Installer does not repair a self-predecessor for a current other handler.'
+    Assert-Matches -Text $setExtensionDefault.Extent.Text `
+        -Pattern 'RegistryValueKind\]::DWord' `
+        -Message 'Installer does not require a DWORD HadPrevious flag.'
+    Assert-Matches -Text $setExtensionDefault.Extent.Text `
+        -Pattern 'RegistryValueKind\]::String' `
+        -Message 'Installer does not require a string Previous value.'
+    Assert-Matches -Text $restoreExtensionDefault.Extent.Text `
+        -Pattern 'RegistryValueKind\]::DWord' `
+        -Message 'Uninstaller does not require a DWORD HadPrevious flag.'
+    Assert-Matches -Text $restoreExtensionDefault.Extent.Text `
+        -Pattern 'RegistryValueKind\]::String' `
+        -Message 'Uninstaller does not require a string Previous value.'
+
     foreach ($text in @($installText, $uninstallText)) {
         $actualExtensions = @(Get-DeclaredExtensions -ScriptText $text)
         Assert-True -Condition (($actualExtensions -join ',') -eq ($expectedExtensions -join ',')) `
             -Message "Association set differs from the approved allow-list: $($actualExtensions -join ', ')"
     }
 
-    Assert-True -Condition (-not $installText.Contains('UserChoice')) `
-        -Message 'Installer must never read or write the protected UserChoice key.'
+    Assert-Matches -Text $installText `
+        -Pattern 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts' `
+        -Message 'Installer does not inspect the fixed per-user FileExts root.'
+    Assert-Matches -Text $setExtensionDefault.Extent.Text `
+        -Pattern 'Test-Path\s+-LiteralPath\s+\$userChoicePath' `
+        -Message 'Installer does not gate direct defaults on protected UserChoice presence.'
+    Assert-True -Condition (-not [regex]::IsMatch(
+            $setExtensionDefault.Extent.Text,
+            '(?im)^\s*(?:New-Item(?:Property)?|Set-Item|Set-Registry(?:String|Dword)|Remove-Item(?:Property)?)\b[^\r\n]*\$userChoicePath')) `
+        -Message 'Installer must never mutate or delete the protected UserChoice key.'
     Assert-True -Condition (-not $uninstallText.Contains('UserChoice')) `
         -Message 'Uninstaller must never read or write the protected UserChoice key.'
     Assert-True -Condition (-not [regex]::IsMatch(
@@ -113,6 +615,14 @@ $openCommand = '"' + $executablePath + '" "%1"'
     Assert-Matches -Text $installText -Pattern 'OpenWithProgids' `
         -Message 'OpenWithProgids registration is missing.'
     Assert-Matches -Text $installText `
+        -Pattern '(?s)foreach\s*\(\$extension\s+in\s+\$supportedExtensions\).*?OpenWithProgids.*?Set-ExtensionDefault' `
+        -Message 'Every supported extension must receive Open With registration before default handling.'
+    Assert-Matches -Text $installText -Pattern 'Software\\LeanRows\\InstallState' `
+        -Message 'Installer does not use an owned direct-default state key.'
+    Assert-Matches -Text $installText `
+        -Pattern 'if\s*\(\$OpenDefaultApps\s+-and\s+\$protectedSelections\.Count\s+-gt\s+0\)' `
+        -Message 'Default Apps must open only when protected selections need consent.'
+    Assert-Matches -Text $installText `
         -Pattern 'CurrentVersion\\Uninstall\\LeanRows' `
         -Message 'Per-user Installed Apps registration is missing.'
     Assert-Matches -Text $installText -Pattern 'LeanRows\.lnk' `
@@ -124,6 +634,14 @@ $openCommand = '"' + $executablePath + '" "%1"'
         -Message 'Uninstaller does not remove the owned Start Menu shortcut.'
     Assert-Matches -Text $uninstallText -Pattern 'allowedInstalledFiles' `
         -Message 'Uninstaller file allow-list is missing.'
+    Assert-Matches -Text $uninstallText -Pattern 'Restore-ExtensionDefault' `
+        -Message 'Uninstaller does not restore safe direct-default state.'
+    Assert-Matches -Text $uninstallText `
+        -Pattern 'Remove-OwnedRegistryTree\s+-Path\s+\$installStateRoot' `
+        -Message 'Uninstaller does not remove its owned direct-default state.'
+    Assert-Matches -Text $uninstallText `
+        -Pattern 'Remove-RegistryKeyIfEmpty\s+-Path\s+\$appRoot' `
+        -Message 'Uninstaller does not conditionally clean its empty application root.'
     Assert-True -Condition (-not [regex]::IsMatch(
             $uninstallText,
             '(?i)Remove-Item\s+-LiteralPath\s+\$installRoot\s+-Recurse')) `
@@ -203,6 +721,9 @@ function Test-WindowsSourceContract {
 function Test-WorkflowContract {
     $workflowPath = Join-Path $repositoryRoot '.github/workflows/windows.yml'
     $workflow = [System.IO.File]::ReadAllText($workflowPath)
+    $workspaceVersion = [string](& (Join-Path $PSScriptRoot 'Get-WorkspaceVersion.ps1'))
+    $releaseNotesPattern = '--notes-file \./docs/releases/v' +
+        [regex]::Escape($workspaceVersion) + '\.md'
     Assert-True -Condition (-not $workflow.Contains("`t")) `
         -Message 'GitHub workflow must not contain tab indentation.'
 
@@ -224,7 +745,7 @@ function Test-WorkflowContract {
         'Tag-only release' = "if: startsWith\(github\.ref, 'refs/tags/v'\)"
         'Existing tag verification' = '--verify-tag'
         'GitHub release command' = 'gh release create'
-        'Release notes file' = '--notes-file \./docs/releases/v0\.1\.0\.md'
+        'Release notes file' = $releaseNotesPattern
         'Checksum upload' = 'artifacts/\*\.sha256'
         'Unsigned artifact disclosure' = 'Upload the unsigned portable package'
         'Pages waits for release' = '(?s)deploy-pages:.*needs: github-release'
@@ -454,8 +975,9 @@ function Test-WindowsBinaryMetadata {
         Assert-True -Condition ($LASTEXITCODE -eq 0) `
             -Message 'mt.exe rejected the embedded application manifest.'
         $manifestText = [System.IO.File]::ReadAllText($manifestPath)
-        Assert-Matches -Text $manifestText -Pattern 'version="0\.1\.0\.0"' `
-            -Message 'Embedded manifest identity version is not 0.1.0.0.'
+        Assert-Matches -Text $manifestText `
+            -Pattern ('version="' + [regex]::Escape($expectedVersion) + '"') `
+            -Message "Embedded manifest identity version is not $expectedVersion."
         Assert-Matches -Text $manifestText -Pattern '>PerMonitorV2<' `
             -Message 'Embedded manifest lost PerMonitorV2 DPI awareness.'
     }

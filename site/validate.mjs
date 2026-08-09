@@ -57,7 +57,7 @@ if (structuredDataMatch) {
     if (structuredData["@type"] !== "SoftwareApplication") {
       failures.push("JSON-LD must describe a SoftwareApplication");
     }
-    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.1.0") {
+    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.1.1") {
       failures.push("JSON-LD name and release version must match the product");
     }
     if (structuredData.downloadUrl !== "https://github.com/abooodbah/leanrows/releases/latest") {

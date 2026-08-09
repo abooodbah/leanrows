@@ -32,15 +32,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.1.0-windows-x64-unsigned.zip
-LeanRows-v0.1.0-windows-x64-unsigned.sha256
+LeanRows-v0.1.1-windows-x64-unsigned.zip
+LeanRows-v0.1.1-windows-x64-unsigned.sha256
 ```
 
 LeanRows 0.1 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.1.0-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.1.1-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
@@ -62,9 +62,11 @@ An optional per-user installation is also included:
 `-ValidateOnly` checks the package manifest and file hashes without changing
 files or the registry. Installation places LeanRows under
 `%LOCALAPPDATA%\Programs\LeanRows` and registers it as an available handler for
-`.csv`, `.tsv`, `.jsonl`, `.ndjson`, and `.log`. It does not silently replace
-existing Windows default applications and does not claim `.txt`. The installer
-also adds LeanRows to the current user's Start menu and Installed Apps list.
+`.csv`, `.tsv`, `.jsonl`, `.ndjson`, and `.log`. Where an extension has no
+protected Explorer `UserChoice`, the installer records its prior direct
+per-user default and makes LeanRows the direct per-user default. Protected
+choices and `.txt` remain untouched. The installer also adds LeanRows to the
+current user's Start menu and Installed Apps list.
 
 Run the installed uninstaller with:
 
@@ -171,7 +173,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
-- [LeanRows 0.1.0 release notes](docs/releases/v0.1.0.md)
+- [LeanRows 0.1.1 release notes](docs/releases/v0.1.1.md)
 - [Security policy](SECURITY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

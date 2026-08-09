@@ -39,6 +39,162 @@ function Remove-OwnedRegistryTree {
     }
 }
 
+function Get-RegistryDefaultState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SubKey
+    )
+
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($SubKey, $false)
+    if ($null -eq $key) {
+        return [pscustomobject]@{ Present = $false; Value = $null }
+    }
+    try {
+        $present = @($key.GetValueNames()) -contains ''
+        $value = if ($present) { $key.GetValue('', $null) } else { $null }
+        return [pscustomobject]@{ Present = $present; Value = $value }
+    }
+    finally {
+        $key.Dispose()
+    }
+}
+
+function Get-RegistryNamedValueState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return [pscustomobject]@{ Present = $false; Value = $null; Kind = $null }
+    }
+
+    $key = Get-Item -LiteralPath $Path
+    try {
+        if (@($key.GetValueNames()) -notcontains $Name) {
+            return [pscustomobject]@{ Present = $false; Value = $null; Kind = $null }
+        }
+        return [pscustomobject]@{
+            Present = $true
+            Value = $key.GetValue($Name, $null)
+            Kind = $key.GetValueKind($Name)
+        }
+    }
+    finally {
+        $key.Dispose()
+    }
+}
+
+function Set-RegistryDefaultValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SubKey,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($SubKey)
+    if ($null -eq $key) {
+        throw 'Cannot open the per-user Classes key for default restoration.'
+    }
+    try {
+        $key.SetValue('', $Value, [Microsoft.Win32.RegistryValueKind]::String)
+    }
+    finally {
+        $key.Dispose()
+    }
+}
+
+function Remove-RegistryDefaultValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SubKey
+    )
+
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($SubKey, $true)
+    if ($null -eq $key) {
+        return
+    }
+    try {
+        $key.DeleteValue('', $false)
+    }
+    finally {
+        $key.Dispose()
+    }
+}
+
+function Restore-ExtensionDefault {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Extension,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ClassesSubKeyRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InstallStateRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ProgId
+    )
+
+    if ($ClassesSubKeyRoot -ne 'Software\Classes' -or
+        $supportedExtensions -notcontains $Extension) {
+        throw 'Refusing to restore a default outside the approved per-user Classes keys.'
+    }
+    $extensionSubKey = $ClassesSubKeyRoot + '\' + $Extension
+    $current = Get-RegistryDefaultState -SubKey $extensionSubKey
+    if (-not $current.Present -or [string]$current.Value -ne $ProgId) {
+        return 'Preserved'
+    }
+
+    $stem = $Extension.TrimStart('.')
+    $hadPrevious = Get-RegistryNamedValueState `
+        -Path $InstallStateRoot -Name ($stem + '_HadPrevious')
+    $previous = Get-RegistryNamedValueState `
+        -Path $InstallStateRoot -Name ($stem + '_Previous')
+    if ($hadPrevious.Present -and
+        $hadPrevious.Kind -eq [Microsoft.Win32.RegistryValueKind]::DWord -and
+        [int]$hadPrevious.Value -eq 1 -and $previous.Present -and
+        $previous.Kind -eq [Microsoft.Win32.RegistryValueKind]::String -and
+        [string]$previous.Value -ne $ProgId) {
+        Set-RegistryDefaultValue -SubKey $extensionSubKey -Value ([string]$previous.Value)
+        return 'Restored'
+    }
+
+    # Missing or invalid state never authorizes inventing a predecessor. It is
+    # safe only to remove LeanRows' own current default value.
+    Remove-RegistryDefaultValue -SubKey $extensionSubKey
+    return 'Removed'
+}
+
+function Remove-RegistryKeyIfEmpty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    $key = Get-Item -LiteralPath $Path
+    try {
+        $hasValues = @($key.GetValueNames()).Count -gt 0
+        $hasChildren = @($key.GetSubKeyNames()).Count -gt 0
+    }
+    finally {
+        $key.Dispose()
+    }
+    if (-not $hasValues -and -not $hasChildren) {
+        Remove-Item -LiteralPath $Path -Force
+    }
+}
+
 function Notify-ShellAssociationChange {
     if ($null -eq ('LeanRows.Release.ShellNotification' -as [type])) {
         Add-Type -TypeDefinition @'
@@ -107,7 +263,14 @@ foreach ($entry in @($manifest.files)) {
 
 if ($PSCmdlet.ShouldProcess($installRoot, 'Remove LeanRows per-user registration and allow-listed files')) {
     $classesRoot = 'HKCU:\Software\Classes'
+    $classesSubKeyRoot = 'Software\Classes'
+    $appRoot = 'HKCU:\Software\LeanRows'
+    $installStateRoot = Join-Path $appRoot 'InstallState'
     foreach ($extension in $supportedExtensions) {
+        [void](Restore-ExtensionDefault -Extension $extension `
+                -ClassesSubKeyRoot $classesSubKeyRoot `
+                -InstallStateRoot $installStateRoot `
+                -ProgId $progId)
         $openWithPath = Join-Path $classesRoot "$extension\OpenWithProgids"
         if (Test-Path -Path $openWithPath) {
             Remove-ItemProperty -Path $openWithPath -Name $progId -Force -ErrorAction SilentlyContinue
@@ -116,7 +279,9 @@ if ($PSCmdlet.ShouldProcess($installRoot, 'Remove LeanRows per-user registration
 
     Remove-OwnedRegistryTree -Path (Join-Path $classesRoot $progId)
     Remove-OwnedRegistryTree -Path (Join-Path $classesRoot 'Applications\leanrows.exe')
-    Remove-OwnedRegistryTree -Path 'HKCU:\Software\LeanRows\Capabilities'
+    Remove-OwnedRegistryTree -Path (Join-Path $appRoot 'Capabilities')
+    Remove-OwnedRegistryTree -Path $installStateRoot
+    Remove-RegistryKeyIfEmpty -Path $appRoot
     Remove-ItemProperty -Path 'HKCU:\Software\RegisteredApplications' `
         -Name $registeredApplicationName -Force -ErrorAction SilentlyContinue
     Remove-OwnedRegistryTree `

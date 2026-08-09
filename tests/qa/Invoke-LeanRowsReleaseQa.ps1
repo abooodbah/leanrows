@@ -545,7 +545,7 @@ $receipt = [ordered]@{
     }
     command = [ordered]@{
         allowlist_id = 'leanrows-local-qa-v1'
-        version_pin = 'LeanRows workspace 0.1.0; Rust 1.97.1'
+        version_pin = 'LeanRows workspace 0.1.1; Rust 1.97.1'
         argv_summary = 'Local document smoke, native network observation, spike viewport, memory, and release-engineering entry points with synthetic paths.'
         timeout_seconds = [Math]::Max($DocumentSmokeTimeoutSeconds, $NetworkObservationTimeoutSeconds)
         expected_exit_codes = @(0)

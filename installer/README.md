@@ -3,8 +3,8 @@
 LeanRows v0.1 uses a portable, explicitly unsigned ZIP. Packaging creates:
 
 ```text
-LeanRows-v0.1.0-windows-x64-unsigned.zip
-LeanRows-v0.1.0-windows-x64-unsigned.sha256
+LeanRows-v0.1.1-windows-x64-unsigned.zip
+LeanRows-v0.1.1-windows-x64-unsigned.sha256
 ```
 
 The version is read from `[workspace.package]` in `Cargo.toml`; a mismatched
@@ -15,7 +15,7 @@ twice and requires identical SHA-256 digests.
 ## Portable package contents
 
 ```text
-LeanRows-v0.1.0-windows-x64-unsigned/
+LeanRows-v0.1.1-windows-x64-unsigned/
   leanrows.exe
   install.ps1
   uninstall.ps1
@@ -45,9 +45,20 @@ after registration:
 .\install.ps1 -OpenDefaultApps
 ```
 
-The installer registers LeanRows as an available handler for `.csv`, `.tsv`,
-`.jsonl`, `.ndjson`, and `.log`. It does not claim `.txt`, write the protected
-`UserChoice` key, or programmatically replace an existing default.
+The installer always registers LeanRows as an available **Open with** handler
+for `.csv`, `.tsv`, `.jsonl`, `.ndjson`, and `.log`. It does not claim `.txt`
+and never writes or deletes the protected Explorer `UserChoice` key.
+
+For each supported extension without a protected `UserChoice`, installation
+records whether a direct per-user default already existed under
+`HKCU\Software\Classes`, saves its value in the LeanRows-owned
+`HKCU\Software\LeanRows\InstallState` key when present, and makes
+`LeanRows.AssocFile.v1` the direct per-user default. When a protected choice
+exists, installation preserves it and does not write a direct default. Use
+`-OpenDefaultApps` to open Windows Default Apps for manual confirmation.
+
+Reinstallation is idempotent: it does not replace the saved original handler
+with LeanRows itself.
 
 ## Uninstallation
 
@@ -57,11 +68,19 @@ Run the installed script:
 & "$env:LOCALAPPDATA\Programs\LeanRows\uninstall.ps1"
 ```
 
-Uninstallation removes only LeanRows-owned ProgID/application/capability and
-Installed Apps keys, only LeanRows values from shared extension and
-`RegisteredApplications` keys, the exact current-user Start Menu shortcut, and
-only allow-listed files found in the installed manifest. It never recursively
-deletes the installation directory; the directory is removed only when empty.
+Before removing registration, uninstallation inspects each direct per-user
+default. If it still points to LeanRows, the uninstaller restores the recorded
+prior value or removes the value when none existed. If the user selected
+another direct handler after installation, that newer choice is preserved.
+Owned install state is then removed. The uninstaller never writes or deletes
+`UserChoice`.
+
+Uninstallation also removes only LeanRows-owned
+ProgID/application/capability and Installed Apps keys, only LeanRows values
+from shared extension and `RegisteredApplications` keys, the exact current-user
+Start Menu shortcut, and only allow-listed files found in the installed
+manifest. It never recursively deletes the installation directory; the
+directory is removed only when empty.
 
 ## GitHub workflow
 

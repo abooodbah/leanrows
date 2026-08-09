@@ -4,7 +4,7 @@
     name="LeanRows.Desktop"
     processorArchitecture="amd64"
     type="win32"
-    version="0.1.0.0" />
+    version="0.1.1.0" />
   <description>LeanRows native large-file viewer</description>
   <dependency>
     <dependentAssembly>

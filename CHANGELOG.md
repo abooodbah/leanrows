@@ -4,6 +4,26 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-08-09
+
+### Fixed
+
+- Fixed the per-user installer failure that occurred when PowerShell bound the
+  empty name required for a registry default value.
+- Fixed registry-key creation so repeated writes preserve earlier sibling
+  values, and opened direct-default keys writable for exact uninstall
+  restoration or removal.
+
+### Changed
+
+- The installer now records and sets a direct per-user default for supported
+  extensions that have no protected Explorer `UserChoice`, while continuing to
+  register all supported extensions in **Open with**.
+- Reinstallation preserves the original recorded handler, and uninstallation
+  restores or removes only direct defaults that still point to LeanRows.
+- Protected `UserChoice` selections, later user changes, and `.txt`
+  associations remain untouched.
+
 ## [0.1.0] - 2026-08-09
 
 ### Added
@@ -36,4 +56,5 @@ All notable changes to LeanRows are recorded in this file. The format follows
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.1.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.1
 [0.1.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.0

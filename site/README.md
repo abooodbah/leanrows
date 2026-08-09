@@ -30,8 +30,8 @@ or accessibility testing.
 - The canonical URL assumes the public project remains
   `abooodbah/leanrows`. Update the canonical and Open Graph URLs if the owner,
   repository name, or Pages domain changes.
-- The checksum example names `v0.1.0`. Update it if the tagged workspace
-  version changes.
+- The checksum example must name the tagged workspace version. Update it when
+  the workspace version changes.
 - The four numeric values on the page are implementation capacity constants,
   not performance results. Reconcile them with `document_engine.rs` if those
   limits change.

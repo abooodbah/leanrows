@@ -1,13 +1,14 @@
 # Validation status
 
-**Qualification date:** 2026-08-09<br>
-**Scope:** LeanRows 0.1.0, Windows x64
+**Status date:** 2026-08-09<br>
+**Scope:** LeanRows 0.1.1 frozen local release candidate, Windows x64;<br>
+tagged CI rebuild/publication pending
 
 LeanRows has moved beyond the original architecture spike. The repository now
 contains the production core, native Win32 document viewer, deterministic
 packaging, installer validation, adversarial tests, and a local release-QA
-harness. This page distinguishes implemented evidence from final artifact
-evidence that can only be attached after a source revision is frozen.
+harness. This page distinguishes measured local-candidate evidence from the
+independent tagged CI rebuild and publication that remain pending.
 
 ## Repository evidence
 
@@ -21,23 +22,43 @@ evidence that can only be attached after a source revision is frozen.
 | Native UI and accessibility | Implemented with automated smoke coverage | Win32 shell smoke and document smoke |
 | Packaging and installer validation | Implemented | Deterministic package scripts, manifest verification, CI package job |
 | Process-tree memory and scale harness | Implemented; results are host-specific | `tests/qa/` aggregate JSON and Markdown receipts |
-| Local network observation | Implemented with a polling-bounded result | Native open, view, seek, reload, and clean-close workflow observed zero TCP and UDP endpoints across six samples |
-| Final release ZIP digest | Recorded by the tag workflow after source freeze | GitHub Release ZIP and `.sha256` attachment |
+| Local network observation | Completed with a polling-bounded result | Six samples observed zero TCP and UDP endpoints during native open, view, seek, reload, and clean close; source unchanged and residual process count 0 |
+| Tagged release package | Tagged CI rebuild/publication pending | The tag workflow independently rebuilds and publishes the unsigned ZIP and checksum sidecar |
 
 The repository does not commit a universal memory number or provisional binary
 hash. Release qualification measures the frozen artifact and retains the raw
 receipt separately from the source documentation.
 
-The measured network run requested a 50 ms polling interval and recorded six
-samples, with a 1,157 ms maximum sample-start gap. This check covers the
-discovered LeanRows process tree, but it is not ETW event or packet capture and
-cannot exclude activity between samples.
+The frozen local candidate's aggregate run passed 25/25 checks. First
+viewports for structurally verified 1 GiB and 10 GiB sparse fixtures passed at
+172 ms and 173 ms, respectively; these are host-specific observations, not
+universal performance claims. The run also completed 24/24 deterministic
+seeks, captured cold and document-open process-tree memory, passed
+deterministic unsigned packaging and installer `-ValidateOnly`, and reported
+cleanup `true`.
+
+A disposable current-user install, reinstall, and uninstall cycle verified all
+five **Open with** registrations, direct defaults for the four unprotected
+extensions, and eight kind-correct saved-state values. Reinstall was
+idempotent; uninstall restored a prior `.csv` handler, removed defaults with no
+predecessor, preserved a simulated later `.ndjson` handler, left protected
+`.log` and `.txt` choices unchanged, and left zero LeanRows-owned residue.
+
+The local v0.1.1 candidate network run recorded six samples with zero TCP and
+UDP endpoints during open, view, seek, reload, and clean close. The source was
+unchanged, the residual process count was 0, and the maximum sample-start gap
+was 1,905 ms. This polling-bounded check covers the discovered LeanRows process
+tree, but it is not ETW event or packet capture and cannot exclude activity
+between samples.
 
 ## Required release receipt
 
-The final 0.1 receipt must report, without substituting missing values:
+The local 0.1.1 candidate receipt reports the measured checks below. Tag CI
+independently rebuilds and publishes the deterministic unsigned package. The
+exact-commit requirement is satisfied by rerunning the aggregate receipt after
+the release changes are cleanly committed:
 
-- the exact commit and executable SHA-256;
+- the exact clean commit identity from the post-commit rerun;
 - formatting, all-target test, strict Clippy, native smoke, and packaging
   results;
 - positive and negative document-smoke results;
@@ -50,12 +71,11 @@ The final 0.1 receipt must report, without substituting missing values:
 - every skipped or unsupported assurance item.
 
 The aggregate local harness writes machine-readable JSON and a readable
-Markdown summary below `artifacts/qa/`. The CI tag job independently rebuilds
-and publishes the deterministic unsigned package.
+Markdown summary below `artifacts/qa/`.
 
 ## Explicitly unclaimed extended evidence
 
-The 0.1 repository does not claim completion of:
+The 0.1.1 repository does not claim completion of:
 
 - a 24 CPU-hour fuzzing campaign;
 - 100,000 oracle-backed random seeks;
