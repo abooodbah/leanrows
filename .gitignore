@@ -1,0 +1,18 @@
+/target/
+/dist/
+/artifacts/
+/benchmark-results/
+/tests/fixtures/generated/
+*.lridx
+*.lrresult
+*.profraw
+*.profdata
+
+# Editor and operating-system files. Keep data fixtures, including *.log.
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+
+# Cargo.lock is intentionally tracked for reproducible application builds.

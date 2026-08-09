@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible LeanRows defect
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include confidential source data. Use GitHub private vulnerability reporting for suspected security issues.
+  - type: input
+    id: version
+    attributes:
+      label: LeanRows version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2, OS build 26100.x
+    validations:
+      required: true
+  - type: dropdown
+    id: format
+    attributes:
+      label: File format
+      options:
+        - CSV
+        - TSV
+        - JSONL or NDJSON
+        - LOG or TXT
+        - No document open
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Describe what happened and include the exact error text when available.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Prefer a small synthetic fixture or a script that generates one.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Include fixture size and SHA-256, screenshots, logs, or measurements when relevant. Do not attach sensitive data.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues for the same behavior.
+          required: true
+        - label: This report does not disclose a suspected security vulnerability.
+          required: true

@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0e0d0b" media="(prefers-color-scheme: dark)">
+    <meta
+      name="description"
+      content="LeanRows is a native, read-only Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files."
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="LeanRows — large row files, kept lean">
+    <meta
+      property="og:description"
+      content="A bounded, offline, native Windows viewer for row-oriented files."
+    >
+    <meta property="og:url" content="https://abooodbah.github.io/leanrows/">
+    <meta property="og:image" content="https://abooodbah.github.io/leanrows/assets/leanrows-icon.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="512">
+    <meta property="og:image:height" content="512">
+    <meta property="og:image:alt" content="The LeanRows app icon">
+    <link rel="canonical" href="https://abooodbah.github.io/leanrows/">
+    <link rel="icon" href="assets/leanrows-icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "LeanRows",
+        "description": "A bounded, offline, native Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files.",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Windows 10 and Windows 11 (x64)",
+        "softwareVersion": "0.1.0",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "license": "https://github.com/abooodbah/leanrows/blob/main/LICENSE",
+        "downloadUrl": "https://github.com/abooodbah/leanrows/releases/latest",
+        "author": {
+          "@type": "Person",
+          "name": "Abdulfatah Bahbouh"
+        }
+      }
+    </script>
+    <title>LeanRows — large row files, kept lean</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="#top" aria-label="LeanRows home">
+          <img src="assets/leanrows-icon.svg" width="32" height="32" alt="">
+          <span>LeanRows</span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <a class="nav-section" href="#how-it-works">How it works</a>
+          <a class="nav-section" href="#boundaries">Boundaries</a>
+          <a class="nav-section" href="#evidence">Evidence</a>
+          <a href="https://github.com/abooodbah/leanrows">Source</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="shell hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Native Windows x64 · Read only</p>
+            <h1 id="hero-title">
+              <span class="hero-line">Large row files,</span>
+              <em class="hero-line">kept lean.</em>
+            </h1>
+            <p class="hero-lead">
+              LeanRows opens the rows you need without turning the entire file into an
+              in-memory workbook. It is a focused desktop viewer for CSV, TSV, JSONL,
+              NDJSON, log, and text files.
+            </p>
+            <p class="hero-detail">
+              Find literal values, jump to an absolute row, and copy bounded selections
+              while the source remains read only.
+            </p>
+            <div class="release-action">
+              <a
+                class="primary-action"
+                href="https://github.com/abooodbah/leanrows/releases/latest"
+                aria-describedby="release-note"
+              >
+                Get the latest Windows build
+                <span aria-hidden="true">→</span>
+              </a>
+              <p id="release-note">
+                v0.1 is an unsigned Windows x64 ZIP. Verify the accompanying
+                <code>.sha256</code> file before running it.
+              </p>
+            </div>
+          </div>
+
+          <figure class="row-window" aria-labelledby="row-window-title">
+            <div class="figure-label">Architecture model</div>
+            <div class="file-scale" aria-hidden="true">
+              <span class="file-scale-start">start</span>
+              <span class="file-scale-track"><span class="file-scale-window"></span></span>
+              <span class="file-scale-end">end</span>
+            </div>
+            <div class="row-table" role="img" aria-label="A bounded window of four rows from a much larger file">
+              <div class="row-table-head">
+                <span>Row</span><span>sensor_id</span><span>reading</span>
+              </div>
+              <div class="row-table-line">
+                <span>2048</span><span>north-07</span><span>18.42</span>
+              </div>
+              <div class="row-table-line is-active">
+                <span>2049</span><span>north-07</span><span>18.57</span>
+              </div>
+              <div class="row-table-line">
+                <span>2050</span><span>north-08</span><span>17.91</span>
+              </div>
+              <div class="row-table-line">
+                <span>2051</span><span>north-08</span><span>18.03</span>
+              </div>
+            </div>
+            <figcaption id="row-window-title">
+              Only a bounded row window is decoded for display. This is an explanatory
+              diagram, not an application screenshot.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="orientation" aria-label="Product principles">
+        <div class="shell principle-strip">
+          <div><strong>Local</strong><span>No upload path</span></div>
+          <div><strong>Read only</strong><span>Source stays untouched</span></div>
+          <div><strong>Native</strong><span>Win32, no embedded browser</span></div>
+          <div><strong>Open source</strong><span>MIT licensed</span></div>
+        </div>
+      </section>
+
+      <section class="section capture-section" aria-labelledby="capture-title">
+        <div class="shell">
+          <div class="capture-heading">
+            <div>
+              <p class="eyebrow">Real Windows interface</p>
+              <h2 id="capture-title">Full rows. Familiar controls.</h2>
+            </div>
+            <p>
+              This is LeanRows v0.1 viewing a generated 2,501-row CSV after a
+              native jump into the file. The capture uses only synthetic data;
+              the source hash was unchanged after viewing.
+            </p>
+          </div>
+
+          <figure class="app-capture">
+            <a
+              class="app-capture-link"
+              href="assets/leanrows-app.png"
+              aria-label="Open the full-size LeanRows application capture"
+            >
+              <img
+                src="assets/leanrows-app.png"
+                width="1180"
+                height="720"
+                loading="lazy"
+                decoding="async"
+                alt="LeanRows native Windows window displaying synthetic CSV time-series rows in six columns around row 1,000"
+              >
+            </a>
+            <figcaption>
+              <strong>Real application capture.</strong>
+              <span>Frozen v0.1 x64 build &middot; synthetic fixture &middot; native Windows list view</span>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section" id="how-it-works" aria-labelledby="how-title">
+        <div class="shell split-section">
+          <div class="section-intro">
+            <p class="eyebrow">Progressive by construction</p>
+            <h2 id="how-title">See useful rows while indexing continues.</h2>
+            <p>
+              The source file remains the backing store. LeanRows reads positioned blocks,
+              records compact checkpoints, and reconstructs only the viewport requested by
+              the native list view.
+            </p>
+          </div>
+
+          <div class="pipeline" aria-label="LeanRows read pipeline">
+            <div class="pipeline-step">
+              <span class="step-number">01</span>
+              <div><strong>Open</strong><span>Explicit local file, read-only handle</span></div>
+            </div>
+            <div class="pipeline-connector" aria-hidden="true"></div>
+            <div class="pipeline-step">
+              <span class="step-number">02</span>
+              <div><strong>Scan</strong><span>Positioned 64 KiB blocks</span></div>
+            </div>
+            <div class="pipeline-connector" aria-hidden="true"></div>
+            <div class="pipeline-step">
+              <span class="step-number">03</span>
+              <div><strong>Index</strong><span>Bounded adaptive checkpoints</span></div>
+            </div>
+            <div class="pipeline-connector" aria-hidden="true"></div>
+            <div class="pipeline-step">
+              <span class="step-number">04</span>
+              <div><strong>Render</strong><span>Immutable viewport cache</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section formats-section" aria-labelledby="formats-title">
+        <div class="shell">
+          <div class="format-heading">
+            <div>
+              <p class="eyebrow">Purposefully narrow</p>
+              <h2 id="formats-title">The right viewing model for each row format.</h2>
+            </div>
+            <p>
+              LeanRows does not infer spreadsheet types or silently treat the first row as
+              a header. It displays the structure that is present in the file.
+            </p>
+          </div>
+
+          <div class="format-list" role="list">
+            <article class="format-row" role="listitem">
+              <h3>CSV</h3>
+              <p>Quote-aware logical records and independently bounded tabular fields.</p>
+              <span>.csv</span>
+            </article>
+            <article class="format-row" role="listitem">
+              <h3>TSV</h3>
+              <p>Tab-delimited rows presented as native, resizable columns.</p>
+              <span>.tsv</span>
+            </article>
+            <article class="format-row" role="listitem">
+              <h3>JSON lines</h3>
+              <p>One physical row at a time, without constructing a document-wide tree.</p>
+              <span>.jsonl · .ndjson</span>
+            </article>
+            <article class="format-row" role="listitem">
+              <h3>Logs &amp; text</h3>
+              <p>Line-oriented viewing with bounded previews and visible invalid bytes.</p>
+              <span>.log · .txt</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section limits-section" aria-labelledby="limits-title">
+        <div class="shell">
+          <div class="limits-heading">
+            <p class="eyebrow">Limits are features</p>
+            <h2 id="limits-title">Memory behavior is explicit in the implementation.</h2>
+          </div>
+          <dl class="limit-strip">
+            <div>
+              <dt>64 KiB</dt>
+              <dd>positioned read buffer</dd>
+            </div>
+            <div>
+              <dt>4,096</dt>
+              <dd>checkpoint capacity before adaptive thinning</dd>
+            </div>
+            <div>
+              <dt>128</dt>
+              <dd>rows in one viewport request</dd>
+            </div>
+            <div>
+              <dt>512 KiB</dt>
+              <dd>maximum viewport payload</dd>
+            </div>
+          </dl>
+          <p class="limits-note">
+            These are code-level capacities, not benchmark claims. Fields, previews,
+            queues, and operation scratch space are also bounded so a large source does
+            not authorize a proportional allocation.
+          </p>
+        </div>
+      </section>
+
+      <section class="section boundary-section" id="boundaries" aria-labelledby="boundary-title">
+        <div class="shell boundary-grid">
+          <div class="boundary-intro">
+            <p class="eyebrow">A smaller attack surface</p>
+            <h2 id="boundary-title">A viewer that behaves like a viewer.</h2>
+            <p>
+              File content is untrusted and remains inert. LeanRows does not execute
+              formulas, ANSI sequences, HTML, paths, or URLs found in a row.
+            </p>
+          </div>
+          <ul class="boundary-list">
+            <li><span>01</span><p><strong>Offline by design.</strong> No telemetry, account, cloud service, or network file path.</p></li>
+            <li><span>02</span><p><strong>Local regular files only.</strong> UNC, remote, device, and reparse-point sources are rejected.</p></li>
+            <li><span>03</span><p><strong>Snapshot integrity.</strong> Source identity and revision evidence are checked while work proceeds.</p></li>
+            <li><span>04</span><p><strong>Visible damage.</strong> Invalid bytes are escaped and oversized display values are marked as truncated.</p></li>
+            <li><span>05</span><p><strong>No write path.</strong> Editing, saving, transformation, macros, plug-ins, and scripts are outside v0.1.</p></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section evidence-section" id="evidence" aria-labelledby="evidence-title">
+        <div class="shell evidence-grid">
+          <div>
+            <p class="eyebrow">Evidence before adjectives</p>
+            <h2 id="evidence-title">The release is built around reproducible checks.</h2>
+          </div>
+          <div class="evidence-copy">
+            <p>
+              Every tagged build must pass formatting, workspace tests, strict Clippy,
+              native-control smoke tests, deterministic packaging checks, and the final
+              checksum contract on the pinned Rust toolchain.
+            </p>
+            <p>
+              The repository also contains document, random-seek, sparse logical-scale,
+              source-preservation, and whole-process-tree memory harnesses. Results are
+              kept separate from product claims until they are captured against the final
+              release binary.
+            </p>
+            <a class="text-link" href="https://github.com/abooodbah/leanrows/tree/main/tests/qa">
+              Inspect the QA harnesses <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="release-note-section" aria-labelledby="release-warning-title">
+        <div class="shell release-note-grid">
+          <div>
+            <p class="eyebrow">Before installing v0.1</p>
+            <h2 id="release-warning-title">The Windows build is intentionally unsigned.</h2>
+          </div>
+          <div>
+            <p>
+              Windows may display a SmartScreen warning. Download the ZIP and its
+              matching SHA-256 sidecar from the same GitHub Release, then compare the
+              published value before running or installing LeanRows.
+            </p>
+            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.1.0-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
+            <p class="small-copy">
+              Installation is per-user, requires no administrator access, and registers
+              LeanRows as an available handler without silently replacing Windows default
+              applications.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-grid">
+        <div class="footer-brand">
+          <img src="assets/leanrows-icon.svg" width="28" height="28" alt="">
+          <p><strong>LeanRows</strong><span>Large row files, kept lean.</span></p>
+        </div>
+        <nav aria-label="Project links">
+          <a href="https://github.com/abooodbah/leanrows">GitHub</a>
+          <a href="https://github.com/abooodbah/leanrows/blob/main/README.md">Documentation</a>
+          <a href="https://github.com/abooodbah/leanrows/security">Security</a>
+          <a href="https://github.com/abooodbah/leanrows/blob/main/LICENSE">MIT License</a>
+        </nav>
+        <p class="footer-meta">Built for focused work on memory-constrained Windows systems.</p>
+      </div>
+    </footer>
+  </body>
+</html>

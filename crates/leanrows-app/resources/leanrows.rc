@@ -1,0 +1,28 @@
+#include "leanrows-version.rc"
+
+#define IDD_GOTO_ROW 201
+#define IDC_GOTO_ROW_EDIT 1001
+#define IDOK 1
+#define IDCANCEL 2
+#define DS_SETFONT 0x40L
+#define DS_MODALFRAME 0x80L
+#define WS_POPUP 0x80000000L
+#define WS_CAPTION 0x00C00000L
+#define WS_SYSMENU 0x00080000L
+#define WS_TABSTOP 0x00010000L
+#define ES_AUTOHSCROLL 0x0080L
+#define ES_NUMBER 0x2000L
+
+1 24 "leanrows.manifest"
+101 ICON "../../../branding/leanrows.ico"
+
+IDD_GOTO_ROW DIALOGEX 0, 0, 238, 86
+STYLE DS_MODALFRAME | DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Go to row"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT "&Row number (1-based):", -1, 12, 12, 214, 10
+    EDITTEXT IDC_GOTO_ROW_EDIT, 12, 26, 214, 14, ES_AUTOHSCROLL | ES_NUMBER | WS_TABSTOP
+    DEFPUSHBUTTON "&Go", IDOK, 116, 58, 52, 14
+    PUSHBUTTON "Cancel", IDCANCEL, 174, 58, 52, 14
+END

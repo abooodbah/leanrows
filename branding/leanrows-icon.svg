@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">LeanRows app icon</title>
+  <rect width="512" height="512" rx="112" fill="#0e0d0b"/>
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#403d37" stroke-width="8"/>
+  <g>
+    <rect x="88" y="96" width="76" height="72" rx="18" fill="#1d4ed8"/>
+    <rect x="180" y="96" width="112" height="72" rx="18" fill="#f4f2ee"/>
+    <rect x="308" y="96" width="116" height="72" rx="18" fill="#f4f2ee"/>
+
+    <rect x="88" y="220" width="76" height="72" rx="18" fill="#1d4ed8"/>
+    <rect x="180" y="220" width="112" height="72" rx="18" fill="#f4f2ee"/>
+    <rect x="308" y="220" width="116" height="72" rx="18" fill="#f4f2ee"/>
+
+    <rect x="88" y="344" width="76" height="72" rx="18" fill="#1d4ed8"/>
+    <rect x="180" y="344" width="112" height="72" rx="18" fill="#f4f2ee"/>
+    <rect x="308" y="344" width="116" height="72" rx="18" fill="#f4f2ee"/>
+  </g>
+</svg>

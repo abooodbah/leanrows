@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a focused improvement within the LeanRows product boundary
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the concrete workflow or limitation, including why existing behavior is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the smallest useful change without assuming a particular implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: scale
+    attributes:
+      label: File and system context
+      description: Include typical format, size, row shape, available RAM, and Windows version when relevant.
+  - type: textarea
+    id: bounds
+    attributes:
+      label: Bounded-memory considerations
+      description: Note any case where the proposal could allocate, sort, copy, or retain data in proportion to file size.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Project scope
+      options:
+        - label: The request preserves read-only source handling.
+          required: true
+        - label: I searched existing issues and the roadmap for similar work.
+          required: true

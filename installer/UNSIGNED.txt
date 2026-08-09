@@ -1,0 +1,11 @@
+LEANROWS WINDOWS BUILD: UNSIGNED
+
+This v0.1 Windows x64 artifact does not carry an Authenticode signature.
+Windows may display a security warning when it is downloaded or launched.
+
+Before running or installing LeanRows, verify the portable ZIP against the
+SHA-256 value in the accompanying .sha256 file from the same GitHub Release.
+
+The per-user installer does not require administrator privileges and does not
+silently replace Windows file defaults. It registers LeanRows as an available
+handler and leaves the final default-app choice to the user and Windows.

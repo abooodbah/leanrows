@@ -1,0 +1,20 @@
+[package]
+name = "leanrows-app"
+description = "Private native desktop application entry point for LeanRows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "leanrows"
+path = "src/main.rs"
+
+[dependencies]
+leanrows-win32 = { path = "../leanrows-win32" }
+
+[lints]
+workspace = true

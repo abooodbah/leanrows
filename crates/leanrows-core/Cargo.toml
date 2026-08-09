@@ -1,0 +1,11 @@
+[package]
+name = "leanrows-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bounded-memory record indexing and viewport engine for LeanRows"
+
+[lints]
+workspace = true
