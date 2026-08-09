@@ -29,7 +29,7 @@ hash. Release qualification measures the frozen artifact and retains the raw
 receipt separately from the source documentation.
 
 The measured network run requested a 50 ms polling interval and recorded six
-samples, with a 1,211 ms maximum sample-start gap. This check covers the
+samples, with a 1,157 ms maximum sample-start gap. This check covers the
 discovered LeanRows process tree, but it is not ETW event or packet capture and
 cannot exclude activity between samples.
 

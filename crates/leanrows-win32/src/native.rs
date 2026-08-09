@@ -32,25 +32,24 @@ use windows::Win32::UI::Controls::{
     NMLVDISPINFOW, SB_SETTEXTW, SBARS_SIZEGRIP, STATUSCLASSNAMEW, SetWindowTheme, WC_LISTVIEWW,
 };
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem};
-use windows::Win32::UI::Input::KeyboardAndMouse::{SetFocus, VK_C, VK_F, VK_F3, VK_F5, VK_G, VK_O};
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    ACCEL, AppendMenuW, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-    CreateAcceleratorTableW, CreateMenu, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
-    DestroyAcceleratorTable, DestroyMenu, DestroyWindow, DialogBoxParamW, DispatchMessageW,
-    EndDialog, FCONTROL, FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA,
+    AppendMenuW, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateMenu, CreatePopupMenu,
+    CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu, DestroyWindow,
+    DialogBoxParamW, DispatchMessageW, EndDialog, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA,
     GetClassLongPtrW, GetClientRect, GetDlgItemTextW, GetMessageW, GetSystemMetrics,
     GetWindowLongPtrW, HACCEL, HICON, HMENU, IDC_ARROW, IDCANCEL, IDOK, IMAGE_ICON,
-    IsDialogMessageW, IsWindow, KillTimer, LR_SHARED, LoadCursorW, LoadImageW, MB_ICONERROR,
-    MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL, MF_POPUP, MF_SEPARATOR, MF_STRING,
-    MSG, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage, RT_DIALOG, RegisterClassExW,
-    RegisterWindowMessageW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_SHOWDEFAULT,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW, SetForegroundWindow, SetMenu,
-    SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, TranslateAcceleratorW,
-    TranslateMessage, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WM_APP, WM_CLOSE,
-    WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_GETFONT, WM_INITDIALOG,
-    WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_CHILD,
-    WS_CLIPCHILDREN, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
-    WS_TABSTOP, WS_VISIBLE,
+    IsDialogMessageW, IsWindow, KillTimer, LR_SHARED, LoadAcceleratorsW, LoadCursorW, LoadImageW,
+    MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL, MF_POPUP, MF_SEPARATOR,
+    MF_STRING, MSG, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage, RT_DIALOG,
+    RegisterClassExW, RegisterWindowMessageW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON,
+    SW_SHOWDEFAULT, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW,
+    SetForegroundWindow, SetMenu, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
+    ShowWindow, TranslateAcceleratorW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX,
+    WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES,
+    WM_GETFONT, WM_INITDIALOG, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SIZE, WM_TIMER,
+    WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE,
+    WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -71,6 +70,7 @@ use crate::{
 const LOADING_TEXT: [u16; 9] = [76, 111, 97, 100, 105, 110, 103, 8230, 0];
 const EMPTY_TEXT: [u16; 1] = [0];
 const RESOURCE_ICON_ID: usize = 101;
+const RESOURCE_ACCELERATOR_ID: usize = 102;
 const MAX_DOCUMENT_SMOKE_CELLS: usize = 4;
 const MAX_STARTUP_ERROR_UTF16_UNITS: usize = 4_096;
 const WM_APP_WORKER_READY: u32 = WM_APP + 1;
@@ -255,7 +255,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         .map_err(|error| ShellError::new(format!("module lookup failed: {error}")))?;
     let instance = HINSTANCE(module.0);
     register_window_class(instance)?;
-    let accelerators = create_accelerators()?;
+    let accelerators = load_accelerators(instance)?;
     let find_message = register_find_dialog_message()?;
 
     let smoke_verified = Arc::new(AtomicBool::new(false));
@@ -568,48 +568,13 @@ fn show_shell_window(window: HWND) {
     }
 }
 
-fn create_accelerators() -> Result<AcceleratorGuard, ShellError> {
-    let entries = [
-        ACCEL {
-            fVirt: FVIRTKEY | FCONTROL,
-            key: VK_O.0,
-            cmd: ID_FILE_OPEN,
-        },
-        ACCEL {
-            fVirt: FVIRTKEY,
-            key: VK_F5.0,
-            cmd: ID_FILE_RELOAD,
-        },
-        ACCEL {
-            fVirt: FVIRTKEY | FCONTROL,
-            key: VK_C.0,
-            cmd: ID_EDIT_COPY,
-        },
-        ACCEL {
-            fVirt: FVIRTKEY | FCONTROL,
-            key: VK_F.0,
-            cmd: ID_EDIT_FIND,
-        },
-        ACCEL {
-            fVirt: FVIRTKEY,
-            key: VK_F3.0,
-            cmd: ID_EDIT_FIND_NEXT,
-        },
-        ACCEL {
-            fVirt: FVIRTKEY | FSHIFT,
-            key: VK_F3.0,
-            cmd: ID_EDIT_FIND_PREVIOUS,
-        },
-        ACCEL {
-            fVirt: FVIRTKEY | FCONTROL,
-            key: VK_G.0,
-            cmd: ID_EDIT_GOTO,
-        },
-    ];
-    // SAFETY: The slice remains valid for the synchronous table creation call.
-    unsafe { CreateAcceleratorTableW(&entries) }
+fn load_accelerators(instance: HINSTANCE) -> Result<AcceleratorGuard, ShellError> {
+    let resource = PCWSTR(std::ptr::without_provenance::<u16>(RESOURCE_ACCELERATOR_ID));
+    // SAFETY: Resource 102 is compiled into this module as an ACCELERATORS table.
+    // The guard releases the returned handle after the message loop exits.
+    unsafe { LoadAcceleratorsW(Some(instance), resource) }
         .map(AcceleratorGuard)
-        .map_err(|error| ShellError::new(format!("accelerator creation failed: {error}")))
+        .map_err(|error| ShellError::new(format!("embedded accelerator load failed: {error}")))
 }
 
 fn install_menu(window: HWND) -> Result<(), ShellError> {

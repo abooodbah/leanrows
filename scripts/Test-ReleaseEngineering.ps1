@@ -150,6 +150,38 @@ function Test-WindowsSourceContract {
         -Message 'Resource compilation must not inherit an ambient Windows SDK INCLUDE path.'
     Assert-True -Condition $resourceText.Contains('#include "leanrows-version.rc"') `
         -Message 'The deterministic generated VERSIONINFO resource is not included.'
+    Assert-Matches -Text $resourceText `
+        -Pattern '(?s)#define IDR_ACCELERATORS 102.*?IDR_ACCELERATORS ACCELERATORS\s*BEGIN\s*"O",\s*ID_FILE_OPEN,\s*VIRTKEY,\s*CONTROL\s*0x74,\s*ID_FILE_RELOAD,\s*VIRTKEY\s*"C",\s*ID_EDIT_COPY,\s*VIRTKEY,\s*CONTROL\s*"F",\s*ID_EDIT_FIND,\s*VIRTKEY,\s*CONTROL\s*0x72,\s*ID_EDIT_FIND_NEXT,\s*VIRTKEY\s*0x72,\s*ID_EDIT_FIND_PREVIOUS,\s*VIRTKEY,\s*SHIFT\s*"G",\s*ID_EDIT_GOTO,\s*VIRTKEY,\s*CONTROL\s*END' `
+        -Message 'The embedded accelerator table does not preserve the approved keyboard command map.'
+    Assert-True -Condition (-not [regex]::IsMatch(
+            $resourceText,
+            '(?im)^\s*#include\s*[<"](?:windows|winuser)\.h[>"]')) `
+        -Message 'Resource compilation must not depend on Windows SDK headers.'
+
+    $nativeText = [System.IO.File]::ReadAllText(
+        (Join-Path $repositoryRoot 'crates/leanrows-win32/src/native.rs')
+    )
+    Assert-Matches -Text $nativeText -Pattern '\bLoadAcceleratorsW\s*\(' `
+        -Message 'Native startup does not load the embedded accelerator table.'
+    Assert-True -Condition (-not [regex]::IsMatch(
+            $nativeText,
+            '\bCreateAcceleratorTable[AW]?\s*\(')) `
+        -Message 'Native startup must not recreate the CI-fragile runtime accelerator table.'
+    $acceleratorCommandIds = [ordered]@{
+        ID_FILE_OPEN = 100; ID_FILE_RELOAD = 101; ID_EDIT_COPY = 110
+        ID_EDIT_FIND = 111; ID_EDIT_FIND_NEXT = 112
+        ID_EDIT_FIND_PREVIOUS = 113; ID_EDIT_GOTO = 114
+    }
+    foreach ($entry in $acceleratorCommandIds.GetEnumerator()) {
+        $name = [regex]::Escape([string]$entry.Key)
+        $value = [string]$entry.Value
+        Assert-Matches -Text $resourceText `
+            -Pattern "(?m)^\s*#define\s+$name\s+$value\s*$" `
+            -Message "Resource command ID $($entry.Key) drifted."
+        Assert-Matches -Text $nativeText `
+            -Pattern "(?m)^\s*const\s+${name}:\s*u16\s*=\s*$value;\s*$" `
+            -Message "Native command ID $($entry.Key) drifted."
+    }
     Assert-Matches -Text $manifestText `
         -Pattern '(?s)name="LeanRows\.Desktop"\s+processorArchitecture="amd64"' `
         -Message 'The x64 application manifest definition identity is not explicitly amd64.'
@@ -249,6 +281,18 @@ function Test-WorkflowContract {
     Assert-True -Condition (-not $qaRunStep.Value.Contains('continue-on-error')) `
         -Message 'Reduced CI QA must require a passing process exit code.'
 
+    $qaReceiptStep = [regex]::Match(
+        $workflow,
+        '(?ms)^[ ]{6}- name: Require reduced CI QA evidence\r?\n(?<body>.*?)(?=^[ ]{6}- name:|\z)'
+    )
+    Assert-True -Condition $qaReceiptStep.Success `
+        -Message 'Reduced CI QA must have a distinct fail-closed receipt check.'
+    Assert-True -Condition $qaReceiptStep.Value.Contains(
+        './artifacts/ci-qa/qa-receipt.json') `
+        -Message 'Reduced CI QA receipt check does not require qa-receipt.json.'
+    Assert-True -Condition (-not $qaReceiptStep.Value.Contains('continue-on-error')) `
+        -Message 'Reduced CI QA receipt validation must fail closed.'
+
     $qaUploadStep = [regex]::Match(
         $workflow,
         '(?ms)^[ ]{6}- name: Upload reduced CI QA evidence\r?\n(?<body>.*?)(?=^[ ]{6}- name:|\z)'
@@ -256,8 +300,8 @@ function Test-WorkflowContract {
     Assert-True -Condition $qaUploadStep.Success `
         -Message 'Reduced CI QA evidence must use its own upload step.'
     foreach ($qaUploadContract in @(
-        'if: always()',
-        'uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
+        'if: ${{ always() && hashFiles(''artifacts/ci-qa/**'') != '''' }}',
+        'uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
         'name: leanrows-ci-qa-evidence',
         'path: artifacts/ci-qa/',
         'if-no-files-found: error',
