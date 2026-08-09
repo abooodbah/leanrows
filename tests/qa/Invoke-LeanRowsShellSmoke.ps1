@@ -170,8 +170,14 @@ $beforeIds = @(Get-MatchingExecutableIds -Executable $binary)
 $success = Invoke-RedirectedProcess `
     -Executable $binary -Arguments '--smoke-test' -Timeout $TimeoutSeconds
 Assert-True -Condition (-not $success.timed_out) -Message 'Native shell smoke timed out.'
+$successDiagnostic = if ([string]::IsNullOrWhiteSpace($success.stderr)) {
+    '<empty>'
+}
+else {
+    $success.stderr.Trim()
+}
 Assert-True -Condition ($success.exit_code -eq 0) `
-    -Message "Native shell smoke exited with code $($success.exit_code)."
+    -Message "Native shell smoke exited with code $($success.exit_code); stderr: $successDiagnostic"
 Assert-True -Condition ([string]::IsNullOrWhiteSpace($success.stdout)) `
     -Message 'Successful native shell smoke wrote unexpected stdout.'
 Assert-True -Condition ([string]::IsNullOrWhiteSpace($success.stderr)) `
