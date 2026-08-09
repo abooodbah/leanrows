@@ -157,15 +157,35 @@ try {
 
     try {
         $memorySelfTest = & (Join-Path $repositoryRoot 'tools/Test-Measure-LeanRowsSpike.ps1') -Runs 3
+        $expectedHostLeaf = if ([string]$PSVersionTable.PSEdition -eq 'Core') {
+            'pwsh.exe'
+        }
+        elseif ([string]$PSVersionTable.PSEdition -eq 'Desktop') {
+            'powershell.exe'
+        }
+        else {
+            throw ('Unsupported PowerShell edition in the reduced QA host attestation: {0}' -f `
+                [string]$PSVersionTable.PSEdition)
+        }
         if ([int]$memorySelfTest.SilentZeroPeaks -ne 0 -or
-            [string]$memorySelfTest.ProcessLifetimeAccounting -ne 'PASS') {
-            throw 'The existing process sampler self-test did not preserve explicit missing observations.'
+            [string]$memorySelfTest.ProcessLifetimeAccounting -ne 'PASS' -or
+            -not [bool]$memorySelfTest.HostExecutableMatchesCurrentProcess -or
+            [string]$memorySelfTest.HostDiscovery -ne 'current_process_main_module' -or
+            [string]$memorySelfTest.HostEdition -ne [string]$PSVersionTable.PSEdition -or
+            -not [string]::Equals(
+                [string]$memorySelfTest.HostExecutableName,
+                $expectedHostLeaf,
+                [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw 'The process sampler self-test failed memory-state or current-host attestation.'
         }
         Add-Check -Id 'MEMORY-MISSING-STATE' -Status 'pass' -Summary 'Short-lived process sampling never encoded missing memory as zero.' -Details ([ordered]@{
             runs = [int]$memorySelfTest.Runs
             observed = [int]$memorySelfTest.Observed
             missing_but_explicit = [int]$memorySelfTest.MissingButExplicit
             silent_zero_peaks = [int]$memorySelfTest.SilentZeroPeaks
+            host_executable_name = [string]$memorySelfTest.HostExecutableName
+            host_edition = [string]$memorySelfTest.HostEdition
+            host_discovery = [string]$memorySelfTest.HostDiscovery
         })
     }
     catch {

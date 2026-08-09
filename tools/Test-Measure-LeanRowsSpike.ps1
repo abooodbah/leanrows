@@ -24,9 +24,45 @@ try {
     [System.IO.File]::WriteAllText($fixture, ('row=1' + [char]10), (New-Object System.Text.UTF8Encoding($false)))
     $reportPath = Join-Path $resolvedTestDirectory 'report.json'
 
-    $windowsPowerShell = Join-Path $PSHOME 'powershell.exe'
+    $currentProcess = [System.Diagnostics.Process]::GetCurrentProcess()
+    try {
+        $currentPowerShell = [string]$currentProcess.MainModule.FileName
+    }
+    catch {
+        throw ('Unable to resolve the current PowerShell host executable from process {0}: {1}' -f `
+            $PID, $_.Exception.Message)
+    }
+    finally {
+        $currentProcess.Dispose()
+    }
+    if ([string]::IsNullOrWhiteSpace($currentPowerShell)) {
+        throw "The current PowerShell process $PID did not expose a host executable path."
+    }
+    $currentPowerShell = [System.IO.Path]::GetFullPath($currentPowerShell)
+    if (-not [System.IO.File]::Exists($currentPowerShell)) {
+        throw "The current PowerShell host executable does not exist: $currentPowerShell"
+    }
+    $expectedHostLeaf = if ([string]$PSVersionTable.PSEdition -eq 'Core') {
+        'pwsh.exe'
+    }
+    elseif ([string]$PSVersionTable.PSEdition -eq 'Desktop') {
+        'powershell.exe'
+    }
+    else {
+        throw ('Unsupported PowerShell edition for the short-process self-test: {0}' -f `
+            [string]$PSVersionTable.PSEdition)
+    }
+    $currentHostLeaf = [System.IO.Path]::GetFileName($currentPowerShell)
+    if (-not [string]::Equals(
+            $currentHostLeaf,
+            $expectedHostLeaf,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw (("The current PowerShell edition '{0}' is hosted by unsupported executable '{1}'; " +
+            "expected the current CLI host '{2}'. No fallback host will be used.") -f `
+            [string]$PSVersionTable.PSEdition, $currentHostLeaf, $expectedHostLeaf)
+    }
     & (Join-Path $PSScriptRoot 'Measure-LeanRowsSpike.ps1') `
-        -Executable $windowsPowerShell `
+        -Executable $currentPowerShell `
         -FixturePath $fixture `
         -ArgumentTemplate '-NoProfile -NonInteractive -Command Start-Sleep -Milliseconds 75;# {fixture}' `
         -Runs $Runs `
@@ -36,6 +72,13 @@ try {
         -OutputPath $reportPath | Out-Null
 
     $report = Get-Content -Raw -LiteralPath $reportPath | ConvertFrom-Json
+    if (-not [string]::Equals(
+            [System.IO.Path]::GetFullPath([string]$report.executable.path),
+            $currentPowerShell,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ('The sampler exercised a different executable than the current PowerShell host: {0}' -f `
+            [string]$report.executable.path)
+    }
     if ($report.observations.Count -ne $Runs) {
         throw ('Expected {0} observations; received {1}.' -f $Runs, $report.observations.Count)
     }
@@ -99,6 +142,10 @@ try {
         MissingButExplicit = $missingCount
         SilentZeroPeaks = 0
         ProcessLifetimeAccounting = 'PASS'
+        HostExecutableName = $currentHostLeaf
+        HostEdition = [string]$PSVersionTable.PSEdition
+        HostExecutableMatchesCurrentProcess = $true
+        HostDiscovery = 'current_process_main_module'
     }
 } finally {
     $leaf = [System.IO.Path]::GetFileName($resolvedTestDirectory)
