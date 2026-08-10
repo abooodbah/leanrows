@@ -1,23 +1,22 @@
 # Validation status
 
 **Status date:** 2026-08-09<br>
-**Scope:** LeanRows 0.1.3 frozen local release candidate PASS, Windows x64;<br>
-clean release commit, post-commit rerun, tagged CI, and public artifact
-verification pending<br>
-**Current public release:** LeanRows 0.1.2
+**Scope:** LeanRows 0.1.3 published release, Windows x64;<br>
+local, post-commit, tagged-CI, public-package, installed-binary, and Pages
+verification complete<br>
+**Current public release:** LeanRows 0.1.3
 
 LeanRows 0.1.3 corrects System-theme resolution, restores the complete
 System/Light/Dark appearance cycle, and aligns the indexing indicator with
 LeanMark's flat progress rule. The frozen local candidate passed the current
 source, native-shell, document, packaging, aggregate QA, and live installer
-checks. Its executable is 546,816 bytes with SHA-256
+checks. That local executable is 546,816 bytes with SHA-256
 `F8394AC84BFDD1E4857AF087B509088B5586172048A499E761DF0D5701F8A7A1`.
-This is local pre-commit evidence. The clean release commit, post-commit rerun,
-tagged CI rebuild, and public download verification remain pending.
+The clean release commit, post-commit rerun, tagged CI rebuild, public package,
+installed executable, and product site have now been verified separately.
 
-LeanRows 0.1.2 is already published on
-[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.1.2).
-It is not awaiting tagged CI or publication.
+LeanRows 0.1.3 is published on
+[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.1.3).
 
 ## v0.1.3 repository state
 
@@ -31,7 +30,7 @@ It is not awaiting tagged CI or publication.
 | Progress rule | Passed on the frozen executable | Smoke retained `PROGRESS_CLASS`, rejected marquee style, verified 50 percent, and compared the expected accent, surface, and border pixels. |
 | Packaging and installer | Passed locally | Release engineering, deterministic packaging, checksum, installer static checks, `ValidateOnly`, and a live upgrade/reinstall/uninstall/final-install cycle passed. |
 | Process memory, sparse scale, and network observation | Passed locally | The authoritative 25-check receipt records memory, 1 and 10 GiB sparse fixtures, 24 seeks, and a polling-bounded network observation. |
-| Tagged release package | Not yet published | v0.1.2 remains the current public release until the v0.1.3 tag and verified artifacts are available. |
+| Tagged release package and site | Published and verified | Tag `v0.1.3`, its two public release assets, the installed public executable, and the deployed Pages site passed the checks recorded below. |
 
 ## Native-shell verification result
 
@@ -57,7 +56,7 @@ checks with 0 failures in 38,863 ms.
 
 | Frozen evidence field | v0.1.3 local value |
 | --- | --- |
-| Source identity | The clean release commit and post-commit rerun remain pending. The receipt applies to the frozen release worktree and exact executable identified below. |
+| Source identity | This receipt applies to the pre-commit frozen worktree and local executable identified below. Release commit `9e4d99cc1760feed1882eaef8b56164b4a02274f` and tag `v0.1.3` are verified separately in the published-release section. |
 | Executable | 546,816 bytes; SHA-256 `F8394AC84BFDD1E4857AF087B509088B5586172048A499E761DF0D5701F8A7A1`. |
 | Source and build gates | Formatting passed; workspace all-target locked tests passed 143/143; strict Clippy passed; release app and spike builds passed; shell smoke, document smokes, and release engineering passed. |
 | Aggregate result | 25/25 checks passed, 0 failed, in 38,863 ms. |
@@ -81,6 +80,37 @@ receipt as a pass.
 
 The network result is polling-bounded rather than an ETW event trace or packet
 capture. It cannot exclude activity between samples.
+
+## Published v0.1.3 verification
+
+The public release is anchored to commit
+`9e4d99cc1760feed1882eaef8b56164b4a02274f` and annotated tag `v0.1.3`.
+The clean post-commit receipt at
+`artifacts/qa/v0.1.3-post-commit/qa-receipt.json` passed 25/25 checks. Tagged
+workflow
+[run 31355194118](https://github.com/abooodbah/leanrows/actions/runs/31355194118)
+completed with every job green and published the release and Pages site.
+
+| Published evidence field | v0.1.3 result |
+| --- | --- |
+| Release | [LeanRows v0.1.3](https://github.com/abooodbah/leanrows/releases/tag/v0.1.3) contains exactly the unsigned Windows x64 ZIP and its checksum sidecar. |
+| Public package | The downloaded sidecar records ZIP SHA-256 `9BC275C6D4784637C5ED63174A580B1DA5401ABC5A024A4B76DED205AEFFB0B7`, and the downloaded ZIP matched it. |
+| Public executable | The extracted and installed `leanrows.exe` is 546,816 bytes, reports version `0.1.3.0`, and has SHA-256 `79DD102A9A8BDC9A0A591893F1FC10BC1A7EF8BDBF33F453E5A6DBE2FE1ACB0B`. |
+| Downloaded-package checks | The public assets passed `Test-ReleaseEngineering.ps1`, installer `ValidateOnly`, installation, and the native shell smoke. The smoke completed in 182 ms with zero residual processes. |
+| Installed associations | Four direct per-user defaults point to LeanRows and all five **Open with** registrations are present. The protected Notepad `.log` choice remained unchanged. |
+| Installed appearance | The installed application retained System appearance. |
+| Product site | GitHub Pages deployed successfully and returned HTTP 200 with the v0.1.3 application capture. |
+
+The local frozen executable and package remain identified by
+`F8394AC84BFDD1E4857AF087B509088B5586172048A499E761DF0D5701F8A7A1`
+and
+`BCD32B49FEA25E4079782403AF03366AC1C38DB1DD907B6B9920503DD396A8A3`,
+respectively. They are local evidence and are not the public download hashes.
+The public executable and package identities are the values in the table
+above.
+
+This status update is a post-release documentation change on `main`; it is
+not part of the `v0.1.3` tag.
 
 ## Historical v0.1.2 local qualification
 
@@ -136,14 +166,13 @@ These items remain in the extended assurance program described in
 
 ## Claim discipline
 
-Current descriptions may state the implemented mechanisms and the local
-results above: progressive
-viewports, fixed-capacity indexing, bounded previews, snapshot integrity, the
-responsive native shell, inline literal search, the owner-data grid,
-System/Light/Dark appearance, System resolution from the active Windows app
-theme, high-contrast system colors, and the flat native progress rule. Numeric
-performance, whole-process memory, package identity, installer outcomes,
-network observations, and frozen-binary outcomes must remain tied to the
-authoritative local receipt and exact artifact identities. The clean release
-commit, post-commit results, tagged CI rebuild, and public artifacts are not
-claimed until their separate verification is complete.
+Current descriptions may state the implemented mechanisms and verified results
+above: progressive viewports, fixed-capacity indexing, bounded previews,
+snapshot integrity, the responsive native shell, inline literal search, the
+owner-data grid, System/Light/Dark appearance, System resolution from the
+active Windows app theme, high-contrast system colors, and the flat native
+progress rule. Numeric performance, whole-process memory, package identity,
+installer outcomes, network observations, and binary outcomes must remain tied
+to their recorded receipts and exact artifact identities. In particular, the
+local frozen hashes and tagged public hashes describe different artifacts and
+must not be interchanged.
