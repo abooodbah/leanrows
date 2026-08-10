@@ -3,8 +3,8 @@
 LeanRows v0.1 uses a portable, explicitly unsigned ZIP. Packaging creates:
 
 ```text
-LeanRows-v0.1.2-windows-x64-unsigned.zip
-LeanRows-v0.1.2-windows-x64-unsigned.sha256
+LeanRows-v0.1.3-windows-x64-unsigned.zip
+LeanRows-v0.1.3-windows-x64-unsigned.sha256
 ```
 
 The version is read from `[workspace.package]` in `Cargo.toml`; a mismatched
@@ -15,7 +15,7 @@ twice and requires identical SHA-256 digests.
 ## Portable package contents
 
 ```text
-LeanRows-v0.1.2-windows-x64-unsigned/
+LeanRows-v0.1.3-windows-x64-unsigned/
   leanrows.exe
   install.ps1
   uninstall.ps1

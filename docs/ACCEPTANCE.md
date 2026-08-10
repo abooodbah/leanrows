@@ -37,7 +37,7 @@ Measurements use these terms:
 | --- | --- | --- |
 | BUILD-01 | Rust formatting, all workspace targets, and strict Clippy pass on Rust 1.97.1 with the lockfile enforced. | Root README commands and `.github/workflows/windows.yml` |
 | CORE-01 | Scanner, checkpoint, viewport, query-quota, cancellation, malformed-input, and source-change tests pass. | `leanrows-core` unit and integration tests |
-| APP-01 | The native window, responsive top bar, inline search, owner-data grid, progress rule, status strip, accessibility names, keyboard focus, and cleanup pass the shell smoke. | `leanrows.exe --smoke-test` in the Windows workflow |
+| APP-01 | The native window, responsive top bar, inline search, owner-data grid, flat progress rule, status strip, accessibility names, keyboard focus, and cleanup pass the shell smoke. The progress check retains the native class, rejects marquee style, verifies a 50 percent value, and compares the rendered accent, surface, and border pixels. | `leanrows.exe --smoke-test` in the Windows workflow |
 | DOC-01 | A supported real document produces valid bounded smoke evidence, serves a native row, leaves its source unchanged, and leaves no residual process. Empty, missing, and unsupported inputs fail closed. | `tests/qa/Invoke-LeanRowsDocumentSmoke.ps1` |
 | FORMAT-01 | Targeted tests cover CSV and TSV quoted newlines and escaped quotes, line formats, invalid bytes, empty input, and giant-record preview bounds. | `leanrows-win32` document-engine tests |
 | SOURCE-01 | In-place append, truncate, and rewrite are denied while open; atomic replacement is detected; stale snapshot work stops. | Core source-integrity tests and Windows document-engine tests |
@@ -45,7 +45,7 @@ Measurements use these terms:
 | SCALE-01 | First viewports and deterministic seeks succeed on bounded synthetic fixtures, including 1 GiB and 10 GiB logical sparse fixtures, with source-integrity checks and complete cleanup. | `tests/qa/New-LeanRowsSparseFixtures.ps1` and `Test-LeanRowsRandomSeek.ps1` |
 | PKG-01 | The unsigned Windows x64 package is deterministic, contains the exact allow-listed payload, validates every manifest hash, and has a separate SHA-256 file. | `scripts/Test-ReleaseEngineering.ps1` |
 | INSTALL-01 | Installer validation succeeds without changing files or the registry; registration and uninstall paths pass static contract checks. | Package `install.ps1 -ValidateOnly` and release-engineering tests |
-| A11Y-01 | Automated native smoke confirms accessible names, roles, focus, System/Light appearance handling, and high-contrast system-color fallback. The documented keyboard path and responsive narrow/default/wide layouts are manually usable before tagging. | Native smoke and release checklist |
+| A11Y-01 | Automated native smoke confirms accessible names, roles, focus, the System to Light to Dark to System appearance cycle, preference persistence, runtime grid repainting, and high-contrast system-color fallback. The documented keyboard path and responsive narrow/default/wide layouts are manually usable before tagging. | Native smoke and release checklist |
 | NET-01 | A recorded Windows network observation finds no TCP connection or UDP endpoint during open, view, a native list seek, reload, and clean close. | `tests/qa/Observe-LeanRowsNetwork.ps1` and aggregate release receipt |
 
 The aggregate local harness coordinates document smokes, memory observations,

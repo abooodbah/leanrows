@@ -4,10 +4,12 @@ LeanRows is a native, read-only Windows viewer for large row-oriented files. It
 opens a bounded viewport without loading the whole source into memory, which
 makes routine inspection practical on memory-constrained machines.
 
-Version 0.1.2 introduces a LeanMark-aligned native shell with warm, opaque
-surfaces, a responsive top bar, and inline literal search. The owner-data grid
-and bounded document engine remain unchanged in purpose: only the active row
-window is materialized for display.
+Version 0.1.3 corrects two gaps in the LeanMark-aligned native shell introduced
+in 0.1.2. System appearance now follows the active Windows app theme, the
+appearance button cycles through System, Light, and Dark, and indexing progress
+uses the same flat accent rule as LeanMark. The owner-data grid and bounded
+document engine remain unchanged in purpose: only the active row window is
+materialized for display.
 
 The 0.1 release supports CSV, TSV, JSONL, NDJSON, log, and plain-text files on
 Windows x64. CSV and TSV record boundaries remain quote-aware across read
@@ -37,15 +39,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.1.2-windows-x64-unsigned.zip
-LeanRows-v0.1.2-windows-x64-unsigned.sha256
+LeanRows-v0.1.3-windows-x64-unsigned.zip
+LeanRows-v0.1.3-windows-x64-unsigned.sha256
 ```
 
 LeanRows 0.1 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.1.2-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.1.3-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
@@ -147,7 +149,8 @@ Find compares raw UTF-8 bytes. Its optional case-insensitive mode folds ASCII
 letters only; non-ASCII bytes remain exact. Regular expressions are not
 supported in 0.1.
 
-The interface provides System and Light appearance modes, per-monitor DPI
+The interface provides System, Light, and Dark appearance modes. System follows
+the active Windows app theme. The application also provides per-monitor DPI
 handling, visible keyboard focus, and Microsoft Active Accessibility names for
 the window, grid, and row items. When Windows high contrast is active,
 application colors yield to the corresponding system colors.
@@ -179,6 +182,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
+- [LeanRows 0.1.3 release notes](docs/releases/v0.1.3.md)
 - [LeanRows 0.1.2 release notes](docs/releases/v0.1.2.md)
 - [LeanRows 0.1.1 release notes](docs/releases/v0.1.1.md)
 - [Security policy](SECURITY.md)

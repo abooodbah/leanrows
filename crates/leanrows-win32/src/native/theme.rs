@@ -20,8 +20,8 @@ use windows::Win32::Graphics::Gdi::{
     HBRUSH, HFONT, HGDIOBJ, LOGFONTW, SYS_COLOR_INDEX,
 };
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyW, RegGetValueW,
-    RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyW,
+    RegGetValueW, RegSetValueExW,
 };
 use windows::Win32::UI::Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW};
 use windows::Win32::UI::HiDpi::SystemParametersInfoForDpi;
@@ -50,14 +50,8 @@ impl ThemeMode {
     pub(super) const fn next(self) -> Self {
         match self {
             Self::System => Self::Light,
-            Self::Light | Self::Dark => Self::System,
-        }
-    }
-
-    const fn release_supported(self) -> Self {
-        match self {
+            Self::Light => Self::Dark,
             Self::Dark => Self::System,
-            Self::System | Self::Light => self,
         }
     }
 
@@ -73,12 +67,20 @@ impl ThemeMode {
     /// Missing, malformed, or inaccessible state fails safely to System.
     #[must_use]
     pub(super) fn load() -> Self {
-        load_theme_mode().unwrap_or_default().release_supported()
+        load_theme_mode().unwrap_or_default()
     }
 
     /// Returns false on a non-fatal registry failure; it never panics.
     pub(super) fn save(self) -> bool {
-        save_theme_mode(self.release_supported())
+        save_theme_mode(self)
+    }
+
+    const fn registry_data(self) -> &'static [u8] {
+        match self {
+            Self::System => b"s\0y\0s\0t\0e\0m\0\0\0",
+            Self::Light => b"l\0i\0g\0h\0t\0\0\0",
+            Self::Dark => b"d\0a\0r\0k\0\0\0",
+        }
     }
 }
 
@@ -336,10 +338,18 @@ pub(super) struct DwmChromeResult {
 }
 
 fn effective_theme(preference: ThemeMode) -> EffectiveTheme {
-    select_effective_theme(preference, query_high_contrast().ok())
+    select_effective_theme(
+        preference,
+        query_high_contrast().ok(),
+        query_system_uses_dark_apps(),
+    )
 }
 
-fn select_effective_theme(preference: ThemeMode, high_contrast: Option<bool>) -> EffectiveTheme {
+fn select_effective_theme(
+    preference: ThemeMode,
+    high_contrast: Option<bool>,
+    system_dark: Option<bool>,
+) -> EffectiveTheme {
     // If the accessibility setting cannot be read, fail closed to the system
     // color palette rather than risk obscuring a contrast theme.
     if high_contrast != Some(false) {
@@ -347,7 +357,43 @@ fn select_effective_theme(preference: ThemeMode, high_contrast: Option<bool>) ->
     }
     match preference {
         ThemeMode::Dark => EffectiveTheme::Dark,
+        ThemeMode::System if system_dark == Some(true) => EffectiveTheme::Dark,
+        // A missing or malformed Windows preference safely falls back to the
+        // fully supported light palette.
         ThemeMode::Light | ThemeMode::System => EffectiveTheme::Light,
+    }
+}
+
+fn query_system_uses_dark_apps() -> Option<bool> {
+    let mut apps_use_light_theme = 1_u32;
+    let mut byte_count = u32::try_from(size_of_val(&apps_use_light_theme)).ok()?;
+    // SAFETY: the registry path and value name are static; the DWORD and byte
+    // count are valid writable storage for this synchronous bounded read.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+            w!("AppsUseLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&raw mut apps_use_light_theme).cast()),
+            Some(&raw mut byte_count),
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    parse_apps_use_light_theme(apps_use_light_theme, byte_count)
+}
+
+fn parse_apps_use_light_theme(value: u32, byte_count: u32) -> Option<bool> {
+    if byte_count != u32::try_from(size_of::<u32>()).ok()? {
+        return None;
+    }
+    match value {
+        0 => Some(true),
+        1 => Some(false),
+        _ => None,
     }
 }
 
@@ -565,11 +611,7 @@ fn save_theme_mode(mode: ThemeMode) -> bool {
     }
     let key = OwnedRegistryKey(raw_key);
     // UTF-16LE including NUL; every supported Windows target is little-endian.
-    let data: &[u8] = match mode {
-        ThemeMode::System => b"s\0y\0s\0t\0e\0m\0\0\0",
-        ThemeMode::Light => b"l\0i\0g\0h\0t\0\0\0",
-        ThemeMode::Dark => b"d\0a\0r\0k\0\0\0",
-    };
+    let data = mode.registry_data();
     // SAFETY: key is live and data is a complete bounded REG_SZ payload.
     (unsafe { RegSetValueExW(key.0, w!("Theme"), None, REG_SZ, Some(data)) }) == ERROR_SUCCESS
 }
@@ -653,50 +695,82 @@ impl Drop for OwnedRegistryKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        EffectiveTheme, Palette, ThemeMode, UiColor, UiMetrics, parse_theme_mode,
-        select_effective_theme,
+        EffectiveTheme, Palette, ThemeMode, UiColor, UiMetrics, parse_apps_use_light_theme,
+        parse_theme_mode, select_effective_theme,
     };
 
     #[test]
     fn theme_cycle_and_labels_are_stable() {
         assert_eq!(ThemeMode::System.next(), ThemeMode::Light);
-        assert_eq!(ThemeMode::Light.next(), ThemeMode::System);
+        assert_eq!(ThemeMode::Light.next(), ThemeMode::Dark);
         assert_eq!(ThemeMode::Dark.next(), ThemeMode::System);
-        assert_eq!(ThemeMode::Dark.release_supported(), ThemeMode::System);
         assert_eq!(ThemeMode::System.label(), "System");
+        assert_eq!(ThemeMode::Light.label(), "Light");
+        assert_eq!(ThemeMode::Dark.label(), "Dark");
+        assert_eq!(ThemeMode::Dark.registry_data(), b"d\0a\0r\0k\0\0\0");
     }
 
     #[test]
     fn registry_parser_is_bounded_case_insensitive_and_fail_closed() {
+        let system: Vec<u16> = "SyStEm\0".encode_utf16().collect();
         let light: Vec<u16> = "LIGHT\0".encode_utf16().collect();
+        let dark: Vec<u16> = "dark\0".encode_utf16().collect();
         let invalid: Vec<u16> = "unknown\0".encode_utf16().collect();
+        assert_eq!(parse_theme_mode(&system), Some(ThemeMode::System));
         assert_eq!(parse_theme_mode(&light), Some(ThemeMode::Light));
+        assert_eq!(parse_theme_mode(&dark), Some(ThemeMode::Dark));
         assert_eq!(parse_theme_mode(&invalid), None);
+        assert_eq!(parse_theme_mode(&[]), None);
+    }
+
+    #[test]
+    fn windows_app_theme_dword_parser_is_strict_and_safe() {
+        let dword_bytes = u32::try_from(size_of::<u32>()).unwrap_or_default();
+        assert_eq!(parse_apps_use_light_theme(0, dword_bytes), Some(true));
+        assert_eq!(parse_apps_use_light_theme(1, dword_bytes), Some(false));
+        assert_eq!(parse_apps_use_light_theme(2, dword_bytes), None);
+        assert_eq!(parse_apps_use_light_theme(0, dword_bytes - 1), None);
     }
 
     #[test]
     fn high_contrast_overrides_every_preference_and_unknown_state() {
         for preference in [ThemeMode::System, ThemeMode::Light, ThemeMode::Dark] {
             assert_eq!(
-                select_effective_theme(preference, Some(true)),
+                select_effective_theme(preference, Some(true), Some(false)),
                 EffectiveTheme::HighContrast
             );
             assert_eq!(
-                select_effective_theme(preference, None),
+                select_effective_theme(preference, None, Some(true)),
                 EffectiveTheme::HighContrast
             );
         }
     }
 
     #[test]
-    fn system_mode_uses_the_documented_light_common_control_theme() {
+    fn system_mode_follows_windows_and_falls_back_safely_to_light() {
         assert_eq!(
-            select_effective_theme(ThemeMode::System, Some(false)),
+            select_effective_theme(ThemeMode::System, Some(false), Some(true)),
+            EffectiveTheme::Dark
+        );
+        assert_eq!(
+            select_effective_theme(ThemeMode::System, Some(false), Some(false)),
             EffectiveTheme::Light
         );
         assert_eq!(
-            select_effective_theme(ThemeMode::Light, Some(false)),
+            select_effective_theme(ThemeMode::System, Some(false), None),
             EffectiveTheme::Light
+        );
+    }
+
+    #[test]
+    fn explicit_theme_overrides_the_windows_app_preference() {
+        assert_eq!(
+            select_effective_theme(ThemeMode::Light, Some(false), Some(true)),
+            EffectiveTheme::Light
+        );
+        assert_eq!(
+            select_effective_theme(ThemeMode::Dark, Some(false), Some(false)),
+            EffectiveTheme::Dark
         );
     }
 

@@ -4,25 +4,25 @@ version = 4
 
 [[package]]
 name = "leanrows-app"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "leanrows-win32",
 ]
 
 [[package]]
 name = "leanrows-core"
-version = "0.1.2"
+version = "0.1.3"
 
 [[package]]
 name = "leanrows-spike"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "leanrows-core",
 ]
 
 [[package]]
 name = "leanrows-win32"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "leanrows-core",
  "windows",

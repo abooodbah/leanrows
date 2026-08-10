@@ -3,7 +3,9 @@
 mod accessibility;
 mod clipboard;
 mod drop_files;
+mod header;
 mod layout;
+mod progress;
 mod theme;
 
 use std::ffi::{OsString, c_void};
@@ -15,39 +17,44 @@ use std::sync::{Arc, Mutex};
 
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    COLOR_WINDOW, CreateRoundRectRgn, DT_CENTER, DT_SINGLELINE, DT_VCENTER, DeleteObject,
-    DrawFocusRect, DrawTextW, FillRect, FillRgn, FrameRgn, GetSysColorBrush, HDC, HGDIOBJ,
-    InvalidateRect, SelectObject, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT, UpdateWindow,
+    COLOR_WINDOW, CreateRoundRectRgn, DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE,
+    DT_VCENTER, DeleteObject, DrawFocusRect, DrawTextW, FillRect, FillRgn, FrameRgn, GetDC,
+    GetPixel, GetSysColorBrush, HDC, HGDIOBJ, InvalidateRect, RDW_ALLCHILDREN, RDW_ERASE,
+    RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow, ReleaseDC, SelectObject, SetBkColor, SetBkMode,
+    SetTextColor, TRANSPARENT, UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::{FindResourceW, GetModuleHandleW};
-use windows::Win32::System::SystemServices::{SS_CENTER, SS_CENTERIMAGE, SS_ICON};
+use windows::Win32::System::SystemServices::{
+    SS_CENTER, SS_CENTERIMAGE, SS_ICON, SS_OWNERDRAW, SS_TYPEMASK,
+};
 use windows::Win32::UI::Controls::Dialogs::{
     CommDlgExtendedError, GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY,
     OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 use windows::Win32::UI::Controls::{
-    BST_CHECKED, DRAWITEMSTRUCT, EM_SETCUEBANNER, EM_SETSEL, HDM_GETITEMCOUNT, ICC_BAR_CLASSES,
+    BST_CHECKED, CDDS_PREPAINT, CDIS_DISABLED, CDIS_FOCUS, CDIS_HOT, CDRF_SKIPDEFAULT,
+    DRAWITEMSTRUCT, EM_SETCUEBANNER, EM_SETSEL, HDM_GETITEMCOUNT, ICC_BAR_CLASSES,
     ICC_LISTVIEW_CLASSES, ICC_PROGRESS_CLASS, INITCOMMONCONTROLSEX, InitCommonControlsEx,
     LIST_VIEW_ITEM_STATE_FLAGS, LVCF_SUBITEM, LVCF_TEXT, LVCF_WIDTH, LVCFMT_LEFT, LVCOLUMNW,
     LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETECOLUMN, LVM_ENSUREVISIBLE,
-    LVM_GETHEADER, LVM_GETNEXTITEM, LVM_INSERTCOLUMNW, LVM_REDRAWITEMS, LVM_SETBKCOLOR,
-    LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMCOUNT, LVM_SETITEMSTATE, LVM_SETTEXTBKCOLOR,
-    LVM_SETTEXTCOLOR, LVN_GETDISPINFOW, LVN_ODCACHEHINT, LVNI_SELECTED, LVS_EX_DOUBLEBUFFER,
-    LVS_EX_FULLROWSELECT, LVS_OWNERDATA, LVS_REPORT, LVS_SHOWSELALWAYS, LVSICF_NOINVALIDATEALL,
-    LVSICF_NOSCROLL, NMHDR, NMLVCACHEHINT, NMLVDISPINFOW, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT,
-    ODS_SELECTED, ODT_BUTTON, PBM_SETMARQUEE, PBM_SETPOS, PBM_SETRANGE32, PBS_MARQUEE, PBS_SMOOTH,
-    PROGRESS_CLASSW, SetWindowTheme, WC_LISTVIEWW,
+    LVM_GETBKCOLOR, LVM_GETHEADER, LVM_GETNEXTITEM, LVM_INSERTCOLUMNW, LVM_REDRAWITEMS,
+    LVM_SETBKCOLOR, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMCOUNT, LVM_SETITEMSTATE,
+    LVM_SETTEXTBKCOLOR, LVM_SETTEXTCOLOR, LVN_GETDISPINFOW, LVN_ODCACHEHINT, LVNI_SELECTED,
+    LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT, LVS_OWNERDATA, LVS_REPORT, LVS_SHOWSELALWAYS,
+    LVSICF_NOINVALIDATEALL, LVSICF_NOSCROLL, NM_CUSTOMDRAW, NMCUSTOMDRAW, NMHDR, NMLVCACHEHINT,
+    NMLVDISPINFOW, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT, ODS_SELECTED, ODT_BUTTON, ODT_STATIC,
+    PBM_GETPOS, PBM_SETRANGE32, PBS_MARQUEE, PROGRESS_CLASSW, SetWindowTheme, WC_LISTVIEWW,
 };
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, GetKeyState, IsWindowEnabled, SetFocus, VK_ESCAPE, VK_RETURN, VK_SHIFT, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_FLAT, BS_OWNERDRAW, BS_PUSHBUTTON,
-    BS_TYPEMASK, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreatePopupMenu,
-    CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu, DestroyWindow,
-    DialogBoxParamW, DispatchMessageW, ES_AUTOHSCROLL, EndDialog, GCLP_HICON, GCLP_HICONSM,
-    GWL_STYLE, GWLP_USERDATA, GetClassLongPtrW, GetClientRect, GetDlgItemTextW, GetMessageW,
+    AppendMenuW, BM_CLICK, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_OWNERDRAW, BS_TYPEMASK,
+    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreatePopupMenu, CreateWindowExW,
+    DefWindowProcW, DestroyAcceleratorTable, DestroyMenu, DestroyWindow, DialogBoxParamW,
+    DispatchMessageW, ES_AUTOHSCROLL, EndDialog, GCLP_HICON, GCLP_HICONSM, GWL_STYLE,
+    GWLP_USERDATA, GetClassLongPtrW, GetClassNameW, GetClientRect, GetDlgItemTextW, GetMessageW,
     GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
     HACCEL, HICON, HMENU, IDC_ARROW, IDCANCEL, IDOK, IMAGE_ICON, IsWindow, IsWindowVisible,
     KillTimer, LR_SHARED, LoadAcceleratorsW, LoadCursorW, LoadImageW, MB_ICONERROR,
@@ -60,9 +67,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE,
     WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM,
     WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETMINMAXINFO, WM_INITDIALOG, WM_KEYDOWN,
-    WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE,
-    WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_CLIPCHILDREN,
-    WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
+    WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD,
+    WS_CLIPCHILDREN, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -88,6 +95,7 @@ const RESOURCE_ACCELERATOR_ID: usize = 102;
 const MAX_DOCUMENT_SMOKE_CELLS: usize = 4;
 const MAX_STARTUP_ERROR_UTF16_UNITS: usize = 4_096;
 const WM_APP_WORKER_READY: u32 = WM_APP + 1;
+const WM_APP_PRESENT_SHELL: u32 = WM_APP + 2;
 const DOCUMENT_SMOKE_TIMER_ID: usize = 1;
 const DOCUMENT_SMOKE_TIMEOUT_MS: u32 = 10_000;
 const ID_FILE_OPEN: u16 = 100;
@@ -111,6 +119,7 @@ const MAX_COPY_UTF16_UNITS: usize = MAX_COPY_BYTES / size_of::<u16>();
 const MAX_FIND_UTF16_UNITS: usize = 1_024;
 const EMPTY_TITLE_CAPTION: &str = "Open large files without loading them all.";
 const SHELL_SMOKE_TEXT_UNITS: usize = 64;
+const STATUS_PAINT_TEXT_UNITS: usize = 1_024;
 #[cfg(target_pointer_width = "32")]
 const DIALOG_USER_INDEX: WINDOW_LONG_PTR_INDEX = WINDOW_LONG_PTR_INDEX(8);
 #[cfg(target_pointer_width = "64")]
@@ -367,7 +376,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
             let _ = destroy_shell_window(window);
             return Err(error);
         }
-        show_shell_window(window);
+        post_initial_presentation(window)?;
         SmokeEvidence::default()
     };
 
@@ -491,6 +500,18 @@ fn run_smoke(
     state_pointer: *mut WindowState,
     controls_verified: &AtomicBool,
 ) -> Result<SmokeEvidence, ShellError> {
+    post_initial_presentation(window)?;
+    dispatch_initial_presentation(window)?;
+    // SAFETY: This handle was created on the current UI thread. A failed
+    // first presentation may already have destroyed it and reclaimed the
+    // attached state, so validate both the HWND and pointer slot before any
+    // raw-pointer dereference.
+    if !unsafe { IsWindow(Some(window)) }.as_bool() || state_pointer_for(window) != state_pointer {
+        return Err(ShellError::new(
+            "initial presentation destroyed or detached the smoke window",
+        ));
+    }
+    verify_initial_surface_colors(state_pointer)?;
     let verification = verify_shell_smoke(window, state_pointer, controls_verified);
     let shutdown = destroy_shell_window(window)
         .map_err(|error| ShellError::new(format!("smoke shutdown failed: {error}")));
@@ -499,12 +520,106 @@ fn run_smoke(
     Ok(evidence)
 }
 
+fn dispatch_initial_presentation(window: HWND) -> Result<(), ShellError> {
+    let mut message = MSG::default();
+    // SAFETY: The writable message is filtered to the pointer-free one-shot
+    // presentation message posted for this exact live window.
+    let result = unsafe {
+        GetMessageW(
+            &raw mut message,
+            Some(window),
+            WM_APP_PRESENT_SHELL,
+            WM_APP_PRESENT_SHELL,
+        )
+    };
+    if result.0 == -1 {
+        return Err(ShellError::new(format!(
+            "initial presentation retrieval failed: {}",
+            windows::core::Error::from_thread()
+        )));
+    }
+    if !result.as_bool() {
+        return Err(ShellError::new(
+            "initial presentation was interrupted by an unexpected quit",
+        ));
+    }
+    // SAFETY: GetMessageW populated this exact filtered message successfully.
+    unsafe { DispatchMessageW(&raw const message) };
+    Ok(())
+}
+
+fn verify_initial_surface_colors(state_pointer: *mut WindowState) -> Result<(), ShellError> {
+    // SAFETY: The initial presentation message leaves the attached state live.
+    let state = unsafe { state_pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("initial surface smoke state was detached"))?;
+    for (handle, expected, name) in [
+        (
+            state.chrome.topbar,
+            state.theme.palette.surface.colorref().0,
+            "top bar",
+        ),
+        (
+            state.chrome.status_backdrop,
+            state.theme.palette.surface_muted.colorref().0,
+            "status backdrop",
+        ),
+        (
+            state.status,
+            state.theme.palette.surface_muted.colorref().0,
+            "status text",
+        ),
+    ] {
+        verify_child_background_pixel(handle, expected, name)?;
+    }
+    Ok(())
+}
+
+fn verify_child_background_pixel(
+    handle: HWND,
+    expected: u32,
+    name: &str,
+) -> Result<(), ShellError> {
+    let mut client = RECT::default();
+    // SAFETY: The child is live after initial presentation and RECT is writable.
+    unsafe { GetClientRect(handle, &raw mut client) }
+        .map_err(|error| ShellError::new(format!("{name} geometry query failed: {error}")))?;
+    let width = client.right.saturating_sub(client.left);
+    let height = client.bottom.saturating_sub(client.top);
+    if width < 8 || height < 8 {
+        return Err(ShellError::new(format!(
+            "{name} is too small for bounded background verification"
+        )));
+    }
+    // SAFETY: The child owns this DC until the paired ReleaseDC below.
+    let device = unsafe { GetDC(Some(handle)) };
+    if device.0.is_null() {
+        return Err(ShellError::new(format!(
+            "{name} background verification could not acquire a DC"
+        )));
+    }
+    // Four pixels in from the upper-right corner avoids text, glyphs, and borders.
+    let actual = unsafe { GetPixel(device, width.saturating_sub(4), 4) }.0;
+    // SAFETY: This releases the exact HWND/DC pair acquired above.
+    let released = unsafe { ReleaseDC(Some(handle), device) };
+    if released == 0 {
+        return Err(ShellError::new(format!(
+            "{name} background verification could not release its DC"
+        )));
+    }
+    if actual != expected {
+        return Err(ShellError::new(format!(
+            "{name} did not paint the active theme on first presentation"
+        )));
+    }
+    Ok(())
+}
+
 fn verify_shell_smoke(
     window: HWND,
     state_pointer: *mut WindowState,
     controls_verified: &AtomicBool,
 ) -> Result<SmokeEvidence, ShellError> {
-    show_shell_window(window);
+    show_shell_window(window)?;
     // SAFETY: Window creation normally attaches this pointer through WM_NCCREATE.
     if let Some(state) = unsafe { state_pointer.as_mut() } {
         // SAFETY: Both handles were created on this UI thread and are queried read-only.
@@ -512,6 +627,8 @@ fn verify_shell_smoke(
             && unsafe { IsWindow(Some(state.status)) }.as_bool();
         if verified {
             verify_modern_shell_chrome(state)?;
+            verify_theme_button_cycle(window)?;
+            verify_progress_indicator(state)?;
             verify_native_presentation(window, state)?;
             controls_verified.store(true, Ordering::Release);
             let evidence = verify_smoke(
@@ -552,14 +669,38 @@ fn verify_modern_shell_chrome(state: &WindowState) -> Result<(), ShellError> {
     ] {
         verify_control_visibility(handle, name, false)?;
     }
-    for handle in [state.chrome.open, state.chrome.empty_open] {
+    for handle in [
+        state.chrome.find_previous,
+        state.chrome.find_next,
+        state.chrome.reload,
+        state.chrome.goto,
+        state.chrome.theme,
+        state.chrome.open,
+        state.chrome.more,
+        state.chrome.empty_open,
+    ] {
         // SAFETY: The handle is a live BUTTON child queried read-only during smoke.
         let style = unsafe { GetWindowLongPtrW(handle, GWL_STYLE) };
         let type_mask = isize::try_from(BS_TYPEMASK).unwrap_or_default();
         let owner_draw = isize::try_from(BS_OWNERDRAW).unwrap_or_default();
         if style & type_mask != owner_draw {
             return Err(ShellError::new(
-                "modern shell Open buttons are not owner-drawn",
+                "modern shell command buttons are not owner-drawn",
+            ));
+        }
+    }
+    let static_type_mask = isize::try_from(SS_TYPEMASK.0).unwrap_or_default();
+    let static_owner_draw = isize::try_from(SS_OWNERDRAW.0).unwrap_or_default();
+    for handle in [
+        state.chrome.topbar,
+        state.chrome.status_backdrop,
+        state.status,
+    ] {
+        // SAFETY: These are live STATIC children queried read-only.
+        let style = unsafe { GetWindowLongPtrW(handle, GWL_STYLE) };
+        if style & static_type_mask != static_owner_draw {
+            return Err(ShellError::new(
+                "modern shell background surfaces are not deterministically owner-drawn",
             ));
         }
     }
@@ -572,6 +713,191 @@ fn verify_modern_shell_chrome(state: &WindowState) -> Result<(), ShellError> {
     if copied != expected.clone().count() || !title[..copied].iter().copied().eq(expected) {
         return Err(ShellError::new(
             "modern shell empty-state title caption changed unexpectedly",
+        ));
+    }
+    Ok(())
+}
+
+fn verify_theme_button_cycle(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let original = unsafe { pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("theme smoke state is unavailable"))?
+        .theme
+        .preference;
+    let verification = (|| {
+        refresh_theme(window, ThemeMode::System)?;
+        verify_theme_runtime_state(window, ThemeMode::System)?;
+        for expected in [ThemeMode::Light, ThemeMode::Dark, ThemeMode::System] {
+            // SAFETY: BM_CLICK performs the real accessible BUTTON activation and
+            // synchronously routes ID_VIEW_THEME through the parent window.
+            unsafe {
+                SendMessageW(
+                    pointer
+                        .as_ref()
+                        .ok_or_else(|| ShellError::new("theme button state was detached"))?
+                        .chrome
+                        .theme,
+                    BM_CLICK,
+                    None,
+                    None,
+                );
+            }
+            verify_theme_runtime_state(window, expected)?;
+        }
+        Ok(())
+    })();
+    let restoration = refresh_theme(window, original);
+    if let Err(error) = restoration {
+        return Err(ShellError::new(format!(
+            "theme smoke could not restore the original preference: {error}"
+        )));
+    }
+    verification
+}
+
+fn verify_theme_runtime_state(window: HWND, expected: ThemeMode) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The state remains attached throughout synchronous smoke execution.
+    let state = unsafe { pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("theme runtime state is unavailable"))?;
+    let expected_effective = ThemeResources::new(expected, state.theme.metrics.dpi)?.effective;
+    if state.theme.preference != expected || state.theme.effective != expected_effective {
+        return Err(ShellError::new(format!(
+            "theme button did not apply the expected {expected:?} runtime state"
+        )));
+    }
+    if ThemeMode::load() != expected {
+        return Err(ShellError::new(format!(
+            "theme button did not persist the expected {expected:?} preference"
+        )));
+    }
+    verify_control_text(state.chrome.theme, expected.label(), "theme button")?;
+    // SAFETY: LVM_GETBKCOLOR is a pointer-free read of the live list-view palette.
+    let list_background = unsafe { SendMessageW(state.list, LVM_GETBKCOLOR, None, None) }.0;
+    let expected_background =
+        isize::try_from(state.theme.palette.surface.colorref().0).unwrap_or_default();
+    if list_background != expected_background {
+        return Err(ShellError::new(
+            "theme button did not apply its surface color to the row grid",
+        ));
+    }
+    // SAFETY: The top-level window and children repaint synchronously here.
+    let _ = unsafe { UpdateWindow(window) };
+    Ok(())
+}
+
+fn verify_control_text(handle: HWND, expected: &str, name: &str) -> Result<(), ShellError> {
+    let mut text = [0_u16; SHELL_SMOKE_TEXT_UNITS];
+    // SAFETY: handle is a live child and the fixed local buffer is writable.
+    let copied = unsafe { GetWindowTextW(handle, &mut text) };
+    let copied = usize::try_from(copied).unwrap_or_default().min(text.len());
+    let expected = expected.encode_utf16();
+    if copied != expected.clone().count() || !text[..copied].iter().copied().eq(expected) {
+        return Err(ShellError::new(format!(
+            "modern shell {name} caption changed unexpectedly"
+        )));
+    }
+    Ok(())
+}
+
+fn verify_progress_indicator(state: &WindowState) -> Result<(), ShellError> {
+    let progress = state.chrome.progress;
+    let mut class_name = [0_u16; 32];
+    // SAFETY: progress is a live child and the bounded class buffer is writable.
+    let class_units = unsafe { GetClassNameW(progress, &mut class_name) };
+    let class_units = usize::try_from(class_units)
+        .unwrap_or_default()
+        .min(class_name.len());
+    if !class_name[..class_units]
+        .iter()
+        .copied()
+        .eq("msctls_progress32".encode_utf16())
+    {
+        return Err(ShellError::new(
+            "flat progress rule no longer preserves the native progress class",
+        ));
+    }
+    // SAFETY: This is a read-only style query for the live progress child.
+    let style = unsafe { GetWindowLongPtrW(progress, GWL_STYLE) };
+    if style & isize::try_from(PBS_MARQUEE).unwrap_or_default() != 0 {
+        return Err(ShellError::new(
+            "flat progress rule unexpectedly retained marquee styling",
+        ));
+    }
+    let mut client = RECT::default();
+    // SAFETY: The child is live and the local RECT is writable.
+    unsafe { GetClientRect(progress, &raw mut client) }
+        .map_err(|error| ShellError::new(format!("progress geometry query failed: {error}")))?;
+    let width = client.right.saturating_sub(client.left);
+    let height = client.bottom.saturating_sub(client.top);
+    if width < 8 || height != state.theme.metrics.progress_height {
+        return Err(ShellError::new(
+            "flat progress rule does not match the LeanMark-aligned geometry",
+        ));
+    }
+
+    // SAFETY: The child belongs to this UI thread and is temporarily revealed
+    // solely for bounded pixel/value verification.
+    let _ = unsafe { ShowWindow(progress, SW_SHOW) };
+    progress::update_position(progress, 50);
+    let verification = (|| {
+        // SAFETY: PBM_GETPOS is a pointer-free semantic value query.
+        let position = unsafe { SendMessageW(progress, PBM_GETPOS, None, None) }.0;
+        if position != 50 {
+            return Err(ShellError::new(
+                "native progress accessibility value did not reach 50 percent",
+            ));
+        }
+        verify_progress_pixels(state, width, height)
+    })();
+    progress::update_position(progress, 0);
+    // SAFETY: Restore the loaded-smoke visibility contract unconditionally.
+    let _ = unsafe { ShowWindow(progress, SW_HIDE) };
+    verification?;
+    verify_control_visibility(progress, "progress indicator", false)
+}
+
+fn verify_progress_pixels(state: &WindowState, width: i32, height: i32) -> Result<(), ShellError> {
+    let progress = state.chrome.progress;
+    // SAFETY: The live child owns this DC until the paired ReleaseDC below.
+    let device = unsafe { GetDC(Some(progress)) };
+    if device.0.is_null() {
+        return Err(ShellError::new(
+            "progress pixel smoke could not acquire a DC",
+        ));
+    }
+    // SAFETY: WM_PRINTCLIENT synchronously paints into the supplied live HDC.
+    unsafe {
+        SendMessageW(
+            progress,
+            WM_PRINTCLIENT,
+            Some(WPARAM(device.0.addr())),
+            Some(LPARAM(0)),
+        );
+    }
+    let prefix = unsafe { GetPixel(device, width / 4, 0) };
+    let suffix = unsafe { GetPixel(device, width.saturating_mul(3) / 4, 0) };
+    let lower_suffix = unsafe {
+        GetPixel(
+            device,
+            width.saturating_mul(3) / 4,
+            height.saturating_sub(1),
+        )
+    };
+    // SAFETY: This releases the exact HWND/DC pair acquired above.
+    let released = unsafe { ReleaseDC(Some(progress), device) };
+    if released == 0 {
+        return Err(ShellError::new(
+            "progress pixel smoke could not release its DC",
+        ));
+    }
+    if prefix != state.theme.palette.accent.colorref()
+        || suffix != state.theme.palette.surface.colorref()
+        || lower_suffix != state.theme.palette.border.colorref()
+    {
+        return Err(ShellError::new(
+            "flat progress pixels do not match the LeanMark accent/surface/border contract",
         ));
     }
     Ok(())
@@ -653,12 +979,37 @@ fn header_column_count(list: HWND) -> Option<i32> {
     i32::try_from(count).ok().filter(|value| *value >= 0)
 }
 
-fn show_shell_window(window: HWND) {
+fn show_shell_window(window: HWND) -> Result<(), ShellError> {
     // SAFETY: All callers supply a live top-level HWND owned by this UI thread.
-    unsafe {
-        let _ = ShowWindow(window, SW_SHOWDEFAULT);
-        let _ = UpdateWindow(window);
+    let _ = unsafe { ShowWindow(window, SW_SHOWDEFAULT) };
+    let pointer = state_pointer_for(window);
+    // SAFETY: ShowWindow does not detach the parent-owned state.
+    let preference = unsafe { pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("window state is unavailable during first presentation"))?
+        .theme
+        .preference;
+    // Reapply after every child is visible and laid out. Hidden controls can
+    // discard their initial invalidation, which previously left a fresh
+    // System-dark status strip painted with the class's light background.
+    refresh_theme(window, preference)?;
+    // SAFETY: The refreshed parent and child update regions are painted before
+    // startup returns to the message loop.
+    let _ = unsafe { UpdateWindow(window) };
+    Ok(())
+}
+
+fn post_initial_presentation(window: HWND) -> Result<(), ShellError> {
+    // SAFETY: This posts a pointer-free private message to the live UI window.
+    unsafe { PostMessageW(Some(window), WM_APP_PRESENT_SHELL, WPARAM(0), LPARAM(0)) }
+        .map_err(|error| ShellError::new(format!("initial presentation post failed: {error}")))
+}
+
+fn handle_initial_presentation(window: HWND) -> LRESULT {
+    if let Err(error) = show_shell_window(window) {
+        show_startup_error(&error.to_string());
+        let _ = destroy_shell_window(window);
     }
+    LRESULT(0)
 }
 
 fn load_accelerators(instance: HINSTANCE) -> Result<AcceleratorGuard, ShellError> {
@@ -871,9 +1222,23 @@ fn refresh_theme(window: HWND, preference: ThemeMode) -> Result<(), ShellError> 
     result?;
     let _ = preference.save();
     layout_children(window);
-    // SAFETY: A full repaint is required after brushes and fonts change.
-    let _ = unsafe { InvalidateRect(Some(window), None, true) };
-    Ok(())
+    redraw_shell_children(window)
+}
+
+fn redraw_shell_children(window: HWND) -> Result<(), ShellError> {
+    // SAFETY: The UI-thread-owned window and every child must repaint from the
+    // current theme after preference changes or worker-driven text updates.
+    unsafe {
+        RedrawWindow(
+            Some(window),
+            None,
+            None,
+            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+        )
+    }
+    .as_bool()
+    .then_some(())
+    .ok_or_else(|| ShellError::new("native child surfaces could not be repainted"))
 }
 
 fn show_find_dialog(window: HWND) -> Result<(), ShellError> {
@@ -1489,17 +1854,64 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
             )),
         );
     }
-    if matches!(state.theme.effective, EffectiveTheme::Light) {
-        // SAFETY: Explorer is a documented common-control theme class.
-        let _ = unsafe { SetWindowTheme(state.list, w!("Explorer"), PCWSTR::null()) };
-        if let Some(header) = list_header(state.list) {
-            // SAFETY: The header is owned by the live list view.
-            let _ = unsafe { SetWindowTheme(header, w!("Explorer"), PCWSTR::null()) };
-        }
+    let visual_class = if matches!(state.theme.effective, EffectiveTheme::Light) {
+        w!("Explorer")
+    } else {
+        w!("")
+    };
+    let visual_subclass = if matches!(state.theme.effective, EffectiveTheme::Light) {
+        PCWSTR::null()
+    } else {
+        w!("")
+    };
+    // SAFETY: These controls are live on this UI thread. An empty class/subclass
+    // pair is the documented way to disable visual-style painting so the app's
+    // explicit dark/high-contrast colors are not overwritten by light chrome.
+    unsafe {
+        let _ = SetWindowTheme(state.list, visual_class, visual_subclass);
+        let _ = SetWindowTheme(state.chrome.search_edit, visual_class, visual_subclass);
+        let _ = SetWindowTheme(state.chrome.match_case, visual_class, visual_subclass);
     }
     let _ = state.theme.apply_window_chrome(state.window);
     set_control_text(state.chrome.theme, state.theme.preference.label())?;
+    invalidate_native_presentation(state);
     Ok(())
+}
+
+fn invalidate_native_presentation(state: &WindowState) {
+    for handle in [
+        state.window,
+        state.list,
+        state.status,
+        state.chrome.topbar,
+        state.chrome.file_name,
+        state.chrome.file_meta,
+        state.chrome.search_edit,
+        state.chrome.match_case,
+        state.chrome.find_previous,
+        state.chrome.find_next,
+        state.chrome.reload,
+        state.chrome.goto,
+        state.chrome.theme,
+        state.chrome.open,
+        state.chrome.more,
+        state.chrome.empty_eyebrow,
+        state.chrome.empty_title,
+        state.chrome.empty_body,
+        state.chrome.empty_open,
+        state.chrome.status_backdrop,
+    ] {
+        if !handle.0.is_null() {
+            // SAFETY: Every HWND is owned by this UI thread and repaints after
+            // the new theme resources have replaced the previous resource set.
+            let _ = unsafe { InvalidateRect(Some(handle), None, true) };
+        }
+    }
+    if let Some(header) = list_header(state.list) {
+        // SAFETY: The header is owned by the live list view.
+        let _ = unsafe { InvalidateRect(Some(header), None, false) };
+    }
+    progress::invalidate(state.chrome.progress);
 }
 
 fn apply_font(handle: HWND, font: windows::Win32::Graphics::Gdi::HFONT) {
@@ -1524,6 +1936,13 @@ fn list_header(list: HWND) -> Option<HWND> {
 }
 
 fn apply_shell_visibility(state: &WindowState) {
+    for handle in [
+        state.chrome.topbar,
+        state.chrome.status_backdrop,
+        state.status,
+    ] {
+        set_control_visible(handle, true);
+    }
     set_control_visible(state.list, state.grid_visible);
     for handle in [
         state.chrome.empty_eyebrow,
@@ -1705,7 +2124,7 @@ unsafe extern "system" fn window_proc(
             control_color(window, wparam, lparam)
         }
         WM_DRAWITEM => {
-            if draw_primary_button(window, lparam) {
+            if draw_shell_surface(window, lparam) || draw_shell_button(window, lparam) {
                 LRESULT(1)
             } else {
                 // SAFETY: Unhandled owner-draw messages retain default processing.
@@ -1724,10 +2143,10 @@ unsafe extern "system" fn window_proc(
             refresh_current_theme(window);
             LRESULT(0)
         }
-        WM_NOTIFY => {
+        WM_NOTIFY => handle_custom_draw(window, lparam).unwrap_or_else(|| {
             handle_list_notification(window, lparam);
             LRESULT(0)
-        }
+        }),
         WM_COMMAND => {
             if let Ok(command) = u16::try_from(wparam.0 & 0xffff)
                 && (command != ID_SEARCH_MATCH_CASE || lparam.0 == 0)
@@ -1744,6 +2163,7 @@ unsafe extern "system" fn window_proc(
             apply_worker_event(window);
             LRESULT(0)
         }
+        WM_APP_PRESENT_SHELL => handle_initial_presentation(window),
         WM_TIMER if wparam.0 == DOCUMENT_SMOKE_TIMER_ID => {
             // SAFETY: This timer was created for this HWND with the same identifier.
             let _ = unsafe { KillTimer(Some(window), DOCUMENT_SMOKE_TIMER_ID) };
@@ -1925,7 +2345,7 @@ fn control_color(window: HWND, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     LRESULT(isize::try_from(brush.0.addr()).unwrap_or_default())
 }
 
-fn draw_primary_button(window: HWND, lparam: LPARAM) -> bool {
+fn draw_shell_button(window: HWND, lparam: LPARAM) -> bool {
     if lparam.0 == 0 {
         return false;
     }
@@ -1939,25 +2359,100 @@ fn draw_primary_button(window: HWND, lparam: LPARAM) -> bool {
     let Some(state) = (unsafe { pointer.as_ref() }) else {
         return false;
     };
-    let background = if item.hwndItem == state.chrome.open {
+    let is_primary = item.hwndItem == state.chrome.open || item.hwndItem == state.chrome.empty_open;
+    let is_command = [
+        state.chrome.find_previous,
+        state.chrome.find_next,
+        state.chrome.reload,
+        state.chrome.goto,
+        state.chrome.theme,
+        state.chrome.more,
+    ]
+    .contains(&item.hwndItem);
+    if !is_primary && !is_command {
+        return false;
+    }
+    paint_shell_button(state, item, is_primary)
+}
+
+fn draw_shell_surface(window: HWND, lparam: LPARAM) -> bool {
+    if lparam.0 == 0 {
+        return false;
+    }
+    // SAFETY: WM_DRAWITEM supplies a live DRAWITEMSTRUCT for this synchronous call.
+    let item = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
+    if item.CtlType != ODT_STATIC {
+        return false;
+    }
+    let pointer = state_pointer_for(window);
+    // SAFETY: State and child handles remain attached throughout message dispatch.
+    let Some(state) = (unsafe { pointer.as_ref() }) else {
+        return false;
+    };
+    let brush = if item.hwndItem == state.chrome.topbar {
         state.theme.brushes.surface()
-    } else if item.hwndItem == state.chrome.empty_open {
-        state.theme.brushes.canvas()
+    } else if item.hwndItem == state.chrome.status_backdrop || item.hwndItem == state.status {
+        state.theme.brushes.surface_muted()
     } else {
         return false;
+    };
+    // SAFETY: The control-provided HDC, bounds, and theme brush are live here.
+    unsafe {
+        let _ = FillRect(item.hDC, &raw const item.rcItem, brush);
+    }
+    if item.hwndItem == state.status {
+        paint_status_text(state, item);
+    }
+    true
+}
+
+fn paint_status_text(state: &WindowState, item: &DRAWITEMSTRUCT) {
+    let mut text = [0_u16; STATUS_PAINT_TEXT_UNITS];
+    // SAFETY: The status HWND is live and the fixed local buffer is writable.
+    let length = unsafe { GetWindowTextW(state.status, &mut text) };
+    let length = usize::try_from(length).unwrap_or_default().min(text.len());
+    // SAFETY: The HDC belongs to this draw callback; theme resources outlive it.
+    unsafe {
+        let previous_font = SelectObject(item.hDC, HGDIOBJ(state.theme.fonts.caption().0));
+        let _ = SetBkMode(item.hDC, TRANSPARENT);
+        let _ = SetTextColor(item.hDC, state.theme.palette.text_secondary.colorref());
+        let mut bounds = item.rcItem;
+        let _ = DrawTextW(
+            item.hDC,
+            &mut text[..length],
+            &raw mut bounds,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+        );
+        if !previous_font.is_invalid() {
+            let _ = SelectObject(item.hDC, previous_font);
+        }
+    }
+}
+
+fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bool) -> bool {
+    let background = if item.hwndItem == state.chrome.empty_open {
+        state.theme.brushes.canvas()
+    } else {
+        state.theme.brushes.surface()
     };
 
     let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
     let selected = item.itemState.0 & ODS_SELECTED.0 != 0;
     let brush = if disabled {
         state.theme.brushes.surface_muted()
-    } else {
+    } else if is_primary {
         state.theme.brushes.accent()
+    } else if selected {
+        state.theme.brushes.surface_muted()
+    } else {
+        state.theme.brushes.surface()
     };
     let foreground = if disabled {
         state.theme.palette.text_disabled
-    } else {
+    } else if is_primary {
         state.theme.palette.accent_text
+    } else {
+        state.theme.palette.text_primary
     };
     let radius = state.theme.metrics.radius_small.saturating_mul(2);
     let region = unsafe {
@@ -2023,6 +2518,137 @@ fn draw_primary_button(window: HWND, lparam: LPARAM) -> bool {
     true
 }
 
+fn handle_custom_draw(window: HWND, lparam: LPARAM) -> Option<LRESULT> {
+    if lparam.0 == 0 {
+        return None;
+    }
+    let pointer = state_pointer_for(window);
+    // SAFETY: Every WM_NOTIFY payload starts with a readable NMHDR and the
+    // attached state remains alive throughout this synchronous callback.
+    let (Some(state), header) = (unsafe { pointer.as_ref() }, unsafe {
+        &*(lparam.0 as *const NMHDR)
+    }) else {
+        return None;
+    };
+    if header.hwndFrom != state.chrome.match_case || header.code != NM_CUSTOMDRAW {
+        return None;
+    }
+    // SAFETY: NM_CUSTOMDRAW identifies the exact payload type.
+    let custom = unsafe { &*(lparam.0 as *const NMCUSTOMDRAW) };
+    if custom.dwDrawStage != CDDS_PREPAINT || !draw_match_case(state, custom) {
+        return None;
+    }
+    Some(LRESULT(
+        isize::try_from(CDRF_SKIPDEFAULT).unwrap_or_default(),
+    ))
+}
+
+fn draw_match_case(state: &WindowState, custom: &NMCUSTOMDRAW) -> bool {
+    let bounds = custom.rc;
+    let height = bounds.bottom.saturating_sub(bounds.top);
+    if height <= 0 || bounds.right <= bounds.left {
+        return false;
+    }
+    let disabled = custom.uItemState.contains(CDIS_DISABLED);
+    let hot = custom.uItemState.contains(CDIS_HOT);
+    let background = if hot {
+        state.theme.brushes.surface_muted()
+    } else {
+        state.theme.brushes.surface()
+    };
+    let foreground = if disabled {
+        state.theme.palette.text_disabled
+    } else {
+        state.theme.palette.text_primary
+    };
+    let box_size = state.theme.metrics.icon_small.min(height).max(1);
+    let box_left = bounds.left.saturating_add(state.theme.metrics.space_1);
+    let box_top = bounds
+        .top
+        .saturating_add(height.saturating_sub(box_size) / 2);
+    let check_bounds = RECT {
+        left: box_left,
+        top: box_top,
+        right: box_left.saturating_add(box_size),
+        bottom: box_top.saturating_add(box_size),
+    };
+    let radius = state.theme.metrics.radius_small.max(1);
+    // SAFETY: The bounded rectangle defines a temporary region owned here.
+    let region = unsafe {
+        CreateRoundRectRgn(
+            check_bounds.left,
+            check_bounds.top,
+            check_bounds.right,
+            check_bounds.bottom,
+            radius,
+            radius,
+        )
+    };
+    if region.is_invalid() {
+        return false;
+    }
+    // SAFETY: The control-provided HDC and theme-owned brushes/fonts remain
+    // valid for this synchronous custom-draw stage.
+    unsafe {
+        let _ = FillRect(custom.hdc, &raw const bounds, background);
+        let _ = FillRgn(custom.hdc, region, state.theme.brushes.surface());
+        let border_width = state.theme.metrics.border_width.max(1);
+        let _ = FrameRgn(
+            custom.hdc,
+            region,
+            state.theme.brushes.border(),
+            border_width,
+            border_width,
+        );
+        let _ = DeleteObject(HGDIOBJ(region.0));
+        let previous_font = SelectObject(custom.hdc, HGDIOBJ(state.theme.fonts.body().0));
+        let _ = SetBkMode(custom.hdc, TRANSPARENT);
+        if inline_match_case(state.chrome.match_case) {
+            let _ = SetTextColor(custom.hdc, state.theme.palette.accent.colorref());
+            let mut check = [0x2713_u16];
+            let mut check_text_bounds = check_bounds;
+            let _ = DrawTextW(
+                custom.hdc,
+                &mut check,
+                &raw mut check_text_bounds,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
+        let _ = SetTextColor(custom.hdc, foreground.colorref());
+        let mut label = [0_u16; 64];
+        let length = GetWindowTextW(state.chrome.match_case, &mut label);
+        let length = usize::try_from(length).unwrap_or_default().min(label.len());
+        let mut label_bounds = RECT {
+            left: check_bounds
+                .right
+                .saturating_add(state.theme.metrics.space_2),
+            top: bounds.top,
+            right: bounds.right,
+            bottom: bounds.bottom,
+        };
+        let _ = DrawTextW(
+            custom.hdc,
+            &mut label[..length],
+            &raw mut label_bounds,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+        if !previous_font.is_invalid() {
+            let _ = SelectObject(custom.hdc, previous_font);
+        }
+        if custom.uItemState.contains(CDIS_FOCUS) {
+            let inset = state.theme.metrics.space_1.max(2);
+            let focus = RECT {
+                left: bounds.left.saturating_add(inset),
+                top: bounds.top.saturating_add(inset),
+                right: bounds.right.saturating_sub(inset),
+                bottom: bounds.bottom.saturating_sub(inset),
+            };
+            let _ = DrawFocusRect(custom.hdc, &raw const focus);
+        }
+    }
+    true
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "one linear construction path keeps partial Win32 child ownership auditable"
@@ -2040,7 +2666,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         window,
         w!("STATIC"),
         w!(""),
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | static_style(SS_OWNERDRAW.0),
         None,
     )?;
     let wordmark = create_child(
@@ -2097,14 +2723,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         Some(ID_FILE_OPEN),
     )?;
     let more = create_button(instance, window, w!("..."), ID_APP_MORE)?;
-    let progress = create_child(
-        instance,
-        window,
-        PROGRESS_CLASSW,
-        w!(""),
-        WS_CHILD | WINDOW_STYLE(PBS_SMOOTH | PBS_MARQUEE),
-        None,
-    )?;
+    let progress = create_child(instance, window, PROGRESS_CLASSW, w!(""), WS_CHILD, None)?;
     let list = create_child(
         instance,
         window,
@@ -2152,7 +2771,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         window,
         w!("STATIC"),
         w!(""),
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | static_style(SS_OWNERDRAW.0),
         None,
     )?;
     let status = create_child(
@@ -2160,7 +2779,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         window,
         w!("STATIC"),
         w!("Ready"),
-        WS_CHILD | WS_VISIBLE | static_style(SS_CENTERIMAGE.0),
+        WS_CHILD | static_style(SS_OWNERDRAW.0 | SS_CENTERIMAGE.0),
         None,
     )?;
 
@@ -2219,6 +2838,9 @@ fn create_children(window: HWND) -> Result<(), ()> {
         );
         SendMessageW(progress, PBM_SETRANGE32, Some(WPARAM(0)), Some(LPARAM(100)));
     }
+    progress::install_subclass(progress, window).map_err(|_| ())?;
+    let header = list_header(list).ok_or(())?;
+    header::install_subclass(header, window).map_err(|_| ())?;
     apply_native_presentation(state).map_err(|_| ())?;
     apply_shell_visibility(state);
     state
@@ -2281,7 +2903,7 @@ fn create_button(
         parent,
         w!("BUTTON"),
         text,
-        WS_CHILD | WS_TABSTOP | control_style(BS_PUSHBUTTON | BS_FLAT),
+        WS_CHILD | WS_TABSTOP | control_style(BS_OWNERDRAW),
         Some(identifier),
     )
 }
@@ -2730,13 +3352,8 @@ fn queue_path(window: HWND, path: PathBuf) -> Result<(), ShellError> {
             Some(WPARAM(0)),
             Some(LPARAM(0)),
         );
-        SendMessageW(
-            state.chrome.progress,
-            PBM_SETMARQUEE,
-            Some(WPARAM(1)),
-            Some(LPARAM(24)),
-        );
     }
+    progress::update_position(state.chrome.progress, 0);
     set_status_handle(state.status, "Opening file...");
     Ok(())
 }
@@ -2808,21 +3425,7 @@ fn update_progress_presentation(state: &mut WindowState, event: &WorkerEvent) {
     let terminal = matches!(event.phase, WorkerPhase::Complete | WorkerPhase::Failed);
     state.progress_visible = !terminal;
     let percent = progress_percent(event.progress.scanned_bytes, event.progress.source_bytes);
-    // SAFETY: Progress messages carry bounded integers and no pointers.
-    unsafe {
-        SendMessageW(
-            state.chrome.progress,
-            PBM_SETMARQUEE,
-            Some(WPARAM(0)),
-            Some(LPARAM(0)),
-        );
-        SendMessageW(
-            state.chrome.progress,
-            PBM_SETPOS,
-            Some(WPARAM(usize::try_from(percent).unwrap_or(100))),
-            Some(LPARAM(0)),
-        );
-    }
+    progress::update_position(state.chrome.progress, percent);
 }
 
 fn document_title(path: &Path) -> Result<Vec<u16>, ShellError> {
@@ -2954,6 +3557,10 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
         return state.document_smoke;
     }
     set_status_handle(state.status, &status_text);
+    if let Err(error) = redraw_shell_children(window) {
+        set_status_handle(state.status, &format!("Display refresh failed: {error}"));
+        return state.document_smoke;
+    }
 
     if !state.document_smoke {
         return false;

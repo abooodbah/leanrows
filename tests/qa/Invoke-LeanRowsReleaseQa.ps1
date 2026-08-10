@@ -312,6 +312,7 @@ try {
                 open_view_observed = [bool]$network.actions.open_view_observed
                 native_seek_completed = [bool]$network.actions.native_seek_completed
                 reload_completed = [bool]$network.actions.reload_completed
+                reload_view_reset_observed = [bool]$network.actions.reload_view_reset_observed
                 clean_close_observed = [bool]$network.actions.clean_close_observed
                 synthetic_disposable_fixture_attested = [bool]$network.source.synthetic_disposable_fixture_attested
                 source_unchanged = [bool]$network.source.unchanged

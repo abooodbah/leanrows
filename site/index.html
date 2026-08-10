@@ -33,7 +33,7 @@
         "description": "A bounded, offline, native Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files.",
         "applicationCategory": "UtilitiesApplication",
         "operatingSystem": "Windows 10 and Windows 11 (x64)",
-        "softwareVersion": "0.1.2",
+        "softwareVersion": "0.1.3",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -95,7 +95,7 @@
                 <span aria-hidden="true">→</span>
               </a>
               <p id="release-note">
-                v0.1.2 is an unsigned Windows x64 ZIP. Verify the accompanying
+                v0.1.3 is an unsigned Windows x64 ZIP. Verify the accompanying
                 <code>.sha256</code> file before running it.
               </p>
             </div>
@@ -150,14 +150,18 @@
               <h2 id="capture-title">Full rows. A calmer frame.</h2>
             </div>
             <p>
-              LeanRows v0.1.2 places the virtual owner-data grid below a responsive
-              top bar with file context, inline search, and direct actions. Warm,
-              opaque surfaces keep the hierarchy clear. System and Light are the
-              available appearance choices; Windows high contrast uses system colors.
-              The capture uses only synthetic data from
-              <code>operations-sample.csv</code>: all 120 rows are indexed, with
-              rows 1&ndash;29 visible across six data columns. The source hash was
-              unchanged after viewing.
+              LeanRows v0.1.3 keeps the virtual owner-data grid below a responsive
+              top bar with file context, inline search, and direct actions. System
+              follows the active Windows app theme, while the appearance button cycles
+              through System, Light, and Dark. Indexing progress uses a flat two-DIP
+              accent rule, and Windows high contrast uses system colors. The image
+              below is an exact 1180&times;720 capture of the frozen v0.1.3 release
+              executable in Light appearance. It uses only synthetic data from
+              <code>operations-sample.csv</code>: all 120 rows across six fields are
+              indexed, and the status reads
+              <code>Ready | 120 rows | 7600 / 7600 bytes | 100%</code>. The binary and
+              fixture were unchanged, the saved System preference was restored, and
+              the application closed cleanly.
             </p>
           </div>
 
@@ -173,12 +177,12 @@
                 height="720"
                 loading="lazy"
                 decoding="async"
-                alt="LeanRows v0.1.2 native Windows window with a warm responsive top bar, inline search, and rows 1 through 29 of the fully indexed 120-row synthetic operations-sample.csv across six data columns"
+                alt="LeanRows v0.1.3 frozen Windows release in Light appearance showing the fully indexed 120-row synthetic operations-sample.csv across six fields with Ready and 100 percent status"
               >
             </a>
             <figcaption>
               <strong>Real application capture.</strong>
-              <span>Frozen v0.1.2 x64 build &middot; synthetic fixture &middot; native owner-data grid</span>
+              <span>Frozen v0.1.3 x64 build &middot; Light appearance &middot; synthetic fixture &middot; native owner-data grid</span>
             </figcaption>
           </figure>
         </div>
@@ -323,10 +327,13 @@
               checksum contract on the pinned Rust toolchain.
             </p>
             <p>
-              The repository also contains document, random-seek, sparse logical-scale,
-              source-preservation, and whole-process-tree memory harnesses. Results are
-              kept separate from product claims until they are captured against the final
-              release binary.
+              The frozen local v0.1.3 candidate passed 25/25 aggregate checks against
+              its exact release binary, including document, random-seek, sparse
+              logical-scale, source-preservation, network-observation, and
+              whole-process-tree memory checks. The tagged release workflow separately
+              verifies the release commit, rebuild, quality gates, package checksum,
+              and published assets; the local receipt is not a substitute for that
+              tagged proof.
             </p>
             <a class="text-link" href="https://github.com/abooodbah/leanrows/tree/main/tests/qa">
               Inspect the QA harnesses <span aria-hidden="true">↗</span>
@@ -338,7 +345,7 @@
       <section class="release-note-section" aria-labelledby="release-warning-title">
         <div class="shell release-note-grid">
           <div>
-            <p class="eyebrow">Before installing v0.1.2</p>
+            <p class="eyebrow">Before installing v0.1.3</p>
             <h2 id="release-warning-title">The Windows build is intentionally unsigned.</h2>
           </div>
           <div>
@@ -347,7 +354,7 @@
               matching SHA-256 sidecar from the same GitHub Release, then compare the
               published value before running or installing LeanRows.
             </p>
-            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.1.2-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
+            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.1.3-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
             <p class="small-copy">
               Installation is per-user and requires no administrator access. Protected
               Windows choices are preserved; direct defaults are recorded and changed

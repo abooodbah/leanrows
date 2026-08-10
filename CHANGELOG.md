@@ -4,6 +4,26 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-08-09
+
+### Fixed
+
+- Fixed System appearance so it follows the active Windows app theme instead
+  of always resolving to Light.
+- Restored the complete System, Light, and Dark appearance cycle, including
+  persistence of an explicit Dark selection.
+- Applied the selected appearance consistently to native child controls while
+  retaining their native roles, keyboard behavior, and accessibility
+  semantics.
+
+### Changed
+
+- Replaced the platform progress animation with a flat, two-DIP rule below the
+  top bar. Its accent prefix tracks indexing progress without a marquee.
+- Strengthened the native shell smoke to exercise the full appearance cycle,
+  persistence and runtime repainting, and the progress control's class, value,
+  style, and rendered pixels.
+
 ## [0.1.2] - 2026-08-09
 
 ### Added
@@ -77,6 +97,7 @@ All notable changes to LeanRows are recorded in this file. The format follows
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.1.3]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.3
 [0.1.2]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.2
 [0.1.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.1
 [0.1.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.0

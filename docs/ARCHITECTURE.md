@@ -5,7 +5,7 @@ of row-oriented local files. The source file remains the primary backing store;
 the application does not import the document into a database or construct a
 whole-file in-memory model.
 
-This document describes the 0.1.2 implementation. Future candidates are kept
+This document describes the 0.1.3 implementation. Future candidates are kept
 in the [roadmap](../ROADMAP.md) rather than presented as current behavior.
 
 ## System boundary
@@ -40,12 +40,13 @@ The production interface uses Win32 common controls. It does not embed a
 browser engine, start a helper process, or use a GUI framework with a second
 runtime.
 
-The 0.1.2 shell uses warm, opaque surfaces, dark text, a single blue action
-accent, and restrained one-pixel rules. Its top bar arranges file identity,
-inline search, and document commands in wide, default, or narrow layouts based
-on the DPI-scaled client width. Commands that do not fit remain available
-through the overflow control. This responsive shell changes placement and
-presentation; it does not change how document rows are owned or loaded.
+The 0.1.3 shell uses warm, opaque light surfaces, coordinated dark surfaces, a
+single blue action accent, and restrained rules. Its top bar arranges file
+identity, inline search, and document commands in wide, default, or narrow
+layouts based on the DPI-scaled client width. Commands that do not fit remain
+available through the overflow control. This responsive shell changes
+placement and presentation; it does not change how document rows are owned or
+loaded.
 
 ## Open and snapshot semantics
 
@@ -123,9 +124,11 @@ positions as 64-bit values while respecting the native control's finite item
 range.
 
 The top bar, progress rule, owner-data grid, empty state, and status strip are
-laid out as one DPI-aware client area. Resizing selects a layout band rather
-than creating another copy of the controls. The grid remains the only document
-row surface in every band.
+laid out as one DPI-aware client area. The progress indicator retains its
+native `PROGRESS_CLASS` identity but uses application painting: a flat,
+two-DIP rule at y=55 below the 56-DIP top bar, with an accent prefix and no
+marquee. Resizing selects a layout band rather than creating another copy of
+the controls. The grid remains the only document row surface in every band.
 
 ## Memory accounting
 
@@ -158,14 +161,17 @@ letters only. The 0.1 query path does not implement regular expressions.
 
 ## Accessibility and rendering
 
-The window, top-bar controls, virtual grid, and row items retain native
-accessibility semantics, with bounded Microsoft Active Accessibility names
-where the application supplies them. The interface exposes System and Light
-appearance choices; 0.1.2 does not claim a native dark theme. When Windows high
-contrast is active, application colors yield to the applicable system colors.
-Keyboard focus remains visible, and per-monitor DPI changes rebuild the layout
-metrics and fonts. Cached UTF-16 cells are NUL-terminated before they reach the
-native control.
+The window, top-bar controls, virtual grid, progress control, and row items
+retain native accessibility semantics, with bounded Microsoft Active
+Accessibility names where the application supplies them. The appearance
+button cycles System, Light, Dark, and back to System. System resolves the
+active Windows app theme, while explicit Light and Dark choices remain stable
+across restarts. Documented Windows theme and custom-draw APIs apply the
+effective appearance to child controls without changing their native roles.
+When Windows high contrast is active, application colors yield to the
+applicable system colors. Keyboard focus remains visible, and per-monitor DPI
+changes rebuild the layout metrics and fonts. Cached UTF-16 cells are
+NUL-terminated before they reach the native control.
 
 Displayed file content is inert text. It is not interpreted as HTML, ANSI
 commands, a spreadsheet formula, a file path, a URL, or executable input.

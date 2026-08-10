@@ -37,14 +37,24 @@ or accessibility testing.
 - The four numeric values on the page are implementation capacity constants,
   not performance results. Reconcile them with `document_engine.rs` if those
   limits change.
-- Do not add memory, startup, file-size, or seek measurements until the final
-  packaged binary has a stable QA receipt that records its exact hash.
+- Runtime measurements must identify the exact executable and stable QA
+  receipt. The current local evidence is tied to executable SHA-256
+  `F8394AC84BFDD1E4857AF087B509088B5586172048A499E761DF0D5701F8A7A1`
+  and `artifacts/qa/v0.1.3-final-frozen-pass/qa-receipt.json`. Do not present
+  this pre-commit evidence as tagged or publicly verified.
 - The architecture visual is intentionally labeled as an explanatory diagram.
   The separate application figure is a real 1180x720 capture of the frozen
-  release binary using only a generated synthetic six-column fixture; replace
-  it only with another equivalently verified capture, never a fabricated
-  application screenshot.
-- Current interface copy must retain the verified v0.1.2 boundaries: warm
-  opaque surfaces, a responsive top bar, inline search, the owner-data grid,
-  System and Light appearance choices, and the Windows high-contrast
-  system-color fallback. Do not imply a native dark theme.
+  v0.1.3 executable in Light appearance using the generated 120-row,
+  six-field `operations-sample.csv` fixture. The image is 67,555 bytes with
+  SHA-256
+  `40B5C9B9358FAC0A0882005333876255F551997D8EBB84C8A050F3DE8284C011`.
+  It records `Ready | 120 rows | 7600 / 7600 bytes | 100%`; the binary and
+  fixture remained unchanged, the saved System preference was restored, and
+  the application closed cleanly. Never substitute a fabricated screenshot.
+- Current interface copy must retain the v0.1.3 boundaries: a responsive top
+  bar, inline search, the owner-data grid, System/Light/Dark appearance, System
+  resolution from the active Windows app theme, a flat two-DIP progress rule,
+  and the Windows high-contrast system-color fallback.
+- Local release-evidence copy may state the 25/25 final-frozen result, but it
+  must distinguish that receipt from the tagged workflow's independent release
+  commit, rebuild, quality-gate, checksum, and published-asset verification.

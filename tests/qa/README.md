@@ -61,6 +61,10 @@ between samples. Raw addresses, ports, and endpoint objects are never written
 to evidence. A missing cmdlet, failed sample, observed TCP connection or UDP
 endpoint, sample-start gap beyond the configured bound, incomplete UI action,
 changed source, forced cleanup, or residual process fails the gate closed.
+Reload requires synchronous command delivery followed by either the transient
+empty list or a durable top-index reset from the sought viewport and a positive
+repopulated row count. This avoids treating a fast worker refill as a failure
+without weakening the reload proof.
 The supplied fixture must be bounded and located below a system-temporary root
 whose `.support_tool_fixture_root` sentinel contains `synthetic_self_test`.
 

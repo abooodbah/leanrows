@@ -383,6 +383,8 @@ $seekPageCount = $null
 $seekCompleted = $false
 $reloadCommandDelivered = $false
 $reloadEmptyViewObserved = $false
+$reloadViewResetObserved = $false
+$reloadTopAfter = $null
 $reloadItemCount = $null
 $reloadCompleted = $false
 $maxDiscoveredProcessCount = 0
@@ -561,17 +563,25 @@ try {
             if ($workflowState -eq 'seek_observed') {
                 try {
                     # WM_COMMAND / File > Reload (ID 101) is delivered
-                    # synchronously. The handler clears the virtual list before
-                    # queuing fresh worker work, making the action observable.
+                    # synchronously. A hot worker can repopulate the virtual
+                    # list before the next cross-process message, so attest the
+                    # durable reset from the sought viewport instead of
+                    # requiring observation of the transient zero-item state.
                     $null = Invoke-NativeMessage -Window $mainWindow -Message 0x0111 -WParam 101
                     $reloadCommandDelivered = $true
                     $clearedCount = [long](Invoke-NativeMessage -Window $listWindow -Message 0x1004)
                     $reloadEmptyViewObserved = $clearedCount -eq 0
-                    if (-not $reloadEmptyViewObserved) {
-                        $failures.Add('reload_did_not_clear_the_native_view')
-                        break
+                    $reloadTopAfter = [long](Invoke-NativeMessage -Window $listWindow -Message 0x1027)
+                    $reloadViewResetObserved = $reloadEmptyViewObserved -or
+                        $reloadTopAfter -lt $seekTopAfter
+                    if ($clearedCount -gt 0 -and $reloadViewResetObserved) {
+                        $reloadItemCount = $clearedCount
+                        $reloadCompleted = $true
+                        $workflowState = 'reload_observed'
                     }
-                    $workflowState = 'reloading'
+                    else {
+                        $workflowState = 'reloading'
+                    }
                     continue
                 }
                 catch {
@@ -582,7 +592,10 @@ try {
 
             if ($workflowState -eq 'reloading') {
                 $reloadedCount = [long](Invoke-NativeMessage -Window $listWindow -Message 0x1004)
-                if ($reloadedCount -gt 0) {
+                $reloadTopAfter = [long](Invoke-NativeMessage -Window $listWindow -Message 0x1027)
+                $reloadViewResetObserved = $reloadEmptyViewObserved -or
+                    $reloadTopAfter -lt $seekTopAfter
+                if ($reloadedCount -gt 0 -and $reloadViewResetObserved) {
                     $reloadItemCount = $reloadedCount
                     $reloadCompleted = $true
                     $workflowState = 'reload_observed'
@@ -768,6 +781,8 @@ $report = [ordered]@{
         native_seek_top_after = $seekTopAfter
         reload_command_delivered = $reloadCommandDelivered
         reload_empty_view_observed = $reloadEmptyViewObserved
+        reload_view_reset_observed = $reloadViewResetObserved
+        reload_top_after = $reloadTopAfter
         reload_completed = $reloadCompleted
         reloaded_native_item_count = $reloadItemCount
         clean_close_observed = $cleanClose

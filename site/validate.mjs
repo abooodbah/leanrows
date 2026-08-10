@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,8 +45,8 @@ requireMatch(html, /src="assets\/leanrows-app\.png"/i, "the real application cap
 requireMatch(html, /synthetic data/i, "the application capture must be identified as synthetic data");
 requireMatch(
   html,
-  /LeanRows v0\.1\.2 places the virtual owner-data grid/i,
-  "the current interface description must identify v0.1.2 and its owner-data grid",
+  /LeanRows v0\.1\.3 keeps the virtual owner-data grid/i,
+  "the current interface description must identify v0.1.3 and its owner-data grid",
 );
 requireMatch(
   html,
@@ -59,13 +60,48 @@ requireMatch(
 );
 requireMatch(
   html,
-  /System and Light/i,
+  /System, Light, and Dark/i,
   "the current interface description must identify the supported appearance choices",
+);
+requireMatch(
+  html,
+  /System\s+follows the active Windows app theme/i,
+  "the current interface description must define System appearance behavior",
+);
+requireMatch(
+  html,
+  /flat two-DIP\s+accent rule/i,
+  "the current interface description must identify the flat progress treatment",
 );
 requireMatch(
   html,
   /Windows high contrast uses system colors/i,
   "the current interface description must identify the high-contrast fallback",
+);
+requireMatch(
+  html,
+  /exact 1180&times;720 capture of the frozen v0\.1\.3 release\s+executable in Light appearance/i,
+  "the application capture must identify the exact frozen v0.1.3 release and appearance",
+);
+requireMatch(
+  html,
+  /Ready \| 120 rows \| 7600 \/ 7600 bytes \| 100%/i,
+  "the application capture must record its exact synthetic-fixture status",
+);
+requireMatch(
+  html,
+  /alt="LeanRows v0\.1\.3 frozen Windows release in Light appearance/i,
+  "the application capture alternative text must identify v0.1.3 and Light appearance",
+);
+requireMatch(
+  html,
+  /frozen local v0\.1\.3 candidate passed 25\/25 aggregate checks/i,
+  "the evidence copy must identify the final-frozen local QA result",
+);
+requireMatch(
+  html,
+  /tagged release workflow separately\s+verifies the release commit, rebuild, quality gates, package checksum,\s+and published assets; the local receipt is not a substitute for that\s+tagged proof/i,
+  "the evidence copy must distinguish local qualification from tagged proof",
 );
 requireMatch(html, /<main\s+id="main-content">/i, "a named main landmark is required");
 requireMatch(css, /:focus-visible\s*\{[^}]*outline:/s, "visible focus styles are required");
@@ -82,7 +118,7 @@ if (structuredDataMatch) {
     if (structuredData["@type"] !== "SoftwareApplication") {
       failures.push("JSON-LD must describe a SoftwareApplication");
     }
-    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.1.2") {
+    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.1.3") {
       failures.push("JSON-LD name and release version must match the product");
     }
     if (structuredData.downloadUrl !== "https://github.com/abooodbah/leanrows/releases/latest") {
@@ -102,11 +138,25 @@ try {
   if (capture.length < 24 || capture.subarray(0, 8).toString("hex") !== pngSignature) {
     failures.push("the application capture must be a valid PNG file");
   } else {
+    const expectedCaptureBytes = 67555;
+    const expectedCaptureSha256 =
+      "40b5c9b9358fac0a0882005333876255f551997d8ebb84c8a050f3de8284c011";
     const captureWidth = capture.readUInt32BE(16);
     const captureHeight = capture.readUInt32BE(20);
     if (captureWidth !== 1180 || captureHeight !== 720) {
       failures.push(
         `the application capture must remain 1180x720; found ${captureWidth}x${captureHeight}`,
+      );
+    }
+    if (capture.length !== expectedCaptureBytes) {
+      failures.push(
+        `the application capture must remain ${expectedCaptureBytes} bytes; found ${capture.length}`,
+      );
+    }
+    const captureSha256 = createHash("sha256").update(capture).digest("hex");
+    if (captureSha256 !== expectedCaptureSha256) {
+      failures.push(
+        `the application capture SHA-256 must remain ${expectedCaptureSha256}; found ${captureSha256}`,
       );
     }
   }
