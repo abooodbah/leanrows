@@ -17,11 +17,18 @@
       content="A bounded, offline, native Windows viewer for row-oriented files."
     >
     <meta property="og:url" content="https://abooodbah.github.io/leanrows/">
-    <meta property="og:image" content="https://abooodbah.github.io/leanrows/assets/leanrows-icon.png">
+    <meta property="og:image" content="https://abooodbah.github.io/leanrows/assets/social-preview.png">
     <meta property="og:image:type" content="image/png">
-    <meta property="og:image:width" content="512">
-    <meta property="og:image:height" content="512">
-    <meta property="og:image:alt" content="The LeanRows app icon">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
+    <meta property="og:image:alt" content="LeanRows: 20 million rows, a 1.5 GB file, 18 MB of RAM">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LeanRows — 20M rows. 1.5 GB file. 18 MB of RAM.">
+    <meta
+      name="twitter:description"
+      content="Native Windows viewer for large CSV, TSV, JSONL and log files. 546 KB, no installer, no admin rights."
+    >
+    <meta name="twitter:image" content="https://abooodbah.github.io/leanrows/assets/social-preview.png">
     <link rel="canonical" href="https://abooodbah.github.io/leanrows/">
     <link rel="icon" href="assets/leanrows-icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
@@ -146,43 +153,42 @@
         <div class="shell">
           <div class="capture-heading">
             <div>
-              <p class="eyebrow">Redesigned native interface</p>
-              <h2 id="capture-title">Full rows. A calmer frame.</h2>
+              <p class="eyebrow">Measured on a real file</p>
+              <h2 id="capture-title">20 million rows. 18 MB of RAM.</h2>
             </div>
             <p>
-              LeanRows v0.1.3 keeps the virtual owner-data grid below a responsive
-              top bar with file context, inline search, and direct actions. System
-              follows the active Windows app theme, while the appearance button cycles
-              through System, Light, and Dark. Indexing progress uses a flat two-DIP
-              accent rule, and Windows high contrast uses system colors. The image
-              below is an exact 1180&times;720 capture of the frozen v0.1.3 release
-              executable in Light appearance. It uses only synthetic data from
-              <code>operations-sample.csv</code>: all 120 rows across six fields are
-              indexed, and the status reads
-              <code>Ready | 120 rows | 7600 / 7600 bytes | 100%</code>. The binary and
-              fixture were unchanged, the saved System preference was restored, and
-              the application closed cleanly.
+              The capture below is an exact screenshot of the frozen v0.1.3 release
+              executable with a 1.53&nbsp;GB synthetic event log open. The status bar
+              reads
+              <code>Ready | 20000001 rows | 1532454643 / 1532454643 bytes | 100%</code>,
+              so the file is fully indexed rather than partially loaded. Peak working
+              set across the session was 18.4&nbsp;MB, which makes the file roughly
+              eighty times larger than the memory used to view it: only the rows in
+              the viewport are ever materialized. Excel stops at about 1.05 million
+              rows. LeanRows keeps the virtual owner-data grid below a responsive top
+              bar with file context, inline search, and direct actions, and the
+              appearance button cycles through System, Light, and Dark.
             </p>
           </div>
 
           <figure class="app-capture">
             <a
               class="app-capture-link"
-              href="assets/leanrows-app.png"
-              aria-label="Open the full-size LeanRows application capture"
+              href="assets/leanrows-20m-benchmark.png"
+              aria-label="Open the full-size LeanRows benchmark capture"
             >
               <img
-                src="assets/leanrows-app.png"
+                src="assets/leanrows-20m-benchmark.png"
                 width="1180"
-                height="720"
+                height="668"
                 loading="lazy"
                 decoding="async"
-                alt="LeanRows v0.1.3 frozen Windows release in Light appearance showing the fully indexed 120-row synthetic operations-sample.csv across six fields with Ready and 100 percent status"
+                alt="LeanRows v0.1.3 with a 1.53 GB, 20,000,001 row CSV fully indexed, status bar reading Ready and 100 percent"
               >
             </a>
             <figcaption>
-              <strong>Real application capture.</strong>
-              <span>Frozen v0.1.3 x64 build &middot; Light appearance &middot; synthetic fixture &middot; native owner-data grid</span>
+              <strong>20,000,001 rows &middot; 1,532,454,643 bytes &middot; 18.4 MB peak working set.</strong>
+              <span>Frozen v0.1.3 x64 build &middot; synthetic event log &middot; native owner-data grid</span>
             </figcaption>
           </figure>
         </div>
