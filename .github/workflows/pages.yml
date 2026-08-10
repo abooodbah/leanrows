@@ -1,6 +1,18 @@
-name: Manual GitHub Pages deployment
+name: GitHub Pages deployment
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      # Everything the published site is built from. The upload step takes
+      # ./site wholesale, so any change under it must redeploy. Without this
+      # the live page silently lags main: it only ever showed whatever was
+      # last dispatched by hand.
+      - 'site/**'
+      # The deployment definition itself, so a correction to this workflow
+      # deploys under its own new rules.
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
