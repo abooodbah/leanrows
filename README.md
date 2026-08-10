@@ -1,20 +1,40 @@
 # LeanRows
 
-LeanRows is a native, read-only Windows viewer for large row-oriented files. It
-opens a bounded viewport without loading the whole source into memory, which
-makes routine inspection practical on memory-constrained machines.
+**Open a 1.5 GB CSV with 20 million rows using 18 MB of RAM. No installer, no
+runtime, no admin rights.**
 
-Version 0.1.3 corrects two gaps in the LeanMark-aligned native shell introduced
-in 0.1.2. System appearance now follows the active Windows app theme, the
-appearance button cycles through System, Light, and Dark, and indexing progress
-uses the same flat accent rule as LeanMark. The owner-data grid and bounded
-document engine remain unchanged in purpose: only the active row window is
-materialized for display.
+![LeanRows with a 20 million row CSV open](docs/images/leanrows-20m-rows.png)
 
-The 0.1 release supports CSV, TSV, JSONL, NDJSON, log, and plain-text files on
-Windows x64. CSV and TSV record boundaries remain quote-aware across read
-blocks, including quoted fields that contain newlines. JSONL, NDJSON, log, and
-text files are presented as line-oriented records.
+*20,000,001 rows, 1,532,454,643 bytes, fully indexed. Peak working set: 18.4 MB.*
+
+Excel stops at about 1.05 million rows. Most tools that go further are paid, need
+an installer, or live in a terminal. LeanRows is a single 546 KB executable you
+can copy onto a locked-down work machine and run.
+
+It is strictly read-only, so it cannot alter the file it is inspecting. There is
+no telemetry and no network access of any kind.
+
+## Install
+
+```powershell
+scoop install leanrows
+```
+
+Or download the portable ZIP from [Releases](https://github.com/abooodbah/leanrows/releases)
+and run `leanrows.exe`. Nothing is written outside the folder you extract to.
+
+## Supported formats
+
+CSV, TSV, JSONL, NDJSON, log, and plain text, on Windows x64. CSV and TSV record
+boundaries are quote-aware across read blocks, including quoted fields containing
+newlines. JSONL, NDJSON, log, and text files are treated as line-oriented records.
+
+## How it stays small
+
+The file is indexed progressively as you move through it, and only the rows
+currently in the viewport are materialized. Peak memory is governed by window
+size rather than file size, which is why the figure above stays flat whether the
+source is 15 MB or 1.5 GB.
 
 ## Why LeanRows
 
