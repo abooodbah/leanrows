@@ -4,6 +4,11 @@ LeanRows is a native, read-only Windows viewer for large row-oriented files. It
 opens a bounded viewport without loading the whole source into memory, which
 makes routine inspection practical on memory-constrained machines.
 
+Version 0.1.2 introduces a LeanMark-aligned native shell with warm, opaque
+surfaces, a responsive top bar, and inline literal search. The owner-data grid
+and bounded document engine remain unchanged in purpose: only the active row
+window is materialized for display.
+
 The 0.1 release supports CSV, TSV, JSONL, NDJSON, log, and plain-text files on
 Windows x64. CSV and TSV record boundaries remain quote-aware across read
 blocks, including quoted fields that contain newlines. JSONL, NDJSON, log, and
@@ -17,10 +22,10 @@ text files are presented as line-oriented records.
   previews, and coalescing worker queues prevent memory use from scaling with
   the source file by design.
 - **Read-only snapshots:** LeanRows never edits, imports, or rewrites the source.
-- **Focused inspection tools:** literal Find, absolute-row navigation, and
-  bounded clipboard copy operate without constructing a whole-file model.
-- **Native Windows interface:** the application uses Win32 controls rather than
-  a browser engine or bundled web runtime.
+- **Focused inspection tools:** inline literal search, absolute-row navigation,
+  and bounded clipboard copy operate without constructing a whole-file model.
+- **Native Windows interface:** a responsive command bar and virtual owner-data
+  grid use Win32 controls rather than a browser engine or bundled web runtime.
 - **Local operation:** the application contains no telemetry, update checker,
   account system, or network retrieval path.
 - **Visible malformed data:** invalid bytes are escaped and oversized values are
@@ -32,15 +37,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.1.1-windows-x64-unsigned.zip
-LeanRows-v0.1.1-windows-x64-unsigned.sha256
+LeanRows-v0.1.2-windows-x64-unsigned.zip
+LeanRows-v0.1.2-windows-x64-unsigned.sha256
 ```
 
 LeanRows 0.1 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.1.1-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.1.2-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
@@ -49,8 +54,8 @@ same release.
 ## Run or install
 
 The extracted ZIP is portable. Launch `leanrows.exe` directly, pass a supported
-file path on the command line, use **File > Open**, or drop a supported file
-onto the window.
+file path on the command line, use **Open file** or `Ctrl+O`, or drop a
+supported file onto the window.
 
 An optional per-user installation is also included:
 
@@ -130,8 +135,8 @@ qualification records full process-tree memory independently; see
 ## Keyboard and accessibility
 
 - `Ctrl+O` opens the native file picker.
-- `Ctrl+F` opens literal Find. `F3` moves to the next match and `Shift+F3`
-  moves to the previous stored match.
+- `Ctrl+F` focuses the inline literal-search field. `Enter` or `F3` moves to the
+  next match; `Shift+Enter` or `Shift+F3` moves to the previous stored match.
 - `Ctrl+G` jumps to a checked, one-based absolute row number.
 - `Ctrl+C` copies selected cached rows as tab-delimited Unicode text. One
   operation is limited to 4,096 rows and 1 MiB, including the terminator.
@@ -142,9 +147,10 @@ Find compares raw UTF-8 bytes. Its optional case-insensitive mode folds ASCII
 letters only; non-ASCII bytes remain exact. Regular expressions are not
 supported in 0.1.
 
-The interface uses native system colors, per-monitor DPI handling, visible
-keyboard focus, and Microsoft Active Accessibility names for the window, grid,
-and row items.
+The interface provides System and Light appearance modes, per-monitor DPI
+handling, visible keyboard focus, and Microsoft Active Accessibility names for
+the window, grid, and row items. When Windows high contrast is active,
+application colors yield to the corresponding system colors.
 
 ## Build from source
 
@@ -173,6 +179,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
+- [LeanRows 0.1.2 release notes](docs/releases/v0.1.2.md)
 - [LeanRows 0.1.1 release notes](docs/releases/v0.1.1.md)
 - [Security policy](SECURITY.md)
 - [Roadmap](ROADMAP.md)

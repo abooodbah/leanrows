@@ -5,8 +5,8 @@ of row-oriented local files. The source file remains the primary backing store;
 the application does not import the document into a database or construct a
 whole-file in-memory model.
 
-This document describes the 0.1 implementation. Future candidates are kept in
-the [roadmap](../ROADMAP.md) rather than presented as current behavior.
+This document describes the 0.1.2 implementation. Future candidates are kept
+in the [roadmap](../ROADMAP.md) rather than presented as current behavior.
 
 ## System boundary
 
@@ -39,6 +39,13 @@ The release has three implementation layers:
 The production interface uses Win32 common controls. It does not embed a
 browser engine, start a helper process, or use a GUI framework with a second
 runtime.
+
+The 0.1.2 shell uses warm, opaque surfaces, dark text, a single blue action
+accent, and restrained one-pixel rules. Its top bar arranges file identity,
+inline search, and document commands in wide, default, or narrow layouts based
+on the DPI-scaled client width. Commands that do not fit remain available
+through the overflow control. This responsive shell changes placement and
+presentation; it does not change how document rows are owned or loaded.
 
 ## Open and snapshot semantics
 
@@ -115,6 +122,11 @@ read a file, or wait for the worker. A sliding absolute-row model keeps document
 positions as 64-bit values while respecting the native control's finite item
 range.
 
+The top bar, progress rule, owner-data grid, empty state, and status strip are
+laid out as one DPI-aware client area. Resizing selects a layout band rather
+than creating another copy of the controls. The grid remains the only document
+row surface in every band.
+
 ## Memory accounting
 
 Core operations use explicit plans that account for read buffers, checkpoints,
@@ -135,21 +147,25 @@ ASCII case-insensitive matching. Matches cannot cross logical record
 boundaries. Result pages and application-owned scratch storage have explicit
 capacity and quota contracts.
 
-The native Find workflow submits demand-driven query commands to the same
-worker. `F3` advances until the next result is available; `Shift+F3` returns
-to a stored result. Find uses a fixed 64 KiB read-through cache, 256-hit pages,
-and a 64 MiB scratch quota. Scratch files live below
+The inline search workflow submits demand-driven query commands to the same
+worker. `Ctrl+F` focuses the field, `Enter` or `F3` advances until the next
+result is available, and `Shift+Enter` or `Shift+F3` returns to a stored
+result. Search uses a fixed 64 KiB read-through cache, 256-hit pages, and a
+64 MiB scratch quota. Scratch files live below
 `%LOCALAPPDATA%\LeanRows\query-cache`, not beside the source, and concurrent
 processes coordinate stale-file recovery. Case-insensitive matching folds ASCII
 letters only. The 0.1 query path does not implement regular expressions.
 
 ## Accessibility and rendering
 
-The window, virtual grid, and row items receive bounded Microsoft Active
-Accessibility names. The application uses system colors, responds to high
-contrast settings, preserves keyboard focus, and handles per-monitor DPI
-changes. Cached UTF-16 cells are NUL-terminated before they reach the native
-control.
+The window, top-bar controls, virtual grid, and row items retain native
+accessibility semantics, with bounded Microsoft Active Accessibility names
+where the application supplies them. The interface exposes System and Light
+appearance choices; 0.1.2 does not claim a native dark theme. When Windows high
+contrast is active, application colors yield to the applicable system colors.
+Keyboard focus remains visible, and per-monitor DPI changes rebuild the layout
+metrics and fonts. Cached UTF-16 cells are NUL-terminated before they reach the
+native control.
 
 Displayed file content is inert text. It is not interpreted as HTML, ANSI
 commands, a spreadsheet formula, a file path, a URL, or executable input.

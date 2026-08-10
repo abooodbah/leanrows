@@ -162,7 +162,7 @@ jobs:
             ./artifacts/*.sha256 `
             --verify-tag `
             --title "LeanRows ${{ github.ref_name }}" `
-            --notes-file ./docs/releases/v0.1.1.md
+            --notes-file ./docs/releases/v0.1.2.md
 
   deploy-pages:
     name: Deploy the verified product page

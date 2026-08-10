@@ -4,6 +4,27 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-08-09
+
+### Added
+
+- Added a responsive native top bar that keeps file identity, inline literal
+  search, and primary document actions available across narrow, default, and
+  wide window layouts.
+- Added System and Light appearance choices, with a system-color fallback when
+  Windows high contrast is active.
+
+### Changed
+
+- Reworked the Windows shell around warm, opaque surfaces, restrained rules,
+  deliberate spacing, and one blue action accent to align with the LeanMark
+  visual family.
+- Replaced the modal Find entry point with an inline search field, Match case
+  toggle, and previous/next controls while retaining `F3` and `Shift+F3`
+  navigation.
+- Preserved the owner-data grid and bounded worker/cache model beneath the new
+  shell, so the visual redesign does not introduce a whole-file UI model.
+
 ## [0.1.1] - 2026-08-09
 
 ### Fixed
@@ -56,5 +77,6 @@ All notable changes to LeanRows are recorded in this file. The format follows
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.1.2]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.2
 [0.1.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.1
 [0.1.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.0

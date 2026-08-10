@@ -13,6 +13,11 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$workspaceVersion = & (Join-Path $repositoryRoot 'scripts/Get-WorkspaceVersion.ps1')
+$workspaceVersion = ([string]$workspaceVersion).Trim()
+if ([string]::IsNullOrWhiteSpace($workspaceVersion)) {
+    throw 'Workspace version helper returned an empty version.'
+}
 $checks = New-Object 'System.Collections.Generic.List[object]'
 $hashes = [ordered]@{}
 $harnessWatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -545,7 +550,7 @@ $receipt = [ordered]@{
     }
     command = [ordered]@{
         allowlist_id = 'leanrows-local-qa-v1'
-        version_pin = 'LeanRows workspace 0.1.1; Rust 1.97.1'
+        version_pin = "LeanRows workspace $workspaceVersion; Rust 1.97.1"
         argv_summary = 'Local document smoke, native network observation, spike viewport, memory, and release-engineering entry points with synthetic paths.'
         timeout_seconds = [Math]::Max($DocumentSmokeTimeoutSeconds, $NetworkObservationTimeoutSeconds)
         expected_exit_codes = @(0)

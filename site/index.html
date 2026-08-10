@@ -33,7 +33,7 @@
         "description": "A bounded, offline, native Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files.",
         "applicationCategory": "UtilitiesApplication",
         "operatingSystem": "Windows 10 and Windows 11 (x64)",
-        "softwareVersion": "0.1.1",
+        "softwareVersion": "0.1.2",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -82,8 +82,8 @@
               NDJSON, log, and text files.
             </p>
             <p class="hero-detail">
-              Find literal values, jump to an absolute row, and copy bounded selections
-              while the source remains read only.
+              Search literal values inline, jump to an absolute row, and copy bounded
+              selections while the source remains read only.
             </p>
             <div class="release-action">
               <a
@@ -95,7 +95,7 @@
                 <span aria-hidden="true">→</span>
               </a>
               <p id="release-note">
-                v0.1 is an unsigned Windows x64 ZIP. Verify the accompanying
+                v0.1.2 is an unsigned Windows x64 ZIP. Verify the accompanying
                 <code>.sha256</code> file before running it.
               </p>
             </div>
@@ -146,13 +146,18 @@
         <div class="shell">
           <div class="capture-heading">
             <div>
-              <p class="eyebrow">Real Windows interface</p>
-              <h2 id="capture-title">Full rows. Familiar controls.</h2>
+              <p class="eyebrow">Redesigned native interface</p>
+              <h2 id="capture-title">Full rows. A calmer frame.</h2>
             </div>
             <p>
-              This is LeanRows v0.1 viewing a generated 2,501-row CSV after a
-              native jump into the file. The capture uses only synthetic data;
-              the source hash was unchanged after viewing.
+              LeanRows v0.1.2 places the virtual owner-data grid below a responsive
+              top bar with file context, inline search, and direct actions. Warm,
+              opaque surfaces keep the hierarchy clear. System and Light are the
+              available appearance choices; Windows high contrast uses system colors.
+              The capture uses only synthetic data from
+              <code>operations-sample.csv</code>: all 120 rows are indexed, with
+              rows 1&ndash;29 visible across six data columns. The source hash was
+              unchanged after viewing.
             </p>
           </div>
 
@@ -168,12 +173,12 @@
                 height="720"
                 loading="lazy"
                 decoding="async"
-                alt="LeanRows native Windows window displaying synthetic CSV time-series rows in six columns around row 1,000"
+                alt="LeanRows v0.1.2 native Windows window with a warm responsive top bar, inline search, and rows 1 through 29 of the fully indexed 120-row synthetic operations-sample.csv across six data columns"
               >
             </a>
             <figcaption>
               <strong>Real application capture.</strong>
-              <span>Frozen v0.1 x64 build &middot; synthetic fixture &middot; native Windows list view</span>
+              <span>Frozen v0.1.2 x64 build &middot; synthetic fixture &middot; native owner-data grid</span>
             </figcaption>
           </figure>
         </div>
@@ -333,7 +338,7 @@
       <section class="release-note-section" aria-labelledby="release-warning-title">
         <div class="shell release-note-grid">
           <div>
-            <p class="eyebrow">Before installing v0.1</p>
+            <p class="eyebrow">Before installing v0.1.2</p>
             <h2 id="release-warning-title">The Windows build is intentionally unsigned.</h2>
           </div>
           <div>
@@ -342,7 +347,7 @@
               matching SHA-256 sidecar from the same GitHub Release, then compare the
               published value before running or installing LeanRows.
             </p>
-            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.1.1-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
+            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.1.2-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
             <p class="small-copy">
               Installation is per-user and requires no administrator access. Protected
               Windows choices are preserved; direct defaults are recorded and changed

@@ -3,6 +3,8 @@
 mod accessibility;
 mod clipboard;
 mod drop_files;
+mod layout;
+mod theme;
 
 use std::ffi::{OsString, c_void};
 use std::mem::size_of;
@@ -13,50 +15,62 @@ use std::sync::{Arc, Mutex};
 
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    COLOR_WINDOW, DEFAULT_GUI_FONT, GetStockObject, GetSysColorBrush, UpdateWindow,
+    COLOR_WINDOW, CreateRoundRectRgn, DT_CENTER, DT_SINGLELINE, DT_VCENTER, DeleteObject,
+    DrawFocusRect, DrawTextW, FillRect, FillRgn, FrameRgn, GetSysColorBrush, HDC, HGDIOBJ,
+    InvalidateRect, SelectObject, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT, UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::{FindResourceW, GetModuleHandleW};
+use windows::Win32::System::SystemServices::{SS_CENTER, SS_CENTERIMAGE, SS_ICON};
 use windows::Win32::UI::Controls::Dialogs::{
-    CommDlgExtendedError, FINDMSGSTRINGW, FINDREPLACEW, FR_DIALOGTERM, FR_DOWN, FR_FINDNEXT,
-    FR_HIDEWHOLEWORD, FR_MATCHCASE, FindTextW, GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
-    OFN_HIDEREADONLY, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    CommDlgExtendedError, GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY,
+    OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 use windows::Win32::UI::Controls::{
-    HDM_GETITEMCOUNT, ICC_BAR_CLASSES, ICC_LISTVIEW_CLASSES, INITCOMMONCONTROLSEX,
-    InitCommonControlsEx, LIST_VIEW_ITEM_STATE_FLAGS, LVCF_SUBITEM, LVCF_TEXT, LVCF_WIDTH,
-    LVCFMT_LEFT, LVCOLUMNW, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETECOLUMN,
-    LVM_ENSUREVISIBLE, LVM_GETHEADER, LVM_GETNEXTITEM, LVM_INSERTCOLUMNW, LVM_REDRAWITEMS,
-    LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMCOUNT, LVM_SETITEMSTATE, LVN_GETDISPINFOW,
-    LVN_ODCACHEHINT, LVNI_SELECTED, LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT, LVS_OWNERDATA,
-    LVS_REPORT, LVS_SHOWSELALWAYS, LVSICF_NOINVALIDATEALL, LVSICF_NOSCROLL, NMHDR, NMLVCACHEHINT,
-    NMLVDISPINFOW, SB_SETTEXTW, SBARS_SIZEGRIP, STATUSCLASSNAMEW, SetWindowTheme, WC_LISTVIEWW,
+    BST_CHECKED, DRAWITEMSTRUCT, EM_SETCUEBANNER, EM_SETSEL, HDM_GETITEMCOUNT, ICC_BAR_CLASSES,
+    ICC_LISTVIEW_CLASSES, ICC_PROGRESS_CLASS, INITCOMMONCONTROLSEX, InitCommonControlsEx,
+    LIST_VIEW_ITEM_STATE_FLAGS, LVCF_SUBITEM, LVCF_TEXT, LVCF_WIDTH, LVCFMT_LEFT, LVCOLUMNW,
+    LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETECOLUMN, LVM_ENSUREVISIBLE,
+    LVM_GETHEADER, LVM_GETNEXTITEM, LVM_INSERTCOLUMNW, LVM_REDRAWITEMS, LVM_SETBKCOLOR,
+    LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMCOUNT, LVM_SETITEMSTATE, LVM_SETTEXTBKCOLOR,
+    LVM_SETTEXTCOLOR, LVN_GETDISPINFOW, LVN_ODCACHEHINT, LVNI_SELECTED, LVS_EX_DOUBLEBUFFER,
+    LVS_EX_FULLROWSELECT, LVS_OWNERDATA, LVS_REPORT, LVS_SHOWSELALWAYS, LVSICF_NOINVALIDATEALL,
+    LVSICF_NOSCROLL, NMHDR, NMLVCACHEHINT, NMLVDISPINFOW, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT,
+    ODS_SELECTED, ODT_BUTTON, PBM_SETMARQUEE, PBM_SETPOS, PBM_SETRANGE32, PBS_MARQUEE, PBS_SMOOTH,
+    PROGRESS_CLASSW, SetWindowTheme, WC_LISTVIEWW,
 };
-use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem};
-use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem, GetDpiForWindow};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetFocus, GetKeyState, IsWindowEnabled, SetFocus, VK_ESCAPE, VK_RETURN, VK_SHIFT, VK_TAB,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateMenu, CreatePopupMenu,
+    AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_FLAT, BS_OWNERDRAW, BS_PUSHBUTTON,
+    BS_TYPEMASK, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreatePopupMenu,
     CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu, DestroyWindow,
-    DialogBoxParamW, DispatchMessageW, EndDialog, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA,
-    GetClassLongPtrW, GetClientRect, GetDlgItemTextW, GetMessageW, GetSystemMetrics,
-    GetWindowLongPtrW, HACCEL, HICON, HMENU, IDC_ARROW, IDCANCEL, IDOK, IMAGE_ICON,
-    IsDialogMessageW, IsWindow, KillTimer, LR_SHARED, LoadAcceleratorsW, LoadCursorW, LoadImageW,
-    MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL, MF_POPUP, MF_SEPARATOR,
-    MF_STRING, MSG, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage, RT_DIALOG,
-    RegisterClassExW, RegisterWindowMessageW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON,
-    SW_SHOWDEFAULT, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW,
-    SetForegroundWindow, SetMenu, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
-    ShowWindow, TranslateAcceleratorW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX,
-    WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES,
-    WM_GETFONT, WM_INITDIALOG, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SIZE, WM_TIMER,
-    WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE,
-    WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    DialogBoxParamW, DispatchMessageW, ES_AUTOHSCROLL, EndDialog, GCLP_HICON, GCLP_HICONSM,
+    GWL_STYLE, GWLP_USERDATA, GetClassLongPtrW, GetClientRect, GetDlgItemTextW, GetMessageW,
+    GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+    HACCEL, HICON, HMENU, IDC_ARROW, IDCANCEL, IDOK, IMAGE_ICON, IsWindow, IsWindowVisible,
+    KillTimer, LR_SHARED, LoadAcceleratorsW, LoadCursorW, LoadImageW, MB_ICONERROR,
+    MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL, MF_CHECKED, MF_SEPARATOR, MF_STRING,
+    MF_UNCHECKED, MINMAXINFO, MSG, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage,
+    RT_DIALOG, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, STM_SETICON,
+    SW_HIDE, SW_SHOW, SW_SHOWDEFAULT, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW,
+    SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
+    TPM_RETURNCMD, TPM_RIGHTALIGN, TrackPopupMenuEx, TranslateAcceleratorW, TranslateMessage,
+    WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE,
+    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM,
+    WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETMINMAXINFO, WM_INITDIALOG, WM_KEYDOWN,
+    WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE,
+    WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_CLIPCHILDREN,
+    WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
 use self::accessibility::{
-    AccessibilityBridge, ComApartment, SmokeEvidence, high_contrast_enabled, smoke_cache,
-    verify_smoke,
+    AccessibilityBridge, ComApartment, SmokeEvidence, smoke_cache, verify_smoke,
 };
+use self::layout::{CommandLayoutMode, UiLayout, UiRect};
+use self::theme::{EffectiveTheme, ThemeMode, ThemeResources};
 use crate::document_engine::{UiColumnKind, UiColumnLayout};
 use crate::worker::{
     QueryDirection, Worker, WorkerEvent, WorkerPhase, WorkerQueryPhase, WorkerQueryState,
@@ -84,13 +98,19 @@ const ID_EDIT_FIND: u16 = 111;
 const ID_EDIT_FIND_NEXT: u16 = 112;
 const ID_EDIT_FIND_PREVIOUS: u16 = 113;
 const ID_EDIT_GOTO: u16 = 114;
+const ID_VIEW_THEME: u16 = 120;
+const ID_SEARCH_MATCH_CASE: u16 = 121;
+const ID_APP_MORE: u16 = 122;
 const ID_HELP_ABOUT: u16 = 200;
+const ID_SEARCH_FIELD: u16 = 300;
 const IDD_GOTO_ROW: usize = 201;
 const IDC_GOTO_ROW_EDIT: i32 = 1001;
 const MAX_COPY_ROWS: usize = 4_096;
 const MAX_COPY_BYTES: usize = 1_024 * 1_024;
 const MAX_COPY_UTF16_UNITS: usize = MAX_COPY_BYTES / size_of::<u16>();
 const MAX_FIND_UTF16_UNITS: usize = 1_024;
+const EMPTY_TITLE_CAPTION: &str = "Open large files without loading them all.";
+const SHELL_SMOKE_TEXT_UNITS: usize = 64;
 #[cfg(target_pointer_width = "32")]
 const DIALOG_USER_INDEX: WINDOW_LONG_PTR_INDEX = WINDOW_LONG_PTR_INDEX(8);
 #[cfg(target_pointer_width = "64")]
@@ -115,10 +135,6 @@ impl MenuGuard {
     fn handle(&self) -> HMENU {
         self.0.unwrap_or_default()
     }
-
-    fn release(&mut self) {
-        self.0 = None;
-    }
 }
 
 impl Drop for MenuGuard {
@@ -130,10 +146,37 @@ impl Drop for MenuGuard {
     }
 }
 
+#[derive(Default)]
+struct ChromeHandles {
+    topbar: HWND,
+    wordmark: HWND,
+    file_name: HWND,
+    file_meta: HWND,
+    search_edit: HWND,
+    match_case: HWND,
+    find_previous: HWND,
+    find_next: HWND,
+    reload: HWND,
+    goto: HWND,
+    theme: HWND,
+    open: HWND,
+    more: HWND,
+    progress: HWND,
+    empty_eyebrow: HWND,
+    empty_title: HWND,
+    empty_body: HWND,
+    empty_open: HWND,
+    status_backdrop: HWND,
+}
+
 struct WindowState {
     window: HWND,
     list: HWND,
     status: HWND,
+    chrome: ChromeHandles,
+    theme: ThemeResources,
+    grid_visible: bool,
+    progress_visible: bool,
     rows: SlidingRowWindow,
     cache: Arc<ImmutableRowCache>,
     accessibility: AccessibilityBridge,
@@ -142,8 +185,6 @@ struct WindowState {
     active_serial: Option<u64>,
     columns: NativeColumns,
     pending_reveal: Option<u64>,
-    find_message: u32,
-    find_dialog: Option<FindDialogState>,
     active_find: Option<ActiveFind>,
     revealed_match: Option<RevealedMatch>,
     document_smoke: bool,
@@ -155,12 +196,6 @@ struct WindowState {
 struct GoToDialogState {
     initial_row: u64,
     selected_row: Option<u64>,
-}
-
-struct FindDialogState {
-    window: HWND,
-    descriptor: Box<FINDREPLACEW>,
-    buffer: Box<[u16]>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -249,6 +284,9 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     initialize_native_controls()?;
     let _com_apartment = ComApartment::initialize()?;
     let accessibility = AccessibilityBridge::new()?;
+    // SAFETY: This reads the system DPI before any top-level HWND is created.
+    let initial_dpi = unsafe { GetDpiForSystem() }.max(96);
+    let theme = ThemeResources::new(ThemeMode::load(), initial_dpi)?;
 
     // SAFETY: Passing `None` requests the current executable module.
     let module = unsafe { GetModuleHandleW(None) }
@@ -256,8 +294,6 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let instance = HINSTANCE(module.0);
     register_window_class(instance)?;
     let accelerators = load_accelerators(instance)?;
-    let find_message = register_find_dialog_message()?;
-
     let smoke_verified = Arc::new(AtomicBool::new(false));
     let document_smoke_observed = Arc::new(AtomicU64::new(0));
     let document_smoke_evidence = Arc::new(Mutex::new(None));
@@ -271,6 +307,10 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         window: HWND::default(),
         list: HWND::default(),
         status: HWND::default(),
+        chrome: ChromeHandles::default(),
+        theme,
+        grid_visible: shell_smoke,
+        progress_visible: false,
         rows: SlidingRowWindow::new(u64::from(shell_smoke), u32::from(shell_smoke)),
         cache,
         accessibility,
@@ -279,8 +319,6 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         active_serial: None,
         columns: NativeColumns::preview(),
         pending_reveal: None,
-        find_message,
-        find_dialog: None,
         active_find: None,
         revealed_match: None,
         document_smoke: options.document_smoke_test,
@@ -289,11 +327,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         reclaimed: Arc::clone(&reclaimed),
     });
     let (window, state_pointer) = create_shell_window(instance, state, reclaimed.as_ref())?;
-
-    if let Err(error) = install_menu(window) {
-        let _ = destroy_shell_window(window);
-        return Err(error);
-    }
+    initialize_window_title(window)?;
 
     let smoke_evidence = if options.smoke_test {
         run_smoke(window, state_pointer, &smoke_verified)?
@@ -353,6 +387,13 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     })
 }
 
+fn initialize_window_title(window: HWND) -> Result<(), ShellError> {
+    // Explicitly restore the product caption after child/theme initialization;
+    // document opens replace it with the file-specific title below.
+    unsafe { SetWindowTextW(window, w!("LeanRows")) }
+        .map_err(|error| ShellError::new(format!("window title initialization failed: {error}")))
+}
+
 fn take_document_smoke(
     evidence: &Mutex<Option<DocumentSmokeEvidence>>,
 ) -> Option<DocumentSmokeEvidence> {
@@ -377,21 +418,13 @@ fn initialize_native_controls() -> Result<(), ShellError> {
         .map_err(|_| ShellError::new("common-control structure size overflow"))?;
     let controls = INITCOMMONCONTROLSEX {
         dwSize: controls_size,
-        dwICC: ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES,
+        dwICC: ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES | ICC_PROGRESS_CLASS,
     };
     // SAFETY: `controls` is initialized to the documented structure size and flags.
     if !unsafe { InitCommonControlsEx(&raw const controls) }.as_bool() {
         return Err(ShellError::new("common-control initialization failed"));
     }
     Ok(())
-}
-
-fn register_find_dialog_message() -> Result<u32, ShellError> {
-    // SAFETY: FINDMSGSTRINGW is a process-lifetime, NUL-terminated system string.
-    let message = unsafe { RegisterWindowMessageW(FINDMSGSTRINGW) };
-    (message != 0)
-        .then_some(message)
-        .ok_or_else(|| ShellError::new("Find dialog message registration failed"))
 }
 
 fn create_shell_window(
@@ -412,7 +445,7 @@ fn create_shell_window(
         AdjustWindowRectExForDpi(
             &raw mut bounds,
             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-            true,
+            false,
             WS_EX_APPWINDOW | WS_EX_ACCEPTFILES,
             dpi,
         )
@@ -478,7 +511,8 @@ fn verify_shell_smoke(
         let verified = unsafe { IsWindow(Some(state.list)) }.as_bool()
             && unsafe { IsWindow(Some(state.status)) }.as_bool();
         if verified {
-            verify_native_presentation(window, state.list, state.status)?;
+            verify_modern_shell_chrome(state)?;
+            verify_native_presentation(window, state)?;
             controls_verified.store(true, Ordering::Release);
             let evidence = verify_smoke(
                 &state.accessibility,
@@ -498,6 +532,65 @@ fn verify_shell_smoke(
     } else {
         Err(ShellError::new("smoke state was not attached"))
     }
+}
+
+fn verify_modern_shell_chrome(state: &WindowState) -> Result<(), ShellError> {
+    for (handle, name) in [
+        (state.chrome.topbar, "top bar"),
+        (state.chrome.search_edit, "inline search"),
+        (state.chrome.open, "primary Open button"),
+        (state.chrome.more, "overflow button"),
+        (state.chrome.status_backdrop, "status backdrop"),
+        (state.status, "status text"),
+    ] {
+        verify_control_visibility(handle, name, true)?;
+    }
+    for (handle, name) in [
+        (state.chrome.empty_title, "empty-state title"),
+        (state.chrome.empty_open, "empty-state Open button"),
+        (state.chrome.progress, "progress indicator"),
+    ] {
+        verify_control_visibility(handle, name, false)?;
+    }
+    for handle in [state.chrome.open, state.chrome.empty_open] {
+        // SAFETY: The handle is a live BUTTON child queried read-only during smoke.
+        let style = unsafe { GetWindowLongPtrW(handle, GWL_STYLE) };
+        let type_mask = isize::try_from(BS_TYPEMASK).unwrap_or_default();
+        let owner_draw = isize::try_from(BS_OWNERDRAW).unwrap_or_default();
+        if style & type_mask != owner_draw {
+            return Err(ShellError::new(
+                "modern shell Open buttons are not owner-drawn",
+            ));
+        }
+    }
+
+    let mut title = [0_u16; SHELL_SMOKE_TEXT_UNITS];
+    // SAFETY: The hidden title control is live and the fixed buffer is writable.
+    let copied = unsafe { GetWindowTextW(state.chrome.empty_title, &mut title) };
+    let copied = usize::try_from(copied).unwrap_or_default().min(title.len());
+    let expected = EMPTY_TITLE_CAPTION.encode_utf16();
+    if copied != expected.clone().count() || !title[..copied].iter().copied().eq(expected) {
+        return Err(ShellError::new(
+            "modern shell empty-state title caption changed unexpectedly",
+        ));
+    }
+    Ok(())
+}
+
+fn verify_control_visibility(
+    handle: HWND,
+    name: &str,
+    expected_visible: bool,
+) -> Result<(), ShellError> {
+    // SAFETY: These are read-only queries against UI-thread-owned child handles.
+    let exists = unsafe { IsWindow(Some(handle)) }.as_bool();
+    let visible = exists && unsafe { IsWindowVisible(handle) }.as_bool();
+    if !exists || visible != expected_visible {
+        return Err(ShellError::new(format!(
+            "modern shell {name} handle or visibility verification failed"
+        )));
+    }
+    Ok(())
 }
 
 fn verify_native_ux_primitives(state: &WindowState) -> Result<(), ShellError> {
@@ -577,92 +670,73 @@ fn load_accelerators(instance: HINSTANCE) -> Result<AcceleratorGuard, ShellError
         .map_err(|error| ShellError::new(format!("embedded accelerator load failed: {error}")))
 }
 
-fn install_menu(window: HWND) -> Result<(), ShellError> {
-    // SAFETY: Menu handles are newly allocated and guarded until ownership transfers.
-    let mut root = MenuGuard::new(unsafe { CreateMenu() }.map_err(menu_error)?);
-    let mut file = MenuGuard::new(unsafe { CreatePopupMenu() }.map_err(menu_error)?);
+fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Commands run synchronously while the UI-owned state is attached.
+    let state = unsafe { pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    // SAFETY: The popup handle is newly allocated and stays under this guard.
+    let menu = MenuGuard::new(unsafe { CreatePopupMenu() }.map_err(menu_error)?);
+    append_menu_text(menu.handle(), ID_FILE_OPEN, w!("&Open...\tCtrl+O"))?;
+    append_menu_text(menu.handle(), ID_FILE_RELOAD, w!("&Reload\tF5"))?;
+    // SAFETY: The guarded popup is mutable until TrackPopupMenuEx returns.
+    unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
+    append_menu_text(
+        menu.handle(),
+        ID_EDIT_COPY,
+        w!("&Copy selected rows\tCtrl+C"),
+    )?;
+    append_menu_text(menu.handle(), ID_EDIT_FIND, w!("Focus &Find\tCtrl+F"))?;
+    append_menu_text(menu.handle(), ID_EDIT_FIND_NEXT, w!("Find &next\tF3"))?;
+    append_menu_text(
+        menu.handle(),
+        ID_EDIT_FIND_PREVIOUS,
+        w!("Find &previous\tShift+F3"),
+    )?;
+    append_menu_text(menu.handle(), ID_EDIT_GOTO, w!("&Go to row...\tCtrl+G"))?;
+    let case_flag = if inline_match_case(state.chrome.match_case) {
+        MF_STRING | MF_CHECKED
+    } else {
+        MF_STRING | MF_UNCHECKED
+    };
+    // SAFETY: The popup and static label remain valid for this synchronous call.
     unsafe {
         AppendMenuW(
-            file.handle(),
-            MF_STRING,
-            usize::from(ID_FILE_OPEN),
-            w!("&Open...\tCtrl+O"),
+            menu.handle(),
+            case_flag,
+            usize::from(ID_SEARCH_MATCH_CASE),
+            w!("Match &case"),
         )
-        .map_err(menu_error)?;
-        AppendMenuW(
-            file.handle(),
-            MF_STRING,
-            usize::from(ID_FILE_RELOAD),
-            w!("&Reload\tF5"),
-        )
-        .map_err(menu_error)?;
-        AppendMenuW(file.handle(), MF_SEPARATOR, 0, None).map_err(menu_error)?;
-        AppendMenuW(
-            file.handle(),
-            MF_STRING,
-            usize::from(ID_FILE_EXIT),
-            w!("E&xit"),
-        )
-        .map_err(menu_error)?;
-        AppendMenuW(
-            root.handle(),
-            MF_POPUP,
-            file.handle().0 as usize,
-            w!("&File"),
-        )
-        .map_err(menu_error)?;
     }
-    file.release();
+    .map_err(menu_error)?;
+    unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
+    let theme_label = format!("Theme: {}", state.theme.preference.label());
+    append_menu_owned(menu.handle(), ID_VIEW_THEME, &theme_label)?;
+    append_menu_text(menu.handle(), ID_HELP_ABOUT, w!("&About LeanRows"))?;
+    unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
+    append_menu_text(menu.handle(), ID_FILE_EXIT, w!("E&xit"))?;
 
-    let mut edit = MenuGuard::new(unsafe { CreatePopupMenu() }.map_err(menu_error)?);
-    unsafe {
-        append_menu_text(
-            edit.handle(),
-            ID_EDIT_COPY,
-            w!("&Copy selected rows\tCtrl+C"),
-        )?;
-        AppendMenuW(edit.handle(), MF_SEPARATOR, 0, None).map_err(menu_error)?;
-        append_menu_text(edit.handle(), ID_EDIT_FIND, w!("&Find...\tCtrl+F"))?;
-        append_menu_text(edit.handle(), ID_EDIT_FIND_NEXT, w!("Find &next\tF3"))?;
-        append_menu_text(
-            edit.handle(),
-            ID_EDIT_FIND_PREVIOUS,
-            w!("Find &previous\tShift+F3"),
-        )?;
-        AppendMenuW(edit.handle(), MF_SEPARATOR, 0, None).map_err(menu_error)?;
-        append_menu_text(edit.handle(), ID_EDIT_GOTO, w!("&Go to row...\tCtrl+G"))?;
-        AppendMenuW(
-            root.handle(),
-            MF_POPUP,
-            edit.handle().0 as usize,
-            w!("&Edit"),
+    let mut anchor = RECT::default();
+    // SAFETY: The overflow button belongs to this window and anchor is writable.
+    unsafe { GetWindowRect(state.chrome.more, &raw mut anchor) }
+        .map_err(|error| ShellError::new(format!("overflow anchor lookup failed: {error}")))?;
+    // SAFETY: Foreground activation and popup tracking occur on this UI thread.
+    let _ = unsafe { SetForegroundWindow(window) };
+    let selected = unsafe {
+        TrackPopupMenuEx(
+            menu.handle(),
+            (TPM_RETURNCMD | TPM_RIGHTALIGN).0,
+            anchor.right,
+            anchor.bottom,
+            window,
+            None,
         )
-        .map_err(menu_error)?;
+    };
+    if let Ok(command) = u16::try_from(selected.0)
+        && command != 0
+    {
+        handle_command(window, command);
     }
-    edit.release();
-
-    let mut help = MenuGuard::new(unsafe { CreatePopupMenu() }.map_err(menu_error)?);
-    unsafe {
-        AppendMenuW(
-            help.handle(),
-            MF_STRING,
-            usize::from(ID_HELP_ABOUT),
-            w!("&About LeanRows"),
-        )
-        .map_err(menu_error)?;
-        AppendMenuW(
-            root.handle(),
-            MF_POPUP,
-            help.handle().0 as usize,
-            w!("&Help"),
-        )
-        .map_err(menu_error)?;
-    }
-    help.release();
-
-    // SAFETY: SetMenu transfers the root and attached popup ownership to the window.
-    unsafe { SetMenu(window, Some(root.handle())) }.map_err(menu_error)?;
-    root.release();
     Ok(())
 }
 
@@ -675,6 +749,12 @@ fn menu_error(error: windows::core::Error) -> ShellError {
 fn append_menu_text(menu: HMENU, command: u16, text: PCWSTR) -> Result<(), ShellError> {
     // SAFETY: The caller owns the menu and supplies a live NUL-terminated label.
     unsafe { AppendMenuW(menu, MF_STRING, usize::from(command), text) }.map_err(menu_error)
+}
+
+fn append_menu_owned(menu: HMENU, command: u16, text: &str) -> Result<(), ShellError> {
+    let mut encoded: Vec<u16> = text.encode_utf16().filter(|unit| *unit != 0).collect();
+    encoded.push(0);
+    append_menu_text(menu, command, PCWSTR(encoded.as_ptr()))
 }
 
 fn handle_command(window: HWND, command: u16) {
@@ -725,6 +805,17 @@ fn handle_command(window: HWND, command: u16) {
                 set_status(window, &format!("Find previous failed: {error}"));
             }
         }
+        ID_SEARCH_MATCH_CASE => toggle_match_case(window),
+        ID_VIEW_THEME => {
+            if let Err(error) = cycle_theme(window) {
+                set_status(window, &format!("Theme change failed: {error}"));
+            }
+        }
+        ID_APP_MORE => {
+            if let Err(error) = show_overflow_menu(window) {
+                set_status(window, &format!("Menu failed: {error}"));
+            }
+        }
         ID_FILE_EXIT => {
             let _ = destroy_shell_window(window);
         }
@@ -743,6 +834,48 @@ fn handle_command(window: HWND, command: u16) {
     }
 }
 
+fn toggle_match_case(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The checkbox belongs to this UI thread and is queried synchronously.
+    let Some(checkbox) = (unsafe { pointer.as_ref() }).map(|state| state.chrome.match_case) else {
+        return;
+    };
+    let next = if inline_match_case(checkbox) {
+        WPARAM(0)
+    } else {
+        WPARAM(usize::try_from(BST_CHECKED.0).unwrap_or_default())
+    };
+    // SAFETY: BM_SETCHECK carries only the documented small integer state.
+    unsafe { SendMessageW(checkbox, BM_SETCHECK, Some(next), Some(LPARAM(0))) };
+}
+
+fn cycle_theme(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Theme changes are serialized on the UI thread.
+    let state = unsafe { pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    refresh_theme(window, state.theme.preference.next())
+}
+
+fn refresh_theme(window: HWND, preference: ThemeMode) -> Result<(), ShellError> {
+    // SAFETY: The live HWND provides its current monitor DPI.
+    let dpi = unsafe { GetDpiForWindow(window) }.max(96);
+    let next = ThemeResources::new(preference, dpi)?;
+    let pointer = state_pointer_for(window);
+    // SAFETY: Theme refresh runs on the window's UI thread.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    let previous = std::mem::replace(&mut state.theme, next);
+    let result = apply_native_presentation(state);
+    drop(previous);
+    result?;
+    let _ = preference.save();
+    layout_children(window);
+    // SAFETY: A full repaint is required after brushes and fonts change.
+    let _ = unsafe { InvalidateRect(Some(window), None, true) };
+    Ok(())
+}
+
 fn show_find_dialog(window: HWND) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: Commands are dispatched synchronously on the window's UI thread.
@@ -751,63 +884,20 @@ fn show_find_dialog(window: HWND) -> Result<(), ShellError> {
     if state.current_path.is_none() || state.active_serial.is_none() {
         return Err(ShellError::new("open a document before searching"));
     }
-    if let Some(dialog) = state.find_dialog.as_ref()
-        // SAFETY: This read-only check is for a modeless dialog on the same UI thread.
-        && unsafe { IsWindow(Some(dialog.window)) }.as_bool()
-    {
-        // SAFETY: Bringing the existing modeless dialog forward transfers no ownership.
-        let _ = unsafe { SetForegroundWindow(dialog.window) };
-        return Ok(());
+    if state.chrome.search_edit.0.is_null() {
+        return Err(ShellError::new("inline Find control is unavailable"));
     }
-    state.find_dialog = None;
-
-    let mut buffer = vec![0_u16; MAX_FIND_UTF16_UNITS].into_boxed_slice();
-    if let Some(active) = state.active_find.as_ref()
-        && let Ok(text) = std::str::from_utf8(&active.needle)
-    {
-        for (destination, unit) in buffer
-            .iter_mut()
-            .take(MAX_FIND_UTF16_UNITS.saturating_sub(1))
-            .zip(text.encode_utf16())
-        {
-            *destination = unit;
-        }
+    // SAFETY: The edit control belongs to this UI thread. Selecting the full
+    // bounded value mirrors LeanMark's Ctrl+F behavior without allocating.
+    unsafe {
+        let _ = SetFocus(Some(state.chrome.search_edit));
+        SendMessageW(
+            state.chrome.search_edit,
+            EM_SETSEL,
+            Some(WPARAM(0)),
+            Some(LPARAM(-1)),
+        );
     }
-    let find_length = u16::try_from(MAX_FIND_UTF16_UNITS)
-        .map_err(|_| ShellError::new("Find input limit exceeds the native dialog limit"))?;
-    let mut flags = FR_DOWN | FR_HIDEWHOLEWORD;
-    if state
-        .active_find
-        .as_ref()
-        .is_some_and(|active| active.case_sensitive)
-    {
-        flags |= FR_MATCHCASE;
-    }
-    let descriptor_size = u32::try_from(size_of::<FINDREPLACEW>())
-        .map_err(|_| ShellError::new("Find dialog structure size overflow"))?;
-    let mut descriptor = Box::new(FINDREPLACEW {
-        lStructSize: descriptor_size,
-        hwndOwner: window,
-        Flags: flags,
-        lpstrFindWhat: PWSTR(buffer.as_mut_ptr()),
-        wFindWhatLen: find_length,
-        ..Default::default()
-    });
-    // SAFETY: Both boxed allocations remain at stable addresses until FR_DIALOGTERM.
-    let dialog = unsafe { FindTextW(descriptor.as_mut()) };
-    if dialog.0.is_null() {
-        // SAFETY: This immediately queries the calling thread's common-dialog error.
-        let code = unsafe { CommDlgExtendedError() };
-        return Err(ShellError::new(format!(
-            "native Find dialog failed with code 0x{:04X}",
-            code.0
-        )));
-    }
-    state.find_dialog = Some(FindDialogState {
-        window: dialog,
-        descriptor,
-        buffer,
-    });
     set_status_handle(
         state.status,
         "Find uses literal raw UTF-8 bytes; case-insensitive matching folds ASCII only",
@@ -820,40 +910,33 @@ fn repeat_find(window: HWND, direction: QueryDirection) -> Result<(), ShellError
     // SAFETY: Commands are dispatched synchronously on the window's UI thread.
     let state = unsafe { pointer.as_mut() }
         .ok_or_else(|| ShellError::new("window state is unavailable"))?;
-    if state.active_find.is_none() {
-        return show_find_dialog(window);
-    }
-    navigate_active_find(state, direction)
+    let needle = inline_find_needle(state.chrome.search_edit)?;
+    let case_sensitive = inline_match_case(state.chrome.match_case);
+    let status = start_or_navigate_find(state, needle, case_sensitive, direction)?;
+    set_status_handle(state.status, &status);
+    Ok(())
 }
 
-fn handle_find_message(state: &mut WindowState, lparam: LPARAM) {
-    let Some(dialog) = state.find_dialog.as_ref() else {
-        return;
-    };
-    let descriptor_pointer = (&raw const *dialog.descriptor).cast::<c_void>() as isize;
-    if lparam.0 != descriptor_pointer {
-        return;
+fn inline_find_needle(edit: HWND) -> Result<Vec<u8>, ShellError> {
+    // SAFETY: This is a read-only length query for a live single-line edit.
+    let length = unsafe { GetWindowTextLengthW(edit) };
+    let length = usize::try_from(length.max(0))
+        .map_err(|_| ShellError::new("Find input length exceeds the native limit"))?;
+    if length >= MAX_FIND_UTF16_UNITS {
+        return Err(ShellError::new("Find text is too long"));
     }
-    let flags = dialog.descriptor.Flags;
-    if flags.contains(FR_DIALOGTERM) {
-        state.find_dialog = None;
-        return;
-    }
-    if !flags.contains(FR_FINDNEXT) {
-        return;
-    }
-    let case_sensitive = flags.contains(FR_MATCHCASE);
-    let direction = if flags.contains(FR_DOWN) {
-        QueryDirection::Next
-    } else {
-        QueryDirection::Previous
-    };
-    let needle = find_needle(&dialog.buffer);
-    match needle.and_then(|needle| start_or_navigate_find(state, needle, case_sensitive, direction))
-    {
-        Ok(status) => set_status_handle(state.status, &status),
-        Err(error) => set_status_handle(state.status, &format!("Find failed: {error}")),
-    }
+    let mut buffer = vec![0_u16; length.saturating_add(1)];
+    // SAFETY: The writable slice includes one unit for the terminating NUL.
+    let copied = unsafe { GetWindowTextW(edit, &mut buffer) };
+    let copied = usize::try_from(copied.max(0))
+        .map_err(|_| ShellError::new("Find input could not be read"))?;
+    find_needle(&buffer[..copied.min(buffer.len())])
+}
+
+fn inline_match_case(button: HWND) -> bool {
+    // SAFETY: BM_GETCHECK carries no pointers and targets a live checkbox.
+    unsafe { SendMessageW(button, BM_GETCHECK, None, None) }.0
+        == isize::try_from(BST_CHECKED.0).unwrap_or_default()
 }
 
 fn find_needle(buffer: &[u16]) -> Result<Vec<u8>, ShellError> {
@@ -1265,17 +1348,7 @@ fn set_status(window: HWND, text: &str) {
 }
 
 fn set_status_handle(status: HWND, text: &str) {
-    let mut utf16: Vec<u16> = text.encode_utf16().filter(|unit| *unit != 0).collect();
-    utf16.push(0);
-    // SAFETY: SB_SETTEXTW consumes the UTF-16 data synchronously.
-    unsafe {
-        SendMessageW(
-            status,
-            SB_SETTEXTW,
-            Some(WPARAM(0)),
-            Some(LPARAM(utf16.as_ptr() as isize)),
-        );
-    }
+    let _ = set_control_text(status, text);
 }
 
 fn register_window_class(instance: HINSTANCE) -> Result<(), ShellError> {
@@ -1335,42 +1408,158 @@ fn load_resource_icon(instance: HINSTANCE, width: i32, height: i32) -> Result<HI
     Ok(HICON(handle.0))
 }
 
-fn apply_native_presentation(list: HWND, status: HWND) -> Result<(), ShellError> {
-    // SAFETY: DEFAULT_GUI_FONT is a process-independent stock object that must not be deleted.
-    let font = unsafe { GetStockObject(DEFAULT_GUI_FONT) };
-    if font.0.is_null() {
-        return Err(ShellError::new("system UI font is unavailable"));
-    }
-    // SAFETY: Both child controls consume but do not own the stock font; redraw is requested.
+fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
+    // SAFETY: The current executable module stays loaded for the process lifetime.
+    let module = unsafe { GetModuleHandleW(None) }
+        .map_err(|error| ShellError::new(format!("module lookup failed: {error}")))?;
+    let icon = load_resource_icon(
+        HINSTANCE(module.0),
+        state.theme.metrics.wordmark_size,
+        state.theme.metrics.wordmark_size,
+    )?;
+    // SAFETY: LR_SHARED leaves icon ownership with the module/system.
     unsafe {
         SendMessageW(
-            list,
-            WM_SETFONT,
-            Some(WPARAM(font.0.addr())),
-            Some(LPARAM(1)),
+            state.chrome.wordmark,
+            STM_SETICON,
+            Some(WPARAM(icon.0.addr())),
+            Some(LPARAM(0)),
+        );
+    }
+    let body = state.theme.fonts.body();
+    let semibold = state.theme.fonts.semibold();
+    let caption = state.theme.fonts.caption();
+    let heading = state.theme.fonts.heading();
+    for handle in [
+        state.list,
+        state.chrome.search_edit,
+        state.chrome.match_case,
+        state.chrome.find_previous,
+        state.chrome.find_next,
+        state.chrome.reload,
+        state.chrome.goto,
+        state.chrome.theme,
+        state.chrome.open,
+        state.chrome.more,
+        state.chrome.empty_body,
+        state.chrome.empty_open,
+    ] {
+        apply_font(handle, body);
+    }
+    for handle in [state.chrome.wordmark, state.chrome.file_name] {
+        apply_font(handle, semibold);
+    }
+    if let Some(header) = list_header(state.list) {
+        apply_font(header, semibold);
+    }
+    for handle in [
+        state.chrome.file_meta,
+        state.chrome.empty_eyebrow,
+        state.status,
+    ] {
+        apply_font(handle, caption);
+    }
+    apply_font(state.chrome.empty_title, heading);
+
+    let palette = state.theme.palette;
+    // SAFETY: List-view color messages are synchronous integer payloads.
+    unsafe {
+        SendMessageW(
+            state.list,
+            LVM_SETBKCOLOR,
+            Some(WPARAM(0)),
+            Some(LPARAM(
+                isize::try_from(palette.surface.colorref().0).unwrap_or_default(),
+            )),
         );
         SendMessageW(
-            status,
-            WM_SETFONT,
-            Some(WPARAM(font.0.addr())),
-            Some(LPARAM(1)),
+            state.list,
+            LVM_SETTEXTBKCOLOR,
+            Some(WPARAM(0)),
+            Some(LPARAM(
+                isize::try_from(palette.surface.colorref().0).unwrap_or_default(),
+            )),
+        );
+        SendMessageW(
+            state.list,
+            LVM_SETTEXTCOLOR,
+            Some(WPARAM(0)),
+            Some(LPARAM(
+                isize::try_from(palette.text_primary.colorref().0).unwrap_or_default(),
+            )),
         );
     }
-    // Explorer styling is cosmetic. Fail closed to the unthemed native control
-    // whenever the high-contrast state cannot be proven off.
-    if matches!(high_contrast_enabled(), Ok(false)) {
-        // SAFETY: The strings are static/NUL-terminated and the call is synchronous.
-        let _ = unsafe { SetWindowTheme(list, w!("Explorer"), PCWSTR::null()) };
+    if matches!(state.theme.effective, EffectiveTheme::Light) {
+        // SAFETY: Explorer is a documented common-control theme class.
+        let _ = unsafe { SetWindowTheme(state.list, w!("Explorer"), PCWSTR::null()) };
+        if let Some(header) = list_header(state.list) {
+            // SAFETY: The header is owned by the live list view.
+            let _ = unsafe { SetWindowTheme(header, w!("Explorer"), PCWSTR::null()) };
+        }
     }
+    let _ = state.theme.apply_window_chrome(state.window);
+    set_control_text(state.chrome.theme, state.theme.preference.label())?;
     Ok(())
 }
 
-fn verify_native_presentation(window: HWND, list: HWND, status: HWND) -> Result<(), ShellError> {
+fn apply_font(handle: HWND, font: windows::Win32::Graphics::Gdi::HFONT) {
+    if handle.0.is_null() {
+        return;
+    }
+    // SAFETY: ThemeResources owns the font longer than every child control.
+    unsafe {
+        SendMessageW(
+            handle,
+            WM_SETFONT,
+            Some(WPARAM(font.0.addr())),
+            Some(LPARAM(1)),
+        );
+    }
+}
+
+fn list_header(list: HWND) -> Option<HWND> {
+    // SAFETY: This synchronous query returns the list view's owned header HWND.
+    let raw = unsafe { SendMessageW(list, LVM_GETHEADER, None, None) }.0;
+    (raw != 0).then_some(HWND(raw as *mut c_void))
+}
+
+fn apply_shell_visibility(state: &WindowState) {
+    set_control_visible(state.list, state.grid_visible);
+    for handle in [
+        state.chrome.empty_eyebrow,
+        state.chrome.empty_title,
+        state.chrome.empty_body,
+        state.chrome.empty_open,
+    ] {
+        set_control_visible(handle, !state.grid_visible);
+    }
+    set_control_visible(state.chrome.progress, state.progress_visible);
+}
+
+fn set_control_visible(handle: HWND, visible: bool) {
+    if handle.0.is_null() {
+        return;
+    }
+    // SAFETY: The handle belongs to this UI thread and remains live.
+    let _ = unsafe { ShowWindow(handle, if visible { SW_SHOW } else { SW_HIDE }) };
+}
+
+fn set_control_text(handle: HWND, text: &str) -> Result<(), ShellError> {
+    let mut encoded: Vec<u16> = text.encode_utf16().filter(|unit| *unit != 0).collect();
+    encoded.push(0);
+    // SAFETY: The UTF-16 buffer is retained for the synchronous text copy.
+    unsafe { SetWindowTextW(handle, PCWSTR(encoded.as_ptr())) }
+        .map_err(|error| ShellError::new(format!("control text update failed: {error}")))
+}
+
+fn verify_native_presentation(window: HWND, state: &WindowState) -> Result<(), ShellError> {
     // SAFETY: These calls query class-owned icons and child-control fonts only.
     let icons_present = unsafe { GetClassLongPtrW(window, GCLP_HICON) } != 0
         && unsafe { GetClassLongPtrW(window, GCLP_HICONSM) } != 0;
-    let fonts_present = unsafe { SendMessageW(list, WM_GETFONT, None, None) }.0 != 0
-        && unsafe { SendMessageW(status, WM_GETFONT, None, None) }.0 != 0;
+    let fonts_present = unsafe { SendMessageW(state.list, WM_GETFONT, None, None) }.0 != 0
+        && unsafe { SendMessageW(state.status, WM_GETFONT, None, None) }.0 != 0
+        && unsafe { SendMessageW(state.chrome.search_edit, WM_GETFONT, None, None) }.0 != 0
+        && unsafe { SendMessageW(state.chrome.empty_title, WM_GETFONT, None, None) }.0 != 0;
     if !icons_present || !fonts_present {
         return Err(ShellError::new(
             "native icon or system UI font verification failed",
@@ -1393,18 +1582,8 @@ fn message_loop(window: HWND, accelerators: HACCEL) -> Result<(), ShellError> {
         if !result.as_bool() {
             return Ok(());
         }
-        let find_dialog = {
-            let pointer = state_pointer_for(window);
-            // SAFETY: The state remains UI-thread owned until WM_NCDESTROY.
-            unsafe { pointer.as_ref() }
-                .and_then(|state| state.find_dialog.as_ref())
-                .map(|dialog| dialog.window)
-        };
-        if let Some(dialog) = find_dialog {
-            // SAFETY: The message and modeless dialog both belong to this UI thread.
-            if unsafe { IsDialogMessageW(dialog, &raw const message) }.as_bool() {
-                continue;
-            }
+        if handle_shell_keyboard(window, &message) {
+            continue;
         }
         // SAFETY: The message was populated successfully; handles are alive until WM_QUIT.
         unsafe {
@@ -1412,6 +1591,76 @@ fn message_loop(window: HWND, accelerators: HACCEL) -> Result<(), ShellError> {
                 let _ = TranslateMessage(&raw const message);
                 DispatchMessageW(&raw const message);
             }
+        }
+    }
+}
+
+fn handle_shell_keyboard(window: HWND, message: &MSG) -> bool {
+    if message.message != WM_KEYDOWN {
+        return false;
+    }
+    let pointer = state_pointer_for(window);
+    // SAFETY: Message dispatch and state access remain serialized on this UI thread.
+    let Some(state) = (unsafe { pointer.as_ref() }) else {
+        return false;
+    };
+    let key = u16::try_from(message.wParam.0).unwrap_or_default();
+    if message.hwnd == state.chrome.search_edit && key == VK_RETURN.0 {
+        // SAFETY: This is a read-only query of the current keyboard state.
+        let direction = if unsafe { GetKeyState(i32::from(VK_SHIFT.0)) } < 0 {
+            QueryDirection::Previous
+        } else {
+            QueryDirection::Next
+        };
+        if let Err(error) = repeat_find(window, direction) {
+            set_status(window, &format!("Find failed: {error}"));
+        }
+        return true;
+    }
+    if message.hwnd == state.chrome.search_edit && key == VK_ESCAPE.0 {
+        // SAFETY: Focus remains within controls owned by this UI thread.
+        let _ = unsafe { SetFocus(Some(state.list)) };
+        return true;
+    }
+    if key != VK_TAB.0 {
+        return false;
+    }
+    focus_adjacent_control(state);
+    true
+}
+
+fn focus_adjacent_control(state: &WindowState) {
+    let controls = [
+        state.chrome.open,
+        state.chrome.search_edit,
+        state.chrome.match_case,
+        state.chrome.find_previous,
+        state.chrome.find_next,
+        state.chrome.theme,
+        state.chrome.more,
+        state.chrome.empty_open,
+        state.list,
+    ];
+    // SAFETY: These calls query or move focus only among UI-thread-owned controls.
+    let current = unsafe { GetFocus() };
+    let reverse = unsafe { GetKeyState(i32::from(VK_SHIFT.0)) } < 0;
+    let start = controls
+        .iter()
+        .position(|control| *control == current)
+        .unwrap_or(controls.len().saturating_sub(1));
+    for offset in 1..=controls.len() {
+        let index = if reverse {
+            start.wrapping_add(controls.len()).wrapping_sub(offset) % controls.len()
+        } else {
+            start.saturating_add(offset) % controls.len()
+        };
+        let candidate = controls[index];
+        if !candidate.0.is_null()
+            && unsafe { IsWindowVisible(candidate) }.as_bool()
+            && unsafe { IsWindowEnabled(candidate) }.as_bool()
+        {
+            let _ = unsafe { SetFocus(Some(candidate)) };
+            return;
         }
     }
 }
@@ -1431,16 +1680,6 @@ unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if message != WM_NCCREATE {
-        let pointer = state_pointer_for(window);
-        // SAFETY: Registered messages are handled only while the state is attached.
-        if let Some(state) = unsafe { pointer.as_mut() }
-            && message == state.find_message
-        {
-            handle_find_message(state, lparam);
-            return LRESULT(0);
-        }
-    }
     match message {
         WM_NCCREATE => {
             // SAFETY: Win32 supplies `CREATESTRUCTW` for `WM_NCCREATE`.
@@ -1457,27 +1696,32 @@ unsafe extern "system" fn window_proc(
             layout_children(window);
             LRESULT(0)
         }
+        WM_GETMINMAXINFO => {
+            apply_minimum_window_size(window, lparam);
+            LRESULT(0)
+        }
+        WM_ERASEBKGND => paint_window_background(window, wparam),
+        WM_CTLCOLORSTATIC | WM_CTLCOLOREDIT | WM_CTLCOLORBTN => {
+            control_color(window, wparam, lparam)
+        }
+        WM_DRAWITEM => {
+            if draw_primary_button(window, lparam) {
+                LRESULT(1)
+            } else {
+                // SAFETY: Unhandled owner-draw messages retain default processing.
+                unsafe { DefWindowProcW(window, message, wparam, lparam) }
+            }
+        }
         WM_DROPFILES => {
             handle_drop(window, wparam.0);
             LRESULT(0)
         }
         WM_DPICHANGED => {
-            if lparam.0 != 0 {
-                // SAFETY: Win32 supplies a suggested RECT pointer for WM_DPICHANGED.
-                let suggested = unsafe { &*(lparam.0 as *const RECT) };
-                // SAFETY: The suggested bounds are for this top-level window.
-                let _ = unsafe {
-                    SetWindowPos(
-                        window,
-                        None,
-                        suggested.left,
-                        suggested.top,
-                        suggested.right - suggested.left,
-                        suggested.bottom - suggested.top,
-                        SWP_NOZORDER | SWP_NOACTIVATE,
-                    )
-                };
-            }
+            handle_dpi_changed(window, lparam);
+            LRESULT(0)
+        }
+        WM_THEMECHANGED | WM_SETTINGCHANGE | WM_SYSCOLORCHANGE => {
+            refresh_current_theme(window);
             LRESULT(0)
         }
         WM_NOTIFY => {
@@ -1485,7 +1729,9 @@ unsafe extern "system" fn window_proc(
             LRESULT(0)
         }
         WM_COMMAND => {
-            if let Ok(command) = u16::try_from(wparam.0 & 0xffff) {
+            if let Ok(command) = u16::try_from(wparam.0 & 0xffff)
+                && (command != ID_SEARCH_MATCH_CASE || lparam.0 == 0)
+            {
                 handle_command(window, command);
             }
             LRESULT(0)
@@ -1514,7 +1760,6 @@ unsafe extern "system" fn window_proc(
             let pointer = state_pointer_for(window);
             // SAFETY: The state remains attached through WM_NCDESTROY.
             let worker = unsafe { pointer.as_mut() }.and_then(|state| {
-                close_find_dialog(state);
                 let _ = state.clear_accessibility();
                 state.worker.take()
             });
@@ -1544,57 +1789,404 @@ unsafe extern "system" fn window_proc(
     }
 }
 
+fn handle_dpi_changed(window: HWND, lparam: LPARAM) {
+    if lparam.0 != 0 {
+        // SAFETY: Win32 supplies a suggested RECT pointer for WM_DPICHANGED.
+        let suggested = unsafe { &*(lparam.0 as *const RECT) };
+        // SAFETY: The suggested bounds are for this top-level window.
+        let _ = unsafe {
+            SetWindowPos(
+                window,
+                None,
+                suggested.left,
+                suggested.top,
+                suggested.right - suggested.left,
+                suggested.bottom - suggested.top,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        };
+    }
+    refresh_current_theme(window);
+}
+
+fn refresh_current_theme(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Preference is copied while the attached state is live.
+    if let Some(preference) = unsafe { pointer.as_ref() }.map(|state| state.theme.preference) {
+        let _ = refresh_theme(window, preference);
+    }
+}
+
+fn apply_minimum_window_size(window: HWND, lparam: LPARAM) {
+    if lparam.0 == 0 {
+        return;
+    }
+    // SAFETY: WM_GETMINMAXINFO supplies this writable pointer for the call.
+    let info = unsafe { &mut *(lparam.0 as *mut MINMAXINFO) };
+    // SAFETY: The live HWND provides its current monitor DPI.
+    let dpi = unsafe { GetDpiForWindow(window) }.max(96);
+    let metrics = UiLayout::calculate(0, 0, dpi).metrics;
+    let mut bounds = RECT {
+        left: 0,
+        top: 0,
+        right: metrics.minimum_client_width,
+        bottom: metrics.minimum_client_height,
+    };
+    // SAFETY: The RECT is writable and matches the live top-level style.
+    if unsafe {
+        AdjustWindowRectExForDpi(
+            &raw mut bounds,
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+            false,
+            WS_EX_APPWINDOW | WS_EX_ACCEPTFILES,
+            dpi,
+        )
+    }
+    .is_ok()
+    {
+        info.ptMinTrackSize.x = bounds.right.saturating_sub(bounds.left);
+        info.ptMinTrackSize.y = bounds.bottom.saturating_sub(bounds.top);
+    }
+}
+
+fn paint_window_background(window: HWND, wparam: WPARAM) -> LRESULT {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The state remains attached while window messages are dispatched.
+    let Some(state) = (unsafe { pointer.as_ref() }) else {
+        return LRESULT(0);
+    };
+    let mut client = RECT::default();
+    // SAFETY: WM_ERASEBKGND supplies a live HDC and the RECT is writable.
+    if unsafe { GetClientRect(window, &raw mut client) }.is_err() {
+        return LRESULT(0);
+    }
+    let device = HDC(wparam.0 as *mut c_void);
+    let painted = unsafe { FillRect(device, &raw const client, state.theme.brushes.canvas()) };
+    LRESULT((painted != 0).into())
+}
+
+fn control_color(window: HWND, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let pointer = state_pointer_for(window);
+    // SAFETY: State and child-control handles remain live during color messages.
+    let Some(state) = (unsafe { pointer.as_ref() }) else {
+        return LRESULT(0);
+    };
+    let child = HWND(lparam.0 as *mut c_void);
+    let (brush, background, foreground) =
+        if child == state.status || child == state.chrome.status_backdrop {
+            (
+                state.theme.brushes.surface_muted(),
+                state.theme.palette.surface_muted,
+                state.theme.palette.text_secondary,
+            )
+        } else if child == state.chrome.topbar
+            || child == state.chrome.file_name
+            || child == state.chrome.file_meta
+            || child == state.chrome.open
+            || child == state.chrome.more
+            || child == state.chrome.theme
+            || child == state.chrome.reload
+            || child == state.chrome.goto
+            || child == state.chrome.find_previous
+            || child == state.chrome.find_next
+            || child == state.chrome.match_case
+        {
+            (
+                state.theme.brushes.surface(),
+                state.theme.palette.surface,
+                state.theme.palette.text_primary,
+            )
+        } else if child == state.chrome.wordmark {
+            (
+                state.theme.brushes.surface_muted(),
+                state.theme.palette.surface_muted,
+                state.theme.palette.accent,
+            )
+        } else if child == state.chrome.empty_eyebrow {
+            (
+                state.theme.brushes.canvas(),
+                state.theme.palette.canvas,
+                state.theme.palette.accent,
+            )
+        } else {
+            (
+                state.theme.brushes.canvas(),
+                state.theme.palette.canvas,
+                state.theme.palette.text_primary,
+            )
+        };
+    let device = HDC(wparam.0 as *mut c_void);
+    // SAFETY: The HDC is valid only for this synchronous control-color message.
+    unsafe {
+        let _ = SetBkColor(device, background.colorref());
+        let _ = SetTextColor(device, foreground.colorref());
+        let _ = SetBkMode(device, TRANSPARENT);
+    }
+    LRESULT(isize::try_from(brush.0.addr()).unwrap_or_default())
+}
+
+fn draw_primary_button(window: HWND, lparam: LPARAM) -> bool {
+    if lparam.0 == 0 {
+        return false;
+    }
+    // SAFETY: WM_DRAWITEM supplies a live DRAWITEMSTRUCT for this synchronous call.
+    let item = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
+    if item.CtlType != ODT_BUTTON {
+        return false;
+    }
+    let pointer = state_pointer_for(window);
+    // SAFETY: State and child handles remain attached throughout message dispatch.
+    let Some(state) = (unsafe { pointer.as_ref() }) else {
+        return false;
+    };
+    let background = if item.hwndItem == state.chrome.open {
+        state.theme.brushes.surface()
+    } else if item.hwndItem == state.chrome.empty_open {
+        state.theme.brushes.canvas()
+    } else {
+        return false;
+    };
+
+    let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
+    let selected = item.itemState.0 & ODS_SELECTED.0 != 0;
+    let brush = if disabled {
+        state.theme.brushes.surface_muted()
+    } else {
+        state.theme.brushes.accent()
+    };
+    let foreground = if disabled {
+        state.theme.palette.text_disabled
+    } else {
+        state.theme.palette.accent_text
+    };
+    let radius = state.theme.metrics.radius_small.saturating_mul(2);
+    let region = unsafe {
+        CreateRoundRectRgn(
+            item.rcItem.left,
+            item.rcItem.top,
+            item.rcItem.right,
+            item.rcItem.bottom,
+            radius,
+            radius,
+        )
+    };
+    if region.is_invalid() {
+        return false;
+    }
+    // SAFETY: The region, HDC, brush, and font remain valid for this draw callback.
+    unsafe {
+        let _ = FillRect(item.hDC, &raw const item.rcItem, background);
+        let _ = FillRgn(item.hDC, region, brush);
+        let border_width = state.theme.metrics.border_width.max(1);
+        let _ = FrameRgn(
+            item.hDC,
+            region,
+            state.theme.brushes.border(),
+            border_width,
+            border_width,
+        );
+        let _ = DeleteObject(HGDIOBJ(region.0));
+        let previous_font = SelectObject(item.hDC, HGDIOBJ(state.theme.fonts.semibold().0));
+        let _ = SetBkMode(item.hDC, TRANSPARENT);
+        let _ = SetTextColor(item.hDC, foreground.colorref());
+        let mut bounds = item.rcItem;
+        if selected {
+            let offset = state.theme.metrics.border_width.max(1);
+            bounds.left = bounds.left.saturating_add(offset);
+            bounds.top = bounds.top.saturating_add(offset);
+            bounds.right = bounds.right.saturating_add(offset);
+            bounds.bottom = bounds.bottom.saturating_add(offset);
+        }
+        let mut text = [0_u16; 64];
+        let length = GetWindowTextW(item.hwndItem, &mut text);
+        let length = usize::try_from(length).unwrap_or_default().min(text.len());
+        let _ = DrawTextW(
+            item.hDC,
+            &mut text[..length],
+            &raw mut bounds,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+        if !previous_font.is_invalid() {
+            let _ = SelectObject(item.hDC, previous_font);
+        }
+        if item.itemState.0 & ODS_FOCUS.0 != 0 && item.itemState.0 & ODS_NOFOCUSRECT.0 == 0 {
+            let inset = state.theme.metrics.space_1.max(2);
+            let focus = RECT {
+                left: item.rcItem.left.saturating_add(inset),
+                top: item.rcItem.top.saturating_add(inset),
+                right: item.rcItem.right.saturating_sub(inset),
+                bottom: item.rcItem.bottom.saturating_sub(inset),
+            };
+            let _ = DrawFocusRect(item.hDC, &raw const focus);
+        }
+    }
+    true
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one linear construction path keeps partial Win32 child ownership auditable"
+)]
 fn create_children(window: HWND) -> Result<(), ()> {
     // SAFETY: The module belongs to this process.
     let module = unsafe { GetModuleHandleW(None) }.map_err(|_| ())?;
     let instance = HINSTANCE(module.0);
-    let list_style = WS_CHILD
-        | WS_VISIBLE
-        | WS_TABSTOP
-        | WINDOW_STYLE(LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS);
-    // SAFETY: Parent, class names, styles, and module instance are valid.
-    let list = unsafe {
-        CreateWindowExW(
-            WS_EX_CLIENTEDGE,
-            WC_LISTVIEWW,
-            w!("Rows"),
-            list_style,
-            0,
-            0,
-            0,
-            0,
-            Some(window),
-            None,
-            Some(instance),
-            None,
-        )
-    }
-    .map_err(|_| ())?;
-    // SAFETY: Same as above; status-bar classes were initialized before window creation.
-    let status = unsafe {
-        CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            STATUSCLASSNAMEW,
-            w!("Ready"),
-            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(SBARS_SIZEGRIP),
-            0,
-            0,
-            0,
-            0,
-            Some(window),
-            None,
-            Some(instance),
-            None,
-        )
-    }
-    .map_err(|_| ())?;
-
     let pointer = state_pointer_for(window);
     // SAFETY: `WM_NCCREATE` attached the state before `WM_CREATE`.
     let state = unsafe { pointer.as_mut() }.ok_or(())?;
     state.window = window;
+    let topbar = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!(""),
+        WS_CHILD | WS_VISIBLE,
+        None,
+    )?;
+    let wordmark = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!(""),
+        WS_CHILD | static_style(SS_ICON.0 | SS_CENTERIMAGE.0),
+        None,
+    )?;
+    let file_name = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!("LeanRows"),
+        WS_CHILD,
+        None,
+    )?;
+    let file_meta = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!("Large-file row viewer"),
+        WS_CHILD,
+        None,
+    )?;
+    let search_edit = create_child(
+        instance,
+        window,
+        w!("EDIT"),
+        w!(""),
+        WS_CHILD | WS_TABSTOP | WS_BORDER | control_style(ES_AUTOHSCROLL),
+        Some(ID_SEARCH_FIELD),
+    )?;
+    let match_case = create_child(
+        instance,
+        window,
+        w!("BUTTON"),
+        w!("Match case"),
+        WS_CHILD | WS_TABSTOP | control_style(BS_AUTOCHECKBOX),
+        Some(ID_SEARCH_MATCH_CASE),
+    )?;
+    let find_previous = create_button(instance, window, w!("<"), ID_EDIT_FIND_PREVIOUS)?;
+    let find_next = create_button(instance, window, w!(">"), ID_EDIT_FIND_NEXT)?;
+    let reload = create_button(instance, window, w!("Reload"), ID_FILE_RELOAD)?;
+    let goto = create_button(instance, window, w!("Go to row"), ID_EDIT_GOTO)?;
+    let theme = create_button(instance, window, w!("Theme"), ID_VIEW_THEME)?;
+    let open = create_child(
+        instance,
+        window,
+        w!("BUTTON"),
+        w!("Open file"),
+        WS_CHILD | WS_TABSTOP | control_style(BS_OWNERDRAW),
+        Some(ID_FILE_OPEN),
+    )?;
+    let more = create_button(instance, window, w!("..."), ID_APP_MORE)?;
+    let progress = create_child(
+        instance,
+        window,
+        PROGRESS_CLASSW,
+        w!(""),
+        WS_CHILD | WINDOW_STYLE(PBS_SMOOTH | PBS_MARQUEE),
+        None,
+    )?;
+    let list = create_child(
+        instance,
+        window,
+        WC_LISTVIEWW,
+        w!("Rows"),
+        WS_CHILD | WS_TABSTOP | WINDOW_STYLE(LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS),
+        None,
+    )?;
+    let empty_eyebrow = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!("LEANROWS"),
+        WS_CHILD | static_style(SS_CENTER.0),
+        None,
+    )?;
+    let empty_title = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!("Open large files without loading them all."),
+        WS_CHILD | static_style(SS_CENTER.0),
+        None,
+    )?;
+    let empty_body = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!(
+            "Open a local CSV, TSV, JSONL, NDJSON, log, or text file. LeanRows keeps memory bounded and never modifies the source."
+        ),
+        WS_CHILD | static_style(SS_CENTER.0),
+        None,
+    )?;
+    let empty_open = create_child(
+        instance,
+        window,
+        w!("BUTTON"),
+        w!("Open a data file"),
+        WS_CHILD | WS_TABSTOP | control_style(BS_OWNERDRAW),
+        Some(ID_FILE_OPEN),
+    )?;
+    let status_backdrop = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!(""),
+        WS_CHILD | WS_VISIBLE,
+        None,
+    )?;
+    let status = create_child(
+        instance,
+        window,
+        w!("STATIC"),
+        w!("Ready"),
+        WS_CHILD | WS_VISIBLE | static_style(SS_CENTERIMAGE.0),
+        None,
+    )?;
+
     state.list = list;
     state.status = status;
+    state.chrome = ChromeHandles {
+        topbar,
+        wordmark,
+        file_name,
+        file_meta,
+        search_edit,
+        match_case,
+        find_previous,
+        find_next,
+        reload,
+        goto,
+        theme,
+        open,
+        more,
+        progress,
+        empty_eyebrow,
+        empty_title,
+        empty_body,
+        empty_open,
+        status_backdrop,
+    };
     let count = state.rows.visible_rows();
     let raw_window = window.0 as usize;
     let wake_ui: Arc<dyn Fn() + Send + Sync> = Arc::new(move || post_worker_ready(raw_window));
@@ -1604,7 +2196,8 @@ fn create_children(window: HWND) -> Result<(), ()> {
     insert_existing_data_columns(list, state.columns)?;
     let style = LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER;
     let style_parameter = isize::try_from(style).unwrap_or_default();
-    // SAFETY: List-view messages are synchronous and use integer payloads only.
+    // SAFETY: These control messages are synchronous and use bounded values or
+    // static UTF-16 storage.
     unsafe {
         SendMessageW(
             list,
@@ -1619,13 +2212,15 @@ fn create_children(window: HWND) -> Result<(), ()> {
             Some(LPARAM(0)),
         );
         SendMessageW(
-            status,
-            SB_SETTEXTW,
-            Some(WPARAM(0)),
-            Some(LPARAM(w!("Ready").as_ptr() as isize)),
+            search_edit,
+            EM_SETCUEBANNER,
+            Some(WPARAM(1)),
+            Some(LPARAM(w!("Find in file").as_ptr() as isize)),
         );
+        SendMessageW(progress, PBM_SETRANGE32, Some(WPARAM(0)), Some(LPARAM(100)));
     }
-    apply_native_presentation(list, status).map_err(|_| ())?;
+    apply_native_presentation(state).map_err(|_| ())?;
+    apply_shell_visibility(state);
     state
         .accessibility
         .annotate_shell(window, list)
@@ -1640,6 +2235,63 @@ fn create_children(window: HWND) -> Result<(), ()> {
     }
     layout_children(window);
     Ok(())
+}
+
+fn create_child(
+    instance: HINSTANCE,
+    parent: HWND,
+    class: PCWSTR,
+    text: PCWSTR,
+    style: WINDOW_STYLE,
+    identifier: Option<u16>,
+) -> Result<HWND, ()> {
+    let menu = identifier.map(|identifier| {
+        HMENU(std::ptr::without_provenance_mut::<c_void>(usize::from(
+            identifier,
+        )))
+    });
+    // SAFETY: The parent, class, text, identifier, and module belong to this UI thread.
+    unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            class,
+            text,
+            style,
+            0,
+            0,
+            0,
+            0,
+            Some(parent),
+            menu,
+            Some(instance),
+            None,
+        )
+    }
+    .map_err(|_| ())
+}
+
+fn create_button(
+    instance: HINSTANCE,
+    parent: HWND,
+    text: PCWSTR,
+    identifier: u16,
+) -> Result<HWND, ()> {
+    create_child(
+        instance,
+        parent,
+        w!("BUTTON"),
+        text,
+        WS_CHILD | WS_TABSTOP | control_style(BS_PUSHBUTTON | BS_FLAT),
+        Some(identifier),
+    )
+}
+
+fn control_style(value: i32) -> WINDOW_STYLE {
+    WINDOW_STYLE(u32::try_from(value).unwrap_or_default())
+}
+
+fn static_style(value: u32) -> WINDOW_STYLE {
+    WINDOW_STYLE(value)
 }
 
 fn insert_column(
@@ -1745,33 +2397,209 @@ fn layout_children(window: HWND) {
     let Some(state) = (unsafe { pointer.as_ref() }) else {
         return;
     };
-    let (list, status) = (state.list, state.status);
-    if list.0.is_null() || status.0.is_null() {
+    if state.list.0.is_null() || state.status.0.is_null() {
         return;
     }
     let mut client = RECT::default();
-    // SAFETY: All HWNDs belong to this window and both RECTs are writable.
-    unsafe {
-        let _ = SendMessageW(status, WM_SIZE, None, None);
-        if GetClientRect(window, &raw mut client).is_err() {
-            return;
-        }
-        let mut status_rect = RECT::default();
-        if windows::Win32::UI::WindowsAndMessaging::GetWindowRect(status, &raw mut status_rect)
-            .is_err()
-        {
-            return;
-        }
-        let status_height = (status_rect.bottom - status_rect.top).max(0);
-        let _ = MoveWindow(
-            list,
-            0,
-            0,
-            (client.right - client.left).max(0),
-            (client.bottom - client.top - status_height).max(0),
-            true,
-        );
+    // SAFETY: The top-level window is live and the RECT is writable.
+    if unsafe { GetClientRect(window, &raw mut client) }.is_err() {
+        return;
     }
+    // SAFETY: The HWND is live. Zero is normalized by UiLayout.
+    let dpi = state.theme.metrics.dpi;
+    let layout = UiLayout::calculate(
+        (client.right - client.left).max(0),
+        (client.bottom - client.top).max(0),
+        dpi,
+    );
+    move_control(state.chrome.topbar, layout.top_bar);
+    move_control(state.chrome.progress, layout.progress_track);
+    move_control(state.list, layout.grid);
+    move_control(state.chrome.status_backdrop, layout.status_strip);
+    let status_inset = layout.metrics.space_5.min(layout.status_strip.width / 2);
+    move_control(
+        state.status,
+        UiRect {
+            x: layout.status_strip.x.saturating_add(status_inset),
+            y: layout.status_strip.y,
+            width: layout
+                .status_strip
+                .width
+                .saturating_sub(status_inset.saturating_mul(2)),
+            height: layout.status_strip.height,
+        },
+    );
+
+    let commands = layout.commands;
+    place_optional(state.chrome.wordmark, commands.wordmark);
+    place_file_identity(
+        state.chrome.file_name,
+        state.chrome.file_meta,
+        commands.file_identity,
+        layout.metrics.space_1,
+    );
+    place_search_controls(
+        state.chrome.search_edit,
+        state.chrome.match_case,
+        commands.search_field,
+        commands.mode,
+        layout.metrics.space_2,
+        scale(88, dpi),
+    );
+    place_optional(state.chrome.find_previous, commands.previous_match_button);
+    place_optional(state.chrome.find_next, commands.next_match_button);
+    place_optional(state.chrome.reload, commands.reload_button);
+    place_optional(state.chrome.goto, commands.goto_button);
+    place_optional(state.chrome.theme, commands.theme_button);
+    move_and_show(state.chrome.open, commands.open_button);
+    move_and_show(state.chrome.more, commands.overflow_button);
+    layout_empty_state(state, layout.empty_state, dpi);
+}
+
+fn move_control(handle: HWND, rect: UiRect) {
+    if handle.0.is_null() {
+        return;
+    }
+    // SAFETY: The control is owned by this UI thread; extents are non-negative.
+    let _ = unsafe { MoveWindow(handle, rect.x, rect.y, rect.width, rect.height, true) };
+}
+
+fn move_and_show(handle: HWND, rect: UiRect) {
+    move_control(handle, rect);
+    set_control_visible(handle, rect.width > 0 && rect.height > 0);
+}
+
+fn place_optional(handle: HWND, rect: Option<UiRect>) {
+    if let Some(rect) = rect {
+        move_and_show(handle, rect);
+    } else {
+        set_control_visible(handle, false);
+    }
+}
+
+fn place_file_identity(file_name: HWND, file_meta: HWND, rect: Option<UiRect>, gap: i32) {
+    let Some(rect) = rect else {
+        set_control_visible(file_name, false);
+        set_control_visible(file_meta, false);
+        return;
+    };
+    let usable = rect.height.saturating_sub(gap);
+    let name_height = usable.saturating_mul(5) / 9;
+    move_and_show(
+        file_name,
+        UiRect {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: name_height,
+        },
+    );
+    move_and_show(
+        file_meta,
+        UiRect {
+            x: rect.x,
+            y: rect.y.saturating_add(name_height).saturating_add(gap),
+            width: rect.width,
+            height: usable.saturating_sub(name_height),
+        },
+    );
+}
+
+fn place_search_controls(
+    search: HWND,
+    match_case: HWND,
+    rect: UiRect,
+    mode: CommandLayoutMode,
+    gap: i32,
+    desired_case_width: i32,
+) {
+    if matches!(mode, CommandLayoutMode::Narrow) {
+        move_and_show(search, rect);
+        set_control_visible(match_case, false);
+        return;
+    }
+    let case_width = desired_case_width.min(rect.width / 3).max(0);
+    let search_width = rect.width.saturating_sub(case_width).saturating_sub(gap);
+    move_and_show(
+        search,
+        UiRect {
+            width: search_width,
+            ..rect
+        },
+    );
+    move_and_show(
+        match_case,
+        UiRect {
+            x: rect.x.saturating_add(search_width).saturating_add(gap),
+            width: case_width,
+            ..rect
+        },
+    );
+}
+
+fn layout_empty_state(state: &WindowState, bounds: UiRect, dpi: u32) {
+    let width = bounds.width.min(scale(560, dpi));
+    let left = bounds
+        .x
+        .saturating_add(bounds.width.saturating_sub(width) / 2);
+    let eyebrow_height = scale(20, dpi);
+    let title_height = scale(72, dpi);
+    let body_height = scale(60, dpi);
+    let button_width = scale(168, dpi);
+    let button_height = scale(44, dpi);
+    let gap_small = scale(12, dpi);
+    let gap_large = scale(24, dpi);
+    let total_height = eyebrow_height
+        .saturating_add(gap_small)
+        .saturating_add(title_height)
+        .saturating_add(gap_small)
+        .saturating_add(body_height)
+        .saturating_add(gap_large)
+        .saturating_add(button_height);
+    let mut top = bounds
+        .y
+        .saturating_add(bounds.height.saturating_sub(total_height) / 2);
+    move_control(
+        state.chrome.empty_eyebrow,
+        UiRect {
+            x: left,
+            y: top,
+            width,
+            height: eyebrow_height,
+        },
+    );
+    top = top.saturating_add(eyebrow_height).saturating_add(gap_small);
+    move_control(
+        state.chrome.empty_title,
+        UiRect {
+            x: left,
+            y: top,
+            width,
+            height: title_height,
+        },
+    );
+    top = top.saturating_add(title_height).saturating_add(gap_small);
+    move_control(
+        state.chrome.empty_body,
+        UiRect {
+            x: left,
+            y: top,
+            width,
+            height: body_height,
+        },
+    );
+    top = top.saturating_add(body_height).saturating_add(gap_large);
+    move_control(
+        state.chrome.empty_open,
+        UiRect {
+            x: bounds
+                .x
+                .saturating_add(bounds.width.saturating_sub(button_width) / 2),
+            y: top,
+            width: button_width.min(bounds.width),
+            height: button_height,
+        },
+    );
 }
 
 fn handle_list_notification(window: HWND, lparam: LPARAM) {
@@ -1881,20 +2709,35 @@ fn queue_path(window: HWND, path: PathBuf) -> Result<(), ShellError> {
         .as_ref()
         .ok_or_else(|| ShellError::new("document worker is unavailable"))?;
     let serial = worker.submit_path(path.clone());
+    state.grid_visible = false;
+    state.progress_visible = true;
+    set_file_identity(state, &path, None)?;
+    set_empty_state(
+        state,
+        "OPENING",
+        "Preparing the first rows.",
+        "LeanRows is reading a bounded window from the file. The source stays unchanged.",
+    )?;
     state.current_path = Some(path);
     state.active_serial = Some(serial);
-    let (list, status) = (state.list, state.status);
+    apply_shell_visibility(state);
 
-    // SAFETY: Both messages are synchronous and carry only bounded integer/static data.
+    // SAFETY: These messages are synchronous and carry only bounded integers.
     unsafe {
-        SendMessageW(list, LVM_SETITEMCOUNT, Some(WPARAM(0)), Some(LPARAM(0)));
         SendMessageW(
-            status,
-            SB_SETTEXTW,
+            state.list,
+            LVM_SETITEMCOUNT,
             Some(WPARAM(0)),
-            Some(LPARAM(w!("Opening file...").as_ptr() as isize)),
+            Some(LPARAM(0)),
+        );
+        SendMessageW(
+            state.chrome.progress,
+            PBM_SETMARQUEE,
+            Some(WPARAM(1)),
+            Some(LPARAM(24)),
         );
     }
+    set_status_handle(state.status, "Opening file...");
     Ok(())
 }
 
@@ -1930,6 +2773,58 @@ fn set_document_title(window: HWND, path: &Path) -> Result<(), ShellError> {
         .map_err(|error| ShellError::new(format!("window title update failed: {error}")))
 }
 
+fn set_file_identity(
+    state: &WindowState,
+    path: &Path,
+    source_bytes: Option<u64>,
+) -> Result<(), ShellError> {
+    let name = path
+        .file_name()
+        .filter(|value| !value.is_empty())
+        .map_or_else(
+            || path.as_os_str().to_string_lossy(),
+            |value| value.to_string_lossy(),
+        );
+    set_control_text(state.chrome.file_name, &name)?;
+    let metadata = source_bytes.map_or_else(
+        || String::from("Opening local file..."),
+        |bytes| format!("{bytes} bytes | read-only source"),
+    );
+    set_control_text(state.chrome.file_meta, &metadata)
+}
+
+fn set_empty_state(
+    state: &WindowState,
+    eyebrow: &str,
+    title: &str,
+    body: &str,
+) -> Result<(), ShellError> {
+    set_control_text(state.chrome.empty_eyebrow, eyebrow)?;
+    set_control_text(state.chrome.empty_title, title)?;
+    set_control_text(state.chrome.empty_body, body)
+}
+
+fn update_progress_presentation(state: &mut WindowState, event: &WorkerEvent) {
+    let terminal = matches!(event.phase, WorkerPhase::Complete | WorkerPhase::Failed);
+    state.progress_visible = !terminal;
+    let percent = progress_percent(event.progress.scanned_bytes, event.progress.source_bytes);
+    // SAFETY: Progress messages carry bounded integers and no pointers.
+    unsafe {
+        SendMessageW(
+            state.chrome.progress,
+            PBM_SETMARQUEE,
+            Some(WPARAM(0)),
+            Some(LPARAM(0)),
+        );
+        SendMessageW(
+            state.chrome.progress,
+            PBM_SETPOS,
+            Some(WPARAM(usize::try_from(percent).unwrap_or(100))),
+            Some(LPARAM(0)),
+        );
+    }
+}
+
 fn document_title(path: &Path) -> Result<Vec<u16>, ShellError> {
     const SUFFIX: &[u16] = &[32, 0x2014, 32, 76, 101, 97, 110, 82, 111, 119, 115, 0];
 
@@ -1963,6 +2858,48 @@ fn apply_worker_event(window: HWND) {
     }
 }
 
+fn update_document_chrome(state: &mut WindowState, event: &WorkerEvent) {
+    let source_bytes = match &event.result {
+        WorkerResult::Ready { size } => Some(*size),
+        WorkerResult::Failed { .. } => None,
+    };
+    let _ = set_file_identity(state, &event.path, source_bytes);
+    update_progress_presentation(state, event);
+    match &event.result {
+        WorkerResult::Failed { message } => {
+            state.grid_visible = false;
+            let _ = set_empty_state(
+                state,
+                "COULD NOT OPEN",
+                "This file could not be displayed.",
+                message,
+            );
+        }
+        WorkerResult::Ready { .. }
+            if event.progress.complete && event.progress.available_rows == 0 =>
+        {
+            state.grid_visible = false;
+            let _ = set_empty_state(
+                state,
+                "EMPTY FILE",
+                "This file has no rows.",
+                "Choose another supported local file to continue.",
+            );
+        }
+        WorkerResult::Ready { .. } if event.cached_rows > 0 => state.grid_visible = true,
+        WorkerResult::Ready { .. } => {
+            state.grid_visible = false;
+            let _ = set_empty_state(
+                state,
+                "INDEXING",
+                "Finding the first complete row.",
+                "Memory stays bounded while LeanRows scans forward cooperatively.",
+            );
+        }
+    }
+    apply_shell_visibility(state);
+}
+
 fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
     let pointer = state_pointer_for(window);
     // SAFETY: The UI thread serializes cache swaps and display notifications.
@@ -1973,6 +2910,8 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
     {
         return false;
     }
+
+    update_document_chrome(state, event);
 
     if let Some(columns) = event.columns
         && let Err(error) = synchronize_data_columns(state, columns)
@@ -2255,7 +3194,7 @@ fn worker_status(event: &WorkerEvent, active_find: Option<&ActiveFind>) -> Strin
 
     if let WorkerResult::Failed { message } = &event.result {
         let reload = if failure_requires_reload(message) {
-            " | File changed: press F5 or choose File > Reload; automatic reload is disabled"
+            " | File changed: press F5 or choose Reload; automatic reload is disabled"
         } else {
             ""
         };
@@ -2381,27 +3320,11 @@ fn state_pointer_for(window: HWND) -> *mut WindowState {
     unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut WindowState }
 }
 
-fn close_find_dialog(state: &mut WindowState) {
-    let dialog = state.find_dialog.as_ref().map(|dialog| dialog.window);
-    if let Some(dialog) = dialog
-        // SAFETY: This check and destruction run on the dialog's owning UI thread.
-        && unsafe { IsWindow(Some(dialog)) }.as_bool()
-    {
-        // FR_DIALOGTERM may synchronously clear state.find_dialog; its boxed
-        // descriptor and buffer stay alive throughout DestroyWindow.
-        let _ = unsafe { DestroyWindow(dialog) };
-    }
-    state.find_dialog = None;
-}
-
 fn destroy_shell_window(window: HWND) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: The pointer slot belongs to this HWND and is valid until DestroyWindow returns.
-    let cleanup = match unsafe { pointer.as_mut() } {
-        Some(state) => {
-            close_find_dialog(state);
-            state.clear_accessibility()
-        }
+    let cleanup = match unsafe { pointer.as_ref() } {
+        Some(state) => state.clear_accessibility(),
         None => Ok(()),
     };
     // SAFETY: All callers run on the UI thread that owns this live top-level HWND.
@@ -2421,9 +3344,11 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
+    use super::layout::UiLayout;
     use super::{
-        ActiveFind, MAX_COPY_ROWS, MAX_COPY_UTF16_UNITS, MAX_STARTUP_ERROR_UTF16_UNITS,
-        NativeColumns, RevealedMatch, append_copy_units, build_copy_text, document_event_is_usable,
+        ActiveFind, EMPTY_TITLE_CAPTION, MAX_COPY_ROWS, MAX_COPY_UTF16_UNITS,
+        MAX_STARTUP_ERROR_UTF16_UNITS, NativeColumns, RevealedMatch, SHELL_SMOKE_TEXT_UNITS,
+        append_copy_units, build_copy_text, control_style, document_event_is_usable,
         document_smoke_evidence, document_title, failure_requires_reload, find_needle,
         is_supported_document_path, parse_one_based_row, query_match_to_reveal, query_status,
         startup_error_text, worker_status,
@@ -2461,6 +3386,36 @@ mod tests {
             display_truncated_rows: 0,
             escaped_non_utf8_rows: 0,
         }
+    }
+
+    #[test]
+    fn modern_shell_contract_is_bounded_and_actionable_at_minimum_size() {
+        let layout = UiLayout::calculate(640, 480, 96);
+        for rect in [
+            layout.top_bar,
+            layout.commands.search_field,
+            layout.commands.open_button,
+            layout.commands.overflow_button,
+            layout.status_strip,
+        ] {
+            assert!(rect.width > 0 && rect.height > 0);
+        }
+
+        let title: Vec<u16> = EMPTY_TITLE_CAPTION.encode_utf16().collect();
+        assert_eq!(
+            String::from_utf16_lossy(&title),
+            "Open large files without loading them all."
+        );
+        assert!(title.len() < SHELL_SMOKE_TEXT_UNITS);
+
+        let button_type = control_style(windows::Win32::UI::WindowsAndMessaging::BS_OWNERDRAW).0
+            & u32::try_from(windows::Win32::UI::WindowsAndMessaging::BS_TYPEMASK)
+                .unwrap_or_default();
+        assert_eq!(
+            button_type,
+            u32::try_from(windows::Win32::UI::WindowsAndMessaging::BS_OWNERDRAW)
+                .unwrap_or_default()
+        );
     }
 
     #[test]
