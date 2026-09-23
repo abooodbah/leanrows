@@ -21,7 +21,7 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM}
 use windows::Win32::Graphics::Gdi::{
     COLOR_WINDOW, CreateRoundRectRgn, DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE,
     DT_VCENTER, DeleteObject, DrawFocusRect, DrawTextW, FillRect, FillRgn, FrameRgn, GetDC,
-    GetPixel, GetSysColorBrush, HDC, HGDIOBJ, InvalidateRect, RDW_ALLCHILDREN, RDW_ERASE,
+    GetPixel, GetSysColorBrush, HBRUSH, HDC, HGDIOBJ, InvalidateRect, RDW_ALLCHILDREN, RDW_ERASE,
     RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow, ReleaseDC, SelectObject, SetBkColor, SetBkMode,
     SetTextColor, TRANSPARENT, UpdateWindow,
 };
@@ -738,6 +738,23 @@ fn verify_initial_surface_colors(state_pointer: *mut WindowState) -> Result<(), 
             state.status,
             state.theme.palette.surface_muted.colorref().0,
             "status text",
+        ),
+        // These three take their background from WM_CTLCOLORSTATIC rather
+        // than painting it themselves.
+        (
+            state.chrome.file_name,
+            state.theme.palette.surface.colorref().0,
+            "file name",
+        ),
+        (
+            state.chrome.file_meta,
+            state.theme.palette.surface.colorref().0,
+            "file details",
+        ),
+        (
+            state.chrome.match_case,
+            state.theme.palette.surface.colorref().0,
+            "Match case",
         ),
     ] {
         verify_child_background_pixel(handle, expected, name)?;
@@ -2698,7 +2715,16 @@ fn control_color(window: HWND, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         let _ = SetTextColor(device, foreground.colorref());
         let _ = SetBkMode(device, TRANSPARENT);
     }
-    LRESULT(isize::try_from(brush.0.addr()).unwrap_or_default())
+    brush_result(brush)
+}
+
+/// Returns a brush from a `WM_CTLCOLOR*` message. In a 64-bit process a GDI
+/// handle is a 32-bit value that is often sign-extended, so its bits are
+/// reinterpreted rather than range-checked. A checked conversion turned such
+/// handles into a null brush, and the control was left unpainted over the
+/// white window background.
+fn brush_result(brush: HBRUSH) -> LRESULT {
+    LRESULT(brush.0.addr().cast_signed())
 }
 
 fn draw_shell_button(window: HWND, lparam: LPARAM) -> bool {
@@ -4916,11 +4942,13 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
+    use windows::Win32::Graphics::Gdi::HBRUSH;
+
     use super::layout::UiLayout;
     use super::{
         ActiveFind, EMPTY_TITLE_CAPTION, MAX_COPY_ROWS, MAX_COPY_UTF16_UNITS,
         MAX_STARTUP_ERROR_UTF16_UNITS, NativeColumns, RevealedMatch, SHELL_SMOKE_TEXT_UNITS,
-        append_copy_units, build_copy_text, control_style, document_event_is_usable,
+        append_copy_units, brush_result, build_copy_text, control_style, document_event_is_usable,
         document_smoke_evidence, document_title, event_chrome, failure_requires_reload,
         file_meta_text, find_needle, is_supported_document_path, parse_one_based_row,
         parse_open_selection, query_match_to_reveal, query_status, startup_error_text,
@@ -4989,6 +5017,20 @@ mod tests {
             u32::try_from(windows::Win32::UI::WindowsAndMessaging::BS_OWNERDRAW)
                 .unwrap_or_default()
         );
+    }
+
+    #[test]
+    fn control_color_brushes_keep_sign_extended_handles() {
+        // Handle values taken from a traced run where the surface brush came
+        // back sign-extended and the file name, details, and Match case
+        // controls were left white.
+        let extended = HBRUSH(std::ptr::without_provenance_mut(0xffff_ffff_ee10_0c1f));
+        assert_eq!(
+            brush_result(extended).0.cast_unsigned(),
+            0xffff_ffff_ee10_0c1f
+        );
+        let positive = HBRUSH(std::ptr::without_provenance_mut(0x7310_0c91));
+        assert_eq!(brush_result(positive).0, 0x7310_0c91);
     }
 
     #[test]
