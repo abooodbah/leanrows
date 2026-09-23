@@ -55,9 +55,14 @@ same release.
 
 ## Run or install
 
-The extracted ZIP is portable. Launch `leanrows.exe` directly, pass a supported
-file path on the command line, use **Open file** or `Ctrl+O`, or drop a
-supported file onto the window.
+The extracted ZIP is portable. Launch `leanrows.exe` directly, pass one or more
+supported file paths on the command line, use **Open file** or `Ctrl+O`, or drop
+supported files onto the window. Each file opens in its own tab.
+
+While LeanRows is running, a file opened from Explorer or the command line joins
+the running window as a new tab, so every open file shares one process. A copy
+started from a different folder, such as a portable copy next to an installed
+one, keeps its own window.
 
 An optional per-user installation is also included:
 
@@ -128,6 +133,13 @@ demand-driven: it advances only far enough to answer the current next or
 previous request. Owned scratch files are removed after use, and stale-file
 recovery is coordinated across concurrent LeanRows processes.
 
+Every open file shares one process. Each tab has its own background worker,
+file handle, index, and cached row window; a tab that is not showing keeps its
+rows in the same allocation its worker already holds, so switching tabs copies
+nothing. At most 32 files can be open at once. A window with no open file runs
+no worker thread, and minimizing the window asks Windows to page out the
+process until it is used again.
+
 These bounds apply to data-dependent application structures, not to a fixed
 whole-process RAM guarantee. Executable pages, Windows controls, thread stacks,
 allocator overhead, and the operating-system file cache are separate. Release
@@ -143,6 +155,10 @@ qualification records full process-tree memory independently; see
 - `Ctrl+C` copies selected cached rows as tab-delimited Unicode text. One
   operation is limited to 4,096 rows and 1 MiB, including the terminator.
 - `F5` reloads the active path as a new snapshot.
+- `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+PgDn` and `Ctrl+PgUp`) move between
+  tabs. `Ctrl+1` to `Ctrl+8` pick a tab by position and `Ctrl+9` picks the last
+  one. `Ctrl+W` or `Ctrl+F4` closes the current tab; a middle click closes any
+  tab.
 - Standard list navigation keys move through the virtual row control.
 
 Find compares raw UTF-8 bytes. Its optional case-insensitive mode folds ASCII

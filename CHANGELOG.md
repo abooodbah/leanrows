@@ -4,6 +4,43 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Open files now share one window, each in its own tab. Opening a file from
+  Explorer or the command line while LeanRows is running adds a tab to the
+  running window instead of starting another process. Opening a file that is
+  already open selects its tab.
+- A tab strip appears when two or more files are open. Click a tab to show it,
+  and click its close mark or middle-click it to close it. `Ctrl+Tab` and
+  `Ctrl+Shift+Tab` (or `Ctrl+PgDn` and `Ctrl+PgUp`) move between tabs,
+  `Ctrl+1` to `Ctrl+8` pick a tab by position, `Ctrl+9` picks the last tab,
+  and `Ctrl+W` or `Ctrl+F4` closes the current tab. The overflow menu has
+  Close tab and Next tab.
+- Each tab keeps its own scroll position, selected row, column widths, and Find
+  state.
+- The Open dialog accepts several files, and several supported files can be
+  dropped at once.
+
+### Changed
+
+- Five open files now run in one process instead of five. Measured with the
+  QA fixtures, five files use 3.8 MiB private memory and an 18.4 MiB working
+  set, compared with 14.8 MiB and 87.5 MiB for five 0.1.3 windows. One file
+  uses the same memory as before.
+- Minimizing the window returns its working set to Windows. In the same
+  measurement it drops from 18.4 MiB to 0.7 MiB, and pages come back as the
+  window is used.
+- Starting LeanRows again while it is running brings the running window
+  forward instead of opening a second, empty window.
+- A window with no open file no longer starts a document worker thread. The
+  worker starts with the first file.
+- At most 32 files can be open at once, so memory stays bounded.
+- The command line accepts several files. An unknown option that starts with
+  `--` is now a usage error, and `--` ends option parsing for file names that
+  start with `--`.
+
 ## [0.1.3] - 2026-08-09
 
 ### Fixed
