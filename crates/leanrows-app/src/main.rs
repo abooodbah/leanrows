@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use leanrows_win32::{
@@ -9,37 +10,37 @@ use leanrows_win32::{
 };
 
 const MAX_DOCUMENT_SMOKE_JSON_BYTES: usize = 64 * 1_024;
-const USAGE: &str = "usage: leanrows [--smoke-test | --document-smoke-test] [FILE]";
+const USAGE: &str = "usage: leanrows [--smoke-test | --document-smoke-test] [--] [FILE...]";
+
+/// A parsed command line.
+#[derive(Debug, Default, Eq, PartialEq)]
+struct Arguments {
+    paths: Vec<PathBuf>,
+    smoke_test: bool,
+    document_smoke_test: bool,
+}
+
+/// A usage error. `automation` is true when an automation flag was present,
+/// so the diagnostic goes to stderr instead of a dialog.
+#[derive(Debug, Eq, PartialEq)]
+struct UsageError {
+    automation: bool,
+}
 
 fn main() {
-    let automation_requested = std::env::args_os()
-        .skip(1)
-        .any(|argument| argument == "--smoke-test" || argument == "--document-smoke-test");
-    let mut smoke_test = false;
-    let mut document_smoke_test = false;
-    let mut initial_path: Option<PathBuf> = None;
-
-    for argument in std::env::args_os().skip(1) {
-        if argument == "--smoke-test" {
-            smoke_test = true;
-        } else if argument == "--document-smoke-test" {
-            document_smoke_test = true;
-        } else if initial_path.is_none() {
-            initial_path = Some(PathBuf::from(argument));
-        } else {
-            print_usage_and_exit(automation_requested);
-        }
-    }
-    if smoke_test && document_smoke_test {
-        print_usage_and_exit(true);
-    }
-    if document_smoke_test && initial_path.is_none() {
-        print_usage_and_exit(true);
-    }
-    let automation = automation_requested;
+    let arguments = match parse_arguments(std::env::args_os().skip(1)) {
+        Ok(arguments) => arguments,
+        Err(error) => print_usage_and_exit(error.automation),
+    };
+    let Arguments {
+        paths,
+        smoke_test,
+        document_smoke_test,
+    } = arguments;
+    let automation = smoke_test || document_smoke_test;
 
     match run_shell(ShellOptions {
-        initial_path,
+        initial_paths: paths,
         smoke_test,
         document_smoke_test,
     }) {
@@ -102,6 +103,41 @@ fn main() {
     }
 }
 
+/// Files may follow `--` when their names start with `--`. Automation takes
+/// at most one file, and the document smoke needs exactly one.
+fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Arguments, UsageError> {
+    let arguments: Vec<OsString> = arguments.into_iter().collect();
+    let automation = arguments
+        .iter()
+        .take_while(|argument| *argument != "--")
+        .any(|argument| argument == "--smoke-test" || argument == "--document-smoke-test");
+    let usage = UsageError { automation };
+    let mut parsed = Arguments::default();
+    let mut options_ended = false;
+    for argument in arguments {
+        if options_ended {
+            parsed.paths.push(PathBuf::from(argument));
+        } else if argument == "--" {
+            options_ended = true;
+        } else if argument == "--smoke-test" {
+            parsed.smoke_test = true;
+        } else if argument == "--document-smoke-test" {
+            parsed.document_smoke_test = true;
+        } else if argument.to_str().is_some_and(|text| text.starts_with("--")) {
+            return Err(usage);
+        } else {
+            parsed.paths.push(PathBuf::from(argument));
+        }
+    }
+    let conflicting = parsed.smoke_test && parsed.document_smoke_test;
+    let missing_document = parsed.document_smoke_test && parsed.paths.len() != 1;
+    let too_many_files = automation && parsed.paths.len() > 1;
+    if conflicting || missing_document || too_many_files {
+        return Err(usage);
+    }
+    Ok(parsed)
+}
+
 fn json_string_array(values: &[String]) -> String {
     let mut json = String::from("[");
     for (index, value) in values.iter().enumerate() {
@@ -160,7 +196,63 @@ fn print_usage_and_exit(automation: bool) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_json, json_string_array};
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    use super::{Arguments, UsageError, escape_json, json_string_array, parse_arguments};
+
+    fn parse(arguments: &[&str]) -> Result<Arguments, UsageError> {
+        parse_arguments(arguments.iter().map(OsString::from))
+    }
+
+    #[test]
+    fn ordinary_launches_accept_any_number_of_files() {
+        assert_eq!(parse(&[]), Ok(Arguments::default()));
+        assert_eq!(
+            parse(&["a.csv", "b.log", "c.txt"]).map(|parsed| parsed.paths),
+            Ok(vec![
+                PathBuf::from("a.csv"),
+                PathBuf::from("b.log"),
+                PathBuf::from("c.txt")
+            ])
+        );
+        assert_eq!(
+            parse(&["--", "--smoke-test", "-x.csv"]),
+            Ok(Arguments {
+                paths: vec![PathBuf::from("--smoke-test"), PathBuf::from("-x.csv")],
+                ..Arguments::default()
+            })
+        );
+    }
+
+    #[test]
+    fn usage_errors_report_automation_on_stderr_only_for_automation() {
+        assert_eq!(parse(&["--bogus"]), Err(UsageError { automation: false }));
+        assert_eq!(
+            parse(&["--bogus", "--smoke-test"]),
+            Err(UsageError { automation: true })
+        );
+        assert_eq!(
+            parse(&["--smoke-test", "--document-smoke-test"]),
+            Err(UsageError { automation: true })
+        );
+        assert_eq!(
+            parse(&["first.csv", "second.csv", "--smoke-test"]),
+            Err(UsageError { automation: true })
+        );
+        assert_eq!(
+            parse(&["--document-smoke-test"]),
+            Err(UsageError { automation: true })
+        );
+        assert_eq!(
+            parse(&["--document-smoke-test", "rows.csv"]),
+            Ok(Arguments {
+                paths: vec![PathBuf::from("rows.csv")],
+                document_smoke_test: true,
+                ..Arguments::default()
+            })
+        );
+    }
 
     #[test]
     fn smoke_json_text_is_single_line_and_escaped() {

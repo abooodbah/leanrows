@@ -10,6 +10,11 @@
 #define ID_EDIT_FIND_NEXT 112
 #define ID_EDIT_FIND_PREVIOUS 113
 #define ID_EDIT_GOTO 114
+#define ID_TAB_CLOSE 130
+#define ID_TAB_NEXT 131
+#define ID_TAB_PREVIOUS 132
+#define ID_TAB_SELECT_FIRST 141
+#define ID_TAB_SELECT_LAST 149
 #define IDOK 1
 #define IDCANCEL 2
 #define DS_SETFONT 0x40L
@@ -33,6 +38,21 @@ BEGIN
     0x72, ID_EDIT_FIND_NEXT,     VIRTKEY
     0x72, ID_EDIT_FIND_PREVIOUS, VIRTKEY, SHIFT
     "G",  ID_EDIT_GOTO,          VIRTKEY, CONTROL
+    "W",  ID_TAB_CLOSE,          VIRTKEY, CONTROL
+    0x73, ID_TAB_CLOSE,          VIRTKEY, CONTROL
+    0x09, ID_TAB_NEXT,           VIRTKEY, CONTROL
+    0x09, ID_TAB_PREVIOUS,       VIRTKEY, CONTROL, SHIFT
+    0x22, ID_TAB_NEXT,           VIRTKEY, CONTROL
+    0x21, ID_TAB_PREVIOUS,       VIRTKEY, CONTROL
+    "1",  ID_TAB_SELECT_FIRST,   VIRTKEY, CONTROL
+    "2",  142,                   VIRTKEY, CONTROL
+    "3",  143,                   VIRTKEY, CONTROL
+    "4",  144,                   VIRTKEY, CONTROL
+    "5",  145,                   VIRTKEY, CONTROL
+    "6",  146,                   VIRTKEY, CONTROL
+    "7",  147,                   VIRTKEY, CONTROL
+    "8",  148,                   VIRTKEY, CONTROL
+    "9",  ID_TAB_SELECT_LAST,    VIRTKEY, CONTROL
 END
 
 IDD_GOTO_ROW DIALOGEX 0, 0, 238, 86
