@@ -18,7 +18,7 @@ flowchart LR
     Scanner["CSV or line boundary scanner"]
     Index["Fixed-capacity adaptive checkpoints"]
     View["Bounded viewport reconstruction"]
-    Worker["Single background worker"]
+    Worker["One background worker per open file"]
     UI["Native owner-data list view"]
 
     Path --> Handle --> Reader --> Scanner --> Index
@@ -107,10 +107,11 @@ display truncation, and invalid UTF-8 bytes are rendered as `\xNN` escapes.
 
 ## Worker and UI model
 
-One background worker owns the active document engine. Open, viewport, query,
-signal, and event channels have capacity one and replace obsolete pending work.
-A new open increments the cancellation generation, and UI state ignores events
-whose path or serial no longer matches the active document.
+Each open file has one background worker that owns its document engine. Open,
+viewport, query, signal, and event channels have capacity one and replace
+obsolete pending work. A new open increments the cancellation generation, and
+UI state ignores events whose path or serial no longer matches the tab's
+document.
 
 The first viewport is requested before the sequential index scan proceeds to
 completion. Progress events are coalesced rather than posted for every read.
@@ -129,6 +130,33 @@ native `PROGRESS_CLASS` identity but uses application painting: a flat,
 two-DIP rule at y=55 below the 56-DIP top bar, with an accent prefix and no
 marquee. Resizing selects a layout band rather than creating another copy of
 the controls. The grid remains the only document row surface in every band.
+When two or more files are open, a 36-DIP tab strip sits between the top bar
+and the grid, and the progress rule moves to the strip's lower edge.
+
+## Tabs and one window
+
+All open files share one window and one process. The first ordinary launch
+owns a per-session named mutex derived from its executable path. A later launch
+from the same executable sends its absolute file paths to the running window
+with `WM_COPYDATA` and exits, and the running window opens each path in a tab.
+An installed copy and a portable copy have different paths, so each keeps its
+own window. The smoke-test modes never join a running window. If no window
+answers within five seconds, the new launch opens its own window rather than
+lose the file.
+
+Each tab has its own worker, retained file handle, index, and row cache. The
+shell has one grid, one set of columns, and one status strip, and only the
+active tab's document is bound to them. Switching tabs saves the outgoing tab's
+top row, selected row, column widths, and chrome text, then restores the
+incoming tab's. A tab that is not showing keeps scanning, and its worker events
+update the saved status. The row cache a background tab keeps is the same
+reference-counted allocation its worker holds, so switching copies no rows. At
+most 32 files can be open at once.
+
+The tab strip is a native tab control with application painting, so it keeps
+its accessibility role and arrow-key selection. A window with no open file
+starts no worker thread; the worker starts with the first file. Minimizing the
+window asks Windows to trim the process working set.
 
 ## Memory accounting
 
