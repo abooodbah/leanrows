@@ -27,8 +27,8 @@ pub use model::{CachedRow, DisplayCell, ImmutableRowCache, SlidingRowWindow};
 /// Options used to start the native shell.
 #[derive(Debug, Default)]
 pub struct ShellOptions {
-    /// Optional file supplied on the command line.
-    pub initial_path: Option<PathBuf>,
+    /// Files supplied on the command line. Each one opens in its own tab.
+    pub initial_paths: Vec<PathBuf>,
     /// Create and verify the native controls, then exit without user input.
     pub smoke_test: bool,
     /// Verify that one real document row reaches the owner-data grid, then exit.

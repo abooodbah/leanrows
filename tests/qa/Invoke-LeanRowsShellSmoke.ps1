@@ -8,7 +8,7 @@ param(
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$usage = 'usage: leanrows [--smoke-test | --document-smoke-test] [FILE]'
+$usage = 'usage: leanrows [--smoke-test | --document-smoke-test] [--] [FILE...]'
 
 function Assert-True {
     param(
@@ -107,7 +107,7 @@ function Test-OrdinaryUsageDialog {
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $Executable
     $startInfo.WorkingDirectory = [System.IO.Path]::GetDirectoryName($Executable)
-    $startInfo.Arguments = 'first.csv second.csv'
+    $startInfo.Arguments = '--not-an-option'
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $target = New-Object System.Diagnostics.Process
@@ -162,6 +162,128 @@ function Test-OrdinaryUsageDialog {
     }
 }
 
+function Wait-MainWindowTitle {
+    param(
+        [Parameter(Mandatory = $true)][System.Diagnostics.Process]$Target,
+        [Parameter(Mandatory = $true)][string]$Title,
+        [Parameter(Mandatory = $true)][int]$Timeout
+    )
+    $deadline = [DateTime]::UtcNow.AddSeconds($Timeout)
+    do {
+        if ($Target.HasExited) {
+            return $false
+        }
+        $Target.Refresh()
+        if ([string]$Target.MainWindowTitle -eq $Title) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 50
+    } while ([DateTime]::UtcNow -lt $deadline)
+    $false
+}
+
+function Invoke-ForwardingLaunch {
+    param(
+        [Parameter(Mandatory = $true)][string]$Executable,
+        [Parameter(Mandatory = $true)][string]$Document,
+        [Parameter(Mandatory = $true)][int]$Timeout
+    )
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $Executable
+    $startInfo.WorkingDirectory = [System.IO.Path]::GetDirectoryName($Executable)
+    $startInfo.Arguments = '"' + $Document + '"'
+    $startInfo.UseShellExecute = $false
+    $launch = New-Object System.Diagnostics.Process
+    $launch.StartInfo = $startInfo
+    try {
+        if (-not $launch.Start()) {
+            throw "Failed to start $Executable for single-window verification."
+        }
+        if (-not $launch.WaitForExit($Timeout * 1000)) {
+            try { Stop-Process -Id $launch.Id -Force -ErrorAction Stop } catch { }
+            throw 'A second launch kept running instead of handing its file to the open window.'
+        }
+        [int]$launch.ExitCode
+    }
+    finally {
+        $launch.Dispose()
+    }
+}
+
+# A second ordinary launch hands its file to the running window and exits, so
+# the file opens as a tab. Opening a file that is already open selects its tab.
+function Test-SingleWindowForwarding {
+    param(
+        [Parameter(Mandatory = $true)][string]$Executable,
+        [Parameter(Mandatory = $true)][int]$Timeout
+    )
+    Assert-True -Condition (@(Get-MatchingExecutableIds -Executable $Executable).Count -eq 0) `
+        -Message 'Close LeanRows windows started from this binary before the single-window check.'
+    $directory = Join-Path ([System.IO.Path]::GetTempPath()) ('leanrows-forwarding-' + [guid]::NewGuid().ToString('N'))
+    [System.IO.Directory]::CreateDirectory($directory) | Out-Null
+    $first = Join-Path $directory 'first.csv'
+    $second = Join-Path $directory 'second.csv'
+    [System.IO.File]::WriteAllText($first, "name,value`nalpha,1`n", $script:Utf8NoBom)
+    [System.IO.File]::WriteAllText($second, "name,value`nbeta,2`n", $script:Utf8NoBom)
+    $dash = [string][char]0x2014
+    $firstTitle = "first.csv $dash LeanRows"
+    $secondTitle = "second.csv $dash LeanRows"
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $Executable
+    $startInfo.WorkingDirectory = [System.IO.Path]::GetDirectoryName($Executable)
+    $startInfo.Arguments = '"' + $first + '"'
+    $startInfo.UseShellExecute = $false
+    $primary = New-Object System.Diagnostics.Process
+    $primary.StartInfo = $startInfo
+    $started = $false
+    try {
+        if (-not $primary.Start()) {
+            throw "Failed to start $Executable for single-window verification."
+        }
+        $started = $true
+        Assert-True -Condition (Wait-MainWindowTitle -Target $primary -Title $firstTitle -Timeout $Timeout) `
+            -Message 'The first launch did not show first.csv.'
+
+        $secondExit = Invoke-ForwardingLaunch -Executable $Executable -Document $second -Timeout $Timeout
+        Assert-True -Condition ($secondExit -eq 0) `
+            -Message "The forwarding launch exited with code $secondExit, expected 0."
+        Assert-True -Condition (Wait-MainWindowTitle -Target $primary -Title $secondTitle -Timeout $Timeout) `
+            -Message 'The running window did not open the forwarded file in a new tab.'
+
+        $repeatExit = Invoke-ForwardingLaunch -Executable $Executable -Document $first -Timeout $Timeout
+        Assert-True -Condition ($repeatExit -eq 0) `
+            -Message "The repeat launch exited with code $repeatExit, expected 0."
+        Assert-True -Condition (Wait-MainWindowTitle -Target $primary -Title $firstTitle -Timeout $Timeout) `
+            -Message 'Opening an already open file did not select its tab.'
+
+        $running = @(Get-MatchingExecutableIds -Executable $Executable)
+        Assert-True -Condition ($running.Count -eq 1 -and $running[0] -eq $primary.Id) `
+            -Message "Expected one LeanRows process after forwarding, found $($running.Count)."
+
+        Assert-True -Condition $primary.CloseMainWindow() `
+            -Message 'The tabbed window did not accept WM_CLOSE.'
+        Assert-True -Condition $primary.WaitForExit($Timeout * 1000) `
+            -Message 'LeanRows did not exit after closing a window with two tabs.'
+        Assert-True -Condition ([int]$primary.ExitCode -eq 0) `
+            -Message "The tabbed window exited with code $($primary.ExitCode), expected 0."
+        [pscustomobject]@{
+            forwarded_exit_code = $secondExit
+            repeat_exit_code = $repeatExit
+            process_count = $running.Count
+            exit_code = [int]$primary.ExitCode
+        }
+    }
+    finally {
+        if ($started -and -not $primary.HasExited) {
+            try { Stop-Process -Id $primary.Id -Force -ErrorAction Stop } catch { }
+            $null = $primary.WaitForExit(5000)
+        }
+        $primary.Dispose()
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $binary = (Resolve-Path -LiteralPath $BinaryPath).Path
 Assert-True -Condition ([System.IO.File]::Exists($binary)) `
     -Message "LeanRows binary does not exist: $binary"
@@ -212,6 +334,9 @@ Assert-True -Condition ($ordered.stderr.Trim() -eq $usage) `
 $ordinary = Test-OrdinaryUsageDialog `
     -Executable $binary -Timeout $DialogTimeoutSeconds
 
+$forwarding = Test-SingleWindowForwarding `
+    -Executable $binary -Timeout $DialogTimeoutSeconds
+
 Start-Sleep -Milliseconds 100
 $newIds = @(
     Get-MatchingExecutableIds -Executable $binary |
@@ -232,5 +357,9 @@ Assert-True -Condition ($newIds.Count -eq 0) `
     ordinary_dialog_observed = $ordinary.dialog_observed
     ordinary_dialog_title = $ordinary.dialog_title
     ordinary_exit_code = $ordinary.exit_code
+    forwarding_exit_code = $forwarding.forwarded_exit_code
+    forwarding_repeat_exit_code = $forwarding.repeat_exit_code
+    forwarding_process_count = $forwarding.process_count
+    forwarding_window_exit_code = $forwarding.exit_code
     residual_process_count = $newIds.Count
 }

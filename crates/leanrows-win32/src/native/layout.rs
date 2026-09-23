@@ -3,6 +3,9 @@
 const BASE_DPI: u32 = 96;
 const TOP_BAR_HEIGHT_DIP: i32 = 56;
 const PROGRESS_HEIGHT_DIP: i32 = 2;
+const TAB_STRIP_HEIGHT_DIP: i32 = 36;
+const TAB_MIN_WIDTH_DIP: i32 = 96;
+const TAB_MAX_WIDTH_DIP: i32 = 220;
 const STATUS_HEIGHT_DIP: i32 = 32;
 const SPACE_1_DIP: i32 = 4;
 const SPACE_2_DIP: i32 = 8;
@@ -73,6 +76,9 @@ pub(super) struct UiMetrics {
     pub(super) dpi: u32,
     pub(super) top_bar_height: i32,
     pub(super) progress_height: i32,
+    pub(super) tab_strip_height: i32,
+    pub(super) tab_min_width: i32,
+    pub(super) tab_max_width: i32,
     pub(super) status_height: i32,
     pub(super) space_1: i32,
     pub(super) space_2: i32,
@@ -109,6 +115,9 @@ impl UiMetrics {
             dpi,
             top_bar_height: scale_dip(TOP_BAR_HEIGHT_DIP, dpi),
             progress_height: scale_dip(PROGRESS_HEIGHT_DIP, dpi),
+            tab_strip_height: scale_dip(TAB_STRIP_HEIGHT_DIP, dpi),
+            tab_min_width: scale_dip(TAB_MIN_WIDTH_DIP, dpi),
+            tab_max_width: scale_dip(TAB_MAX_WIDTH_DIP, dpi),
             status_height: scale_dip(STATUS_HEIGHT_DIP, dpi),
             space_1: scale_dip(SPACE_1_DIP, dpi),
             space_2: scale_dip(SPACE_2_DIP, dpi),
@@ -359,6 +368,8 @@ pub(super) struct UiLayout {
     pub(super) metrics: UiMetrics,
     pub(super) client: UiRect,
     pub(super) top_bar: UiRect,
+    /// Present only while more than one file is open.
+    pub(super) tab_strip: Option<UiRect>,
     pub(super) progress_track: UiRect,
     pub(super) main_content: UiRect,
     pub(super) grid: UiRect,
@@ -369,8 +380,15 @@ pub(super) struct UiLayout {
 
 impl UiLayout {
     /// Returns non-negative, non-overlapping shell rectangles for any extent.
+    /// The tab strip, when shown, sits between the top bar and the grid, and
+    /// the progress rule moves down to its bottom edge.
     #[must_use]
-    pub(super) fn calculate(client_width: i32, client_height: i32, dpi: u32) -> Self {
+    pub(super) fn calculate(
+        client_width: i32,
+        client_height: i32,
+        dpi: u32,
+        show_tabs: bool,
+    ) -> Self {
         let metrics = UiMetrics::for_dpi(dpi);
         let width = client_width.max(0);
         let height = client_height.max(0);
@@ -385,16 +403,27 @@ impl UiLayout {
             width,
             status_height,
         );
+        let tab_strip = show_tabs.then(|| {
+            UiRect::new(
+                0,
+                top_bar.bottom(),
+                width,
+                metrics
+                    .tab_strip_height
+                    .min(after_top.saturating_sub(status_height)),
+            )
+        });
+        let chrome_bottom = tab_strip.map_or(top_bar.bottom(), UiRect::bottom);
         let main_content = UiRect::new(
             0,
-            top_bar.bottom(),
+            chrome_bottom,
             width,
-            status_strip.y.saturating_sub(top_bar.bottom()),
+            status_strip.y.saturating_sub(chrome_bottom),
         );
         let progress_height = metrics.progress_height.min(height);
         let progress_track = UiRect::new(
             0,
-            top_bar.bottom().saturating_sub(progress_height / 2),
+            chrome_bottom.saturating_sub(progress_height / 2),
             width,
             progress_height,
         );
@@ -402,6 +431,7 @@ impl UiLayout {
             metrics,
             client,
             top_bar,
+            tab_strip,
             progress_track,
             main_content,
             grid: main_content,
@@ -410,6 +440,18 @@ impl UiLayout {
             commands: CommandLayout::calculate(top_bar, metrics),
         }
     }
+}
+
+/// Width of each fixed-width tab when `count` tabs share a strip. Tabs shrink
+/// to share the strip down to a readable minimum; past that the native tab
+/// control scrolls.
+#[must_use]
+pub(super) fn tab_item_width(strip_width: i32, count: usize, metrics: UiMetrics) -> i32 {
+    let count = i32::try_from(count.max(1)).unwrap_or(i32::MAX);
+    let usable = strip_width
+        .saturating_sub(metrics.space_2.saturating_mul(2))
+        .max(0);
+    (usable / count).clamp(metrics.tab_min_width, metrics.tab_max_width)
 }
 
 fn place_identity_and_search(
@@ -506,7 +548,9 @@ fn scale_dip(value: i32, dpi: u32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandLayout, CommandLayoutMode, UiLayout, UiMetrics, UiRect, scale_dip};
+    use super::{
+        CommandLayout, CommandLayoutMode, UiLayout, UiMetrics, UiRect, scale_dip, tab_item_width,
+    };
 
     const DPIS: [u32; 3] = [96, 144, 192];
     const SIZES: [(i32, i32, CommandLayoutMode); 3] = [
@@ -548,7 +592,7 @@ mod tests {
         for dpi in DPIS {
             let width = scale_dip(960, dpi);
             let height = scale_dip(640, dpi);
-            let layout = UiLayout::calculate(width, height, dpi);
+            let layout = UiLayout::calculate(width, height, dpi, false);
             assert_eq!(layout.top_bar, UiRect::new(0, 0, width, scale_dip(56, dpi)));
             assert_eq!(
                 layout.progress_track,
@@ -564,7 +608,61 @@ mod tests {
                 UiRect::new(0, scale_dip(608, dpi), width, scale_dip(32, dpi))
             );
             assert_eq!(layout.status_strip.bottom(), layout.client.bottom());
+            assert_eq!(layout.tab_strip, None);
         }
+    }
+
+    #[test]
+    fn tab_strip_sits_between_the_top_bar_and_the_grid() {
+        for dpi in DPIS {
+            let width = scale_dip(960, dpi);
+            let height = scale_dip(640, dpi);
+            let layout = UiLayout::calculate(width, height, dpi, true);
+            assert_eq!(
+                layout.tab_strip,
+                Some(UiRect::new(
+                    0,
+                    scale_dip(56, dpi),
+                    width,
+                    scale_dip(36, dpi)
+                ))
+            );
+            assert_eq!(
+                layout.main_content,
+                UiRect::new(0, scale_dip(92, dpi), width, scale_dip(516, dpi))
+            );
+            assert_eq!(layout.grid, layout.main_content);
+            assert_eq!(
+                layout.progress_track,
+                UiRect::new(
+                    0,
+                    scale_dip(92, dpi) - scale_dip(2, dpi) / 2,
+                    width,
+                    scale_dip(2, dpi)
+                )
+            );
+            assert_eq!(
+                layout.status_strip,
+                UiRect::new(0, scale_dip(608, dpi), width, scale_dip(32, dpi))
+            );
+            assert_eq!(
+                layout.commands,
+                UiLayout::calculate(width, height, dpi, false).commands
+            );
+        }
+    }
+
+    #[test]
+    fn tabs_share_the_strip_between_a_readable_minimum_and_a_maximum() {
+        let metrics = UiMetrics::for_dpi(96);
+        assert_eq!(tab_item_width(960, 1, metrics), 220);
+        assert_eq!(tab_item_width(960, 4, metrics), 220);
+        assert_eq!(tab_item_width(960, 8, metrics), 118);
+        assert_eq!(tab_item_width(960, 32, metrics), 96);
+        assert_eq!(tab_item_width(0, 0, metrics), 96);
+        assert_eq!(tab_item_width(-5, 3, metrics), 96);
+        let scaled = UiMetrics::for_dpi(192);
+        assert_eq!(tab_item_width(scale_dip(960, 192), 8, scaled), 236);
     }
 
     #[test]
@@ -572,7 +670,7 @@ mod tests {
         for dpi in DPIS {
             for (width, height, expected_mode) in SIZES {
                 let layout =
-                    UiLayout::calculate(scale_dip(width, dpi), scale_dip(height, dpi), dpi);
+                    UiLayout::calculate(scale_dip(width, dpi), scale_dip(height, dpi), dpi, false);
                 assert_eq!(layout.commands.mode, expected_mode);
                 assert_commands_fit(layout.top_bar, layout.commands);
             }
@@ -581,7 +679,7 @@ mod tests {
 
     #[test]
     fn narrow_matches_leanmark_compaction() {
-        let commands = UiLayout::calculate(640, 480, 96).commands;
+        let commands = UiLayout::calculate(640, 480, 96, false).commands;
         assert_eq!(commands.mode, CommandLayoutMode::Narrow);
         assert!(commands.wordmark.is_none());
         assert_eq!(commands.file_identity.map(|rect| rect.width), Some(160));
@@ -592,14 +690,14 @@ mod tests {
         assert_eq!(commands.open_button.height, 44);
         assert_eq!(commands.overflow_button.width, 40);
 
-        let compact = UiLayout::calculate(560, 480, 96).commands;
+        let compact = UiLayout::calculate(560, 480, 96, false).commands;
         assert!(compact.file_identity.is_none());
         assert_eq!(compact.search_field.x, 12);
     }
 
     #[test]
     fn default_matches_the_core_leanmark_toolbar() {
-        let commands = UiLayout::calculate(960, 640, 96).commands;
+        let commands = UiLayout::calculate(960, 640, 96, false).commands;
         assert_eq!(commands.mode, CommandLayoutMode::Default);
         assert_eq!(commands.wordmark.map(|rect| rect.width), Some(32));
         assert!(commands.file_identity.is_some());
@@ -612,7 +710,7 @@ mod tests {
 
     #[test]
     fn wide_exposes_dense_grid_actions_without_changing_the_core_rhythm() {
-        let commands = UiLayout::calculate(1_440, 900, 96).commands;
+        let commands = UiLayout::calculate(1_440, 900, 96, false).commands;
         assert_eq!(commands.mode, CommandLayoutMode::Wide);
         assert_eq!(commands.search_field.width, 360);
         assert_eq!(commands.reload_button.map(|rect| rect.width), Some(88));
@@ -627,19 +725,24 @@ mod tests {
         for dpi in DPIS {
             let metrics = UiMetrics::for_dpi(dpi);
             assert_eq!(
-                UiLayout::calculate(metrics.narrow_max_width, scale_dip(640, dpi), dpi)
+                UiLayout::calculate(metrics.narrow_max_width, scale_dip(640, dpi), dpi, false)
                     .commands
                     .mode,
                 CommandLayoutMode::Narrow
             );
             assert_eq!(
-                UiLayout::calculate(metrics.narrow_max_width + 1, scale_dip(640, dpi), dpi)
-                    .commands
-                    .mode,
+                UiLayout::calculate(
+                    metrics.narrow_max_width + 1,
+                    scale_dip(640, dpi),
+                    dpi,
+                    false
+                )
+                .commands
+                .mode,
                 CommandLayoutMode::Default
             );
             assert_eq!(
-                UiLayout::calculate(metrics.wide_min_width, scale_dip(640, dpi), dpi)
+                UiLayout::calculate(metrics.wide_min_width, scale_dip(640, dpi), dpi, false)
                     .commands
                     .mode,
                 CommandLayoutMode::Wide
@@ -649,16 +752,30 @@ mod tests {
 
     #[test]
     fn constrained_extents_saturate_instead_of_overlapping() {
-        for (width, height) in [(0, 0), (-20, -10), (1, 1), (120, 60), (320, 100)] {
-            let layout = UiLayout::calculate(width, height, 192);
+        for (width, height, show_tabs) in [
+            (0, 0, false),
+            (-20, -10, false),
+            (1, 1, false),
+            (120, 60, false),
+            (320, 100, false),
+            (0, 0, true),
+            (1, 1, true),
+            (120, 60, true),
+            (320, 100, true),
+        ] {
+            let layout = UiLayout::calculate(width, height, 192, show_tabs);
             for rect in [
-                layout.client,
-                layout.top_bar,
-                layout.main_content,
-                layout.grid,
-                layout.empty_state,
-                layout.status_strip,
-            ] {
+                Some(layout.client),
+                Some(layout.top_bar),
+                layout.tab_strip,
+                Some(layout.main_content),
+                Some(layout.grid),
+                Some(layout.empty_state),
+                Some(layout.status_strip),
+            ]
+            .into_iter()
+            .flatten()
+            {
                 assert!(rect.x >= 0 && rect.y >= 0);
                 assert!(rect.width >= 0 && rect.height >= 0);
                 assert!(rect.right() <= layout.client.right());

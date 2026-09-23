@@ -5,7 +5,9 @@ mod clipboard;
 mod drop_files;
 mod header;
 mod layout;
+mod process;
 mod progress;
+mod tabs;
 mod theme;
 
 use std::ffi::{OsString, c_void};
@@ -28,26 +30,29 @@ use windows::Win32::System::SystemServices::{
     SS_CENTER, SS_CENTERIMAGE, SS_ICON, SS_OWNERDRAW, SS_TYPEMASK,
 };
 use windows::Win32::UI::Controls::Dialogs::{
-    CommDlgExtendedError, GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY,
-    OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    CommDlgExtendedError, FNERR_BUFFERTOOSMALL, GetOpenFileNameW, OFN_ALLOWMULTISELECT,
+    OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 use windows::Win32::UI::Controls::{
     BST_CHECKED, CDDS_PREPAINT, CDIS_DISABLED, CDIS_FOCUS, CDIS_HOT, CDRF_SKIPDEFAULT,
     DRAWITEMSTRUCT, EM_SETCUEBANNER, EM_SETSEL, HDM_GETITEMCOUNT, ICC_BAR_CLASSES,
-    ICC_LISTVIEW_CLASSES, ICC_PROGRESS_CLASS, INITCOMMONCONTROLSEX, InitCommonControlsEx,
-    LIST_VIEW_ITEM_STATE_FLAGS, LVCF_SUBITEM, LVCF_TEXT, LVCF_WIDTH, LVCFMT_LEFT, LVCOLUMNW,
-    LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETECOLUMN, LVM_ENSUREVISIBLE,
-    LVM_GETBKCOLOR, LVM_GETHEADER, LVM_GETNEXTITEM, LVM_INSERTCOLUMNW, LVM_REDRAWITEMS,
-    LVM_SETBKCOLOR, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMCOUNT, LVM_SETITEMSTATE,
+    ICC_LISTVIEW_CLASSES, ICC_PROGRESS_CLASS, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX,
+    InitCommonControlsEx, LIST_VIEW_ITEM_STATE_FLAGS, LVCF_SUBITEM, LVCF_TEXT, LVCF_WIDTH,
+    LVCFMT_LEFT, LVCOLUMNW, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETECOLUMN,
+    LVM_ENSUREVISIBLE, LVM_GETBKCOLOR, LVM_GETCOLUMNWIDTH, LVM_GETCOUNTPERPAGE, LVM_GETHEADER,
+    LVM_GETNEXTITEM, LVM_GETTOPINDEX, LVM_INSERTCOLUMNW, LVM_REDRAWITEMS, LVM_SETBKCOLOR,
+    LVM_SETCOLUMNWIDTH, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMCOUNT, LVM_SETITEMSTATE,
     LVM_SETTEXTBKCOLOR, LVM_SETTEXTCOLOR, LVN_GETDISPINFOW, LVN_ODCACHEHINT, LVNI_SELECTED,
     LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT, LVS_OWNERDATA, LVS_REPORT, LVS_SHOWSELALWAYS,
     LVSICF_NOINVALIDATEALL, LVSICF_NOSCROLL, NM_CUSTOMDRAW, NMCUSTOMDRAW, NMHDR, NMLVCACHEHINT,
     NMLVDISPINFOW, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT, ODS_SELECTED, ODT_BUTTON, ODT_STATIC,
-    PBM_GETPOS, PBM_SETRANGE32, PBS_MARQUEE, PROGRESS_CLASSW, SetWindowTheme, WC_LISTVIEWW,
+    PBM_GETPOS, PBM_SETRANGE32, PBS_MARQUEE, PROGRESS_CLASSW, SetWindowTheme, TCN_SELCHANGE,
+    TCS_FIXEDWIDTH, WC_LISTVIEWW, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetFocus, GetKeyState, IsWindowEnabled, SetFocus, VK_ESCAPE, VK_RETURN, VK_SHIFT, VK_TAB,
+    GetFocus, GetKeyState, IsWindowEnabled, SetFocus, VK_CONTROL, VK_ESCAPE, VK_RETURN, VK_SHIFT,
+    VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, BM_CLICK, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_OWNERDRAW, BS_TYPEMASK,
@@ -56,27 +61,30 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, ES_AUTOHSCROLL, EndDialog, GCLP_HICON, GCLP_HICONSM, GWL_STYLE,
     GWLP_USERDATA, GetClassLongPtrW, GetClassNameW, GetClientRect, GetDlgItemTextW, GetMessageW,
     GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
-    HACCEL, HICON, HMENU, IDC_ARROW, IDCANCEL, IDOK, IMAGE_ICON, IsWindow, IsWindowVisible,
-    KillTimer, LR_SHARED, LoadAcceleratorsW, LoadCursorW, LoadImageW, MB_ICONERROR,
-    MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL, MF_CHECKED, MF_SEPARATOR, MF_STRING,
-    MF_UNCHECKED, MINMAXINFO, MSG, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage,
-    RT_DIALOG, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, STM_SETICON,
-    SW_HIDE, SW_SHOW, SW_SHOWDEFAULT, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW,
+    HACCEL, HICON, HMENU, HWND_TOP, IDC_ARROW, IDCANCEL, IDOK, IMAGE_ICON, IsIconic, IsWindow,
+    IsWindowVisible, KillTimer, LR_SHARED, LoadAcceleratorsW, LoadCursorW, LoadImageW,
+    MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL, MF_CHECKED, MF_GRAYED,
+    MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MINMAXINFO, MSG, MessageBoxW, MoveWindow, PostMessageW,
+    PostQuitMessage, RT_DIALOG, RegisterClassExW, SIZE_MINIMIZED, SM_CXICON, SM_CXSMICON,
+    SM_CYICON, SM_CYSMICON, STM_SETICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWDEFAULT,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW,
     SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
     TPM_RETURNCMD, TPM_RIGHTALIGN, TrackPopupMenuEx, TranslateAcceleratorW, TranslateMessage,
-    WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE,
-    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM,
-    WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETMINMAXINFO, WM_INITDIALOG, WM_KEYDOWN,
-    WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
-    WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD,
-    WS_CLIPCHILDREN, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
+    WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND,
+    WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY,
+    WM_DPICHANGED, WM_DRAWITEM, WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETMINMAXINFO,
+    WM_INITDIALOG, WM_KEYDOWN, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT, WM_SETFONT,
+    WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW,
+    WS_BORDER, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW,
+    WS_OVERLAPPEDWINDOW, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
 use self::accessibility::{
     AccessibilityBridge, ComApartment, SmokeEvidence, smoke_cache, verify_smoke,
 };
-use self::layout::{CommandLayoutMode, UiLayout, UiRect};
+use self::layout::{CommandLayoutMode, UiLayout, UiRect, tab_item_width};
+use self::tabs::TabHover;
 use self::theme::{EffectiveTheme, ThemeMode, ThemeResources};
 use crate::document_engine::{UiColumnKind, UiColumnLayout};
 use crate::worker::{
@@ -96,6 +104,8 @@ const MAX_DOCUMENT_SMOKE_CELLS: usize = 4;
 const MAX_STARTUP_ERROR_UTF16_UNITS: usize = 4_096;
 const WM_APP_WORKER_READY: u32 = WM_APP + 1;
 const WM_APP_PRESENT_SHELL: u32 = WM_APP + 2;
+const WM_APP_OPEN_PENDING: u32 = WM_APP + 3;
+const WM_APP_CLOSE_TAB: u32 = WM_APP + 4;
 const DOCUMENT_SMOKE_TIMER_ID: usize = 1;
 const DOCUMENT_SMOKE_TIMEOUT_MS: u32 = 10_000;
 const ID_FILE_OPEN: u16 = 100;
@@ -109,8 +119,14 @@ const ID_EDIT_GOTO: u16 = 114;
 const ID_VIEW_THEME: u16 = 120;
 const ID_SEARCH_MATCH_CASE: u16 = 121;
 const ID_APP_MORE: u16 = 122;
+const ID_TAB_CLOSE: u16 = 130;
+const ID_TAB_NEXT: u16 = 131;
+const ID_TAB_PREVIOUS: u16 = 132;
+const ID_TAB_SELECT_FIRST: u16 = 141;
+const ID_TAB_SELECT_LAST: u16 = 149;
 const ID_HELP_ABOUT: u16 = 200;
 const ID_SEARCH_FIELD: u16 = 300;
+const ID_TAB_STRIP: u16 = 301;
 const IDD_GOTO_ROW: usize = 201;
 const IDC_GOTO_ROW_EDIT: i32 = 1001;
 const MAX_COPY_ROWS: usize = 4_096;
@@ -118,6 +134,17 @@ const MAX_COPY_BYTES: usize = 1_024 * 1_024;
 const MAX_COPY_UTF16_UNITS: usize = MAX_COPY_BYTES / size_of::<u16>();
 const MAX_FIND_UTF16_UNITS: usize = 1_024;
 const EMPTY_TITLE_CAPTION: &str = "Open large files without loading them all.";
+const WELCOME_EYEBROW: &str = "LEANROWS";
+const WELCOME_BODY: &str = "Open a local CSV, TSV, JSONL, NDJSON, log, or text file. LeanRows keeps memory bounded and never modifies the source.";
+const IDLE_FILE_NAME: &str = "LeanRows";
+const IDLE_FILE_META: &str = "Large-file row viewer";
+const IDLE_STATUS: &str = "Ready";
+const WINDOW_CLASS_NAME: PCWSTR = w!("LeanRows.NativeWindow");
+const FIRST_TAB_ID: usize = 1;
+/// Each open file keeps a worker thread, a file handle, and one bounded row
+/// window, so the number of tabs is capped to keep memory bounded.
+const MAX_OPEN_TABS: usize = 32;
+const MAX_CHROME_TEXT_UNITS: usize = 4_096;
 const SHELL_SMOKE_TEXT_UNITS: usize = 64;
 const STATUS_PAINT_TEXT_UNITS: usize = 1_024;
 #[cfg(target_pointer_width = "32")]
@@ -170,6 +197,7 @@ struct ChromeHandles {
     theme: HWND,
     open: HWND,
     more: HWND,
+    tab_strip: HWND,
     progress: HWND,
     empty_eyebrow: HWND,
     empty_title: HWND,
@@ -178,6 +206,10 @@ struct ChromeHandles {
     status_backdrop: HWND,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "grid, progress, smoke, and closing are independent window states"
+)]
 struct WindowState {
     window: HWND,
     list: HWND,
@@ -196,6 +228,20 @@ struct WindowState {
     pending_reveal: Option<u64>,
     active_find: Option<ActiveFind>,
     revealed_match: Option<RevealedMatch>,
+    /// The active tab. Its document lives in the fields above, so the grid,
+    /// find, and copy code only ever see one document.
+    tab_id: usize,
+    next_tab_id: usize,
+    /// Every open tab, left to right, including the active one.
+    tab_order: Vec<usize>,
+    /// Documents in the tabs that are not showing.
+    background_tabs: Vec<BackgroundTab>,
+    tab_labels: Vec<String>,
+    tab_hover: TabHover,
+    /// Files handed over by another launch, opened once the sender returns.
+    pending_opens: Vec<PathBuf>,
+    /// Set once the window starts closing, so forwarded files go elsewhere.
+    closing: bool,
     document_smoke: bool,
     document_smoke_observed: Arc<AtomicU64>,
     document_smoke_evidence: Arc<Mutex<Option<DocumentSmokeEvidence>>>,
@@ -234,6 +280,107 @@ impl NativeColumns {
             data_columns: 1,
         }
     }
+
+    /// Records a worker layout for a tab that is not showing. The rules match
+    /// `synchronize_data_columns`, which applies them to the live list.
+    fn grow(&mut self, layout: UiColumnLayout) -> Result<(), ShellError> {
+        if !layout.is_valid() {
+            return Err(ShellError::new("worker supplied invalid column metadata"));
+        }
+        match self.kind {
+            Some(kind) if kind != layout.kind() => {
+                return Err(ShellError::new(
+                    "worker changed the column kind within one document",
+                ));
+            }
+            None => self.kind = Some(layout.kind()),
+            Some(_) => {}
+        }
+        self.data_columns = self.data_columns.max(layout.data_columns());
+        Ok(())
+    }
+}
+
+/// A document open in a tab that is not showing. Its worker keeps scanning.
+/// The cached rows are the allocation the worker also holds, so keeping them
+/// here costs no extra memory and switching back shows rows at once.
+struct BackgroundTab {
+    id: usize,
+    worker: Option<Worker>,
+    path: Option<PathBuf>,
+    serial: Option<u64>,
+    columns: NativeColumns,
+    column_widths: Vec<i32>,
+    rows: SlidingRowWindow,
+    cache: Arc<ImmutableRowCache>,
+    top_row: Option<u64>,
+    selected_row: Option<u64>,
+    pending_reveal: Option<u64>,
+    active_find: Option<ActiveFind>,
+    revealed_match: Option<RevealedMatch>,
+    chrome: TabChrome,
+}
+
+impl BackgroundTab {
+    /// Keeps the tab's chrome and rows current while another tab is showing.
+    fn apply_event(&mut self, event: &WorkerEvent) {
+        if self.path.as_ref() != Some(&event.path) || self.serial != Some(event.serial) {
+            return;
+        }
+        let chrome = event_chrome(event);
+        self.chrome.file_meta = file_meta_text(chrome.source_bytes);
+        self.chrome.grid_visible = chrome.grid_visible;
+        self.chrome.progress_visible = chrome.progress_visible;
+        self.chrome.progress_percent = chrome.progress_percent;
+        if let Some([eyebrow, title, body]) = chrome.empty_state {
+            eyebrow.clone_into(&mut self.chrome.empty_eyebrow);
+            title.clone_into(&mut self.chrome.empty_title);
+            body.clone_into(&mut self.chrome.empty_body);
+        }
+        if let Some(layout) = event.columns
+            && let Err(error) = self.columns.grow(layout)
+        {
+            self.chrome.status = format!("Column update failed: {error}");
+            return;
+        }
+        self.chrome.status = worker_status(event, self.active_find.as_ref());
+        let mut rows = SlidingRowWindow::new(event.progress.available_rows, u32::MAX);
+        rows.seek(self.rows.first_row());
+        self.rows = rows;
+        self.cache = Arc::clone(&event.cache);
+        if let Some(reveal) = query_match_to_reveal(event, self.active_find.as_ref())
+            && self.revealed_match != Some(reveal)
+        {
+            self.revealed_match = Some(reveal);
+            self.pending_reveal = Some(reveal.absolute_row);
+        }
+    }
+}
+
+/// The text and indicators one tab shows in the shared chrome.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct TabChrome {
+    file_name: String,
+    file_meta: String,
+    empty_eyebrow: String,
+    empty_title: String,
+    empty_body: String,
+    status: String,
+    grid_visible: bool,
+    progress_visible: bool,
+    progress_percent: u64,
+}
+
+/// What one worker event shows in the chrome, for the active tab or for a
+/// tab that is not showing.
+#[derive(Debug, Eq, PartialEq)]
+struct EventChrome<'a> {
+    source_bytes: Option<u64>,
+    grid_visible: bool,
+    progress_visible: bool,
+    progress_percent: u64,
+    /// Eyebrow, title, and body for the empty state when the grid is hidden.
+    empty_state: Option<[&'a str; 3]>,
 }
 
 impl WindowState {
@@ -288,7 +435,17 @@ fn startup_error_text(message: &str) -> Vec<u16> {
 
 pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let shell_smoke = validate_shell_options(&options)?;
-    let initial_path = options.initial_path;
+    // Automation stays isolated. An ordinary launch hands its files to the
+    // LeanRows window that is already running, when there is one.
+    let _instance = if shell_smoke {
+        None
+    } else {
+        match process::claim(&options.initial_paths) {
+            process::Startup::Forwarded => return Ok(ShellOutcome::default()),
+            process::Startup::Primary(guard) => guard,
+        }
+    };
+    let initial_paths = options.initial_paths;
 
     initialize_native_controls()?;
     let _com_apartment = ComApartment::initialize()?;
@@ -330,6 +487,14 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         pending_reveal: None,
         active_find: None,
         revealed_match: None,
+        tab_id: FIRST_TAB_ID,
+        next_tab_id: FIRST_TAB_ID + 1,
+        tab_order: vec![FIRST_TAB_ID],
+        background_tabs: Vec::new(),
+        tab_labels: Vec::new(),
+        tab_hover: TabHover::default(),
+        pending_opens: Vec::new(),
+        closing: false,
         document_smoke: options.document_smoke_test,
         document_smoke_observed: Arc::clone(&document_smoke_observed),
         document_smoke_evidence: Arc::clone(&document_smoke_evidence),
@@ -341,41 +506,9 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let smoke_evidence = if options.smoke_test {
         run_smoke(window, state_pointer, &smoke_verified)?
     } else if options.document_smoke_test {
-        let evidence = match verify_shell_smoke(window, state_pointer, &smoke_verified) {
-            Ok(evidence) => evidence,
-            Err(error) => {
-                let _ = destroy_shell_window(window);
-                return Err(error);
-            }
-        };
-        let path = initial_path.ok_or_else(|| {
-            ShellError::new("document smoke input disappeared before worker submission")
-        })?;
-        if let Err(error) = queue_path(window, path) {
-            let _ = destroy_shell_window(window);
-            return Err(error);
-        }
-        // SAFETY: The timer belongs to this live UI-thread window and posts no pointers.
-        if unsafe {
-            SetTimer(
-                Some(window),
-                DOCUMENT_SMOKE_TIMER_ID,
-                DOCUMENT_SMOKE_TIMEOUT_MS,
-                None,
-            )
-        } == 0
-        {
-            let _ = destroy_shell_window(window);
-            return Err(ShellError::new("document smoke timeout timer failed"));
-        }
-        evidence
+        start_document_smoke(window, state_pointer, &smoke_verified, initial_paths)?
     } else {
-        if let Some(path) = initial_path
-            && let Err(error) = queue_path(window, path)
-        {
-            let _ = destroy_shell_window(window);
-            return Err(error);
-        }
+        open_documents(window, initial_paths);
         post_initial_presentation(window)?;
         SmokeEvidence::default()
     };
@@ -394,6 +527,42 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         smoke_system_colors_verified: smoke_evidence.system_colors,
         document_smoke,
     })
+}
+
+fn start_document_smoke(
+    window: HWND,
+    state_pointer: *mut WindowState,
+    smoke_verified: &AtomicBool,
+    initial_paths: Vec<PathBuf>,
+) -> Result<SmokeEvidence, ShellError> {
+    let evidence = match verify_shell_smoke(window, state_pointer, smoke_verified) {
+        Ok(evidence) => evidence,
+        Err(error) => {
+            let _ = destroy_shell_window(window);
+            return Err(error);
+        }
+    };
+    let path = initial_paths.into_iter().next().ok_or_else(|| {
+        ShellError::new("document smoke input disappeared before worker submission")
+    })?;
+    if let Err(error) = queue_path(window, path) {
+        let _ = destroy_shell_window(window);
+        return Err(error);
+    }
+    // SAFETY: The timer belongs to this live UI-thread window and posts no pointers.
+    if unsafe {
+        SetTimer(
+            Some(window),
+            DOCUMENT_SMOKE_TIMER_ID,
+            DOCUMENT_SMOKE_TIMEOUT_MS,
+            None,
+        )
+    } == 0
+    {
+        let _ = destroy_shell_window(window);
+        return Err(ShellError::new("document smoke timeout timer failed"));
+    }
+    Ok(evidence)
 }
 
 fn initialize_window_title(window: HWND) -> Result<(), ShellError> {
@@ -416,8 +585,10 @@ fn validate_shell_options(options: &ShellOptions) -> Result<bool, ShellError> {
     if options.smoke_test && options.document_smoke_test {
         return Err(ShellError::new("native smoke modes are mutually exclusive"));
     }
-    if options.document_smoke_test && options.initial_path.is_none() {
-        return Err(ShellError::new("document smoke requires one input file"));
+    if options.document_smoke_test && options.initial_paths.len() != 1 {
+        return Err(ShellError::new(
+            "document smoke requires exactly one input file",
+        ));
     }
     Ok(options.smoke_test || options.document_smoke_test)
 }
@@ -427,7 +598,7 @@ fn initialize_native_controls() -> Result<(), ShellError> {
         .map_err(|_| ShellError::new("common-control structure size overflow"))?;
     let controls = INITCOMMONCONTROLSEX {
         dwSize: controls_size,
-        dwICC: ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES | ICC_PROGRESS_CLASS,
+        dwICC: ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES | ICC_PROGRESS_CLASS | ICC_TAB_CLASSES,
     };
     // SAFETY: `controls` is initialized to the documented structure size and flags.
     if !unsafe { InitCommonControlsEx(&raw const controls) }.as_bool() {
@@ -469,7 +640,7 @@ fn create_shell_window(
     let window_result = unsafe {
         CreateWindowExW(
             WS_EX_APPWINDOW | WS_EX_ACCEPTFILES,
-            w!("LeanRows.NativeWindow"),
+            WINDOW_CLASS_NAME,
             w!("LeanRows"),
             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             CW_USEDEFAULT,
@@ -629,6 +800,7 @@ fn verify_shell_smoke(
             verify_modern_shell_chrome(state)?;
             verify_theme_button_cycle(window)?;
             verify_progress_indicator(state)?;
+            verify_tab_strip(window)?;
             verify_native_presentation(window, state)?;
             controls_verified.store(true, Ordering::Release);
             let evidence = verify_smoke(
@@ -666,6 +838,7 @@ fn verify_modern_shell_chrome(state: &WindowState) -> Result<(), ShellError> {
         (state.chrome.empty_title, "empty-state title"),
         (state.chrome.empty_open, "empty-state Open button"),
         (state.chrome.progress, "progress indicator"),
+        (state.chrome.tab_strip, "tab strip"),
     ] {
         verify_control_visibility(handle, name, false)?;
     }
@@ -903,6 +1076,93 @@ fn verify_progress_pixels(state: &WindowState, width: i32, height: i32) -> Resul
     Ok(())
 }
 
+/// Lays the shell out as it is with two open files, checks that the strip
+/// holds both tabs and paints the selected one, then restores the one-file
+/// layout.
+fn verify_tab_strip(window: HWND) -> Result<(), ShellError> {
+    const SMOKE_TAB_ID: usize = usize::MAX;
+
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let strip = unsafe { pointer.as_mut() }
+        .map(|state| {
+            state.tab_order.push(SMOKE_TAB_ID);
+            state.chrome.tab_strip
+        })
+        .ok_or_else(|| ShellError::new("tab strip smoke state is unavailable"))?;
+    layout_children(window);
+    tabs::set_items(
+        strip,
+        &[String::from("first.csv"), String::from("second.csv")],
+        1,
+    );
+    // SAFETY: As above; layout and item updates leave the state attached.
+    let verification = unsafe { pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("tab strip smoke state was detached"))
+        .and_then(verify_tab_strip_pixels);
+    // SAFETY: As above.
+    if let Some(state) = unsafe { pointer.as_mut() } {
+        state.tab_order.retain(|id| *id != SMOKE_TAB_ID);
+    }
+    tabs::set_items(strip, &[], 0);
+    layout_children(window);
+    verification?;
+    verify_control_visibility(strip, "tab strip", false)
+}
+
+fn verify_tab_strip_pixels(state: &WindowState) -> Result<(), ShellError> {
+    let strip = state.chrome.tab_strip;
+    verify_control_visibility(strip, "two-tab strip", true)?;
+    if tabs::item_count(strip) != 2 || tabs::selected_index(strip) != Some(1) {
+        return Err(ShellError::new(
+            "tab strip did not keep two tabs with the second selected",
+        ));
+    }
+    let (Some(first), Some(second)) = (tabs::item_rect(strip, 0), tabs::item_rect(strip, 1)) else {
+        return Err(ShellError::new("tab strip geometry query failed"));
+    };
+    let mut client = RECT::default();
+    // SAFETY: The strip is live and the RECT is writable.
+    unsafe { GetClientRect(strip, &raw mut client) }
+        .map_err(|error| ShellError::new(format!("tab strip geometry query failed: {error}")))?;
+    let bottom = client.bottom.saturating_sub(1);
+    // SAFETY: The live strip owns this DC until the paired ReleaseDC below.
+    let device = unsafe { GetDC(Some(strip)) };
+    if device.0.is_null() {
+        return Err(ShellError::new(
+            "tab strip pixel smoke could not acquire a DC",
+        ));
+    }
+    // SAFETY: WM_PRINTCLIENT synchronously paints into the supplied live HDC.
+    unsafe {
+        SendMessageW(
+            strip,
+            WM_PRINTCLIENT,
+            Some(WPARAM(device.0.addr())),
+            Some(LPARAM(0)),
+        );
+    }
+    let background = unsafe { GetPixel(device, client.right.saturating_sub(4), 4) };
+    let selected = unsafe { GetPixel(device, second.left.midpoint(second.right), bottom) };
+    let unselected = unsafe { GetPixel(device, first.left.midpoint(first.right), bottom) };
+    // SAFETY: This releases the exact HWND/DC pair acquired above.
+    let released = unsafe { ReleaseDC(Some(strip), device) };
+    if released == 0 {
+        return Err(ShellError::new(
+            "tab strip pixel smoke could not release its DC",
+        ));
+    }
+    if background != state.theme.palette.surface.colorref()
+        || selected != state.theme.palette.accent.colorref()
+        || unselected != state.theme.palette.border.colorref()
+    {
+        return Err(ShellError::new(
+            "tab strip pixels do not match the surface/accent/border contract",
+        ));
+    }
+    Ok(())
+}
+
 fn verify_control_visibility(
     handle: HWND,
     name: &str,
@@ -1030,6 +1290,18 @@ fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
     let menu = MenuGuard::new(unsafe { CreatePopupMenu() }.map_err(menu_error)?);
     append_menu_text(menu.handle(), ID_FILE_OPEN, w!("&Open...\tCtrl+O"))?;
     append_menu_text(menu.handle(), ID_FILE_RELOAD, w!("&Reload\tF5"))?;
+    append_menu_item(
+        menu.handle(),
+        ID_TAB_CLOSE,
+        w!("Close &tab\tCtrl+W"),
+        state.current_path.is_some() || state.tab_order.len() > 1,
+    )?;
+    append_menu_item(
+        menu.handle(),
+        ID_TAB_NEXT,
+        w!("Next ta&b\tCtrl+Tab"),
+        state.tab_order.len() > 1,
+    )?;
     // SAFETY: The guarded popup is mutable until TrackPopupMenuEx returns.
     unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
     append_menu_text(
@@ -1102,6 +1374,21 @@ fn append_menu_text(menu: HMENU, command: u16, text: PCWSTR) -> Result<(), Shell
     unsafe { AppendMenuW(menu, MF_STRING, usize::from(command), text) }.map_err(menu_error)
 }
 
+fn append_menu_item(
+    menu: HMENU,
+    command: u16,
+    text: PCWSTR,
+    enabled: bool,
+) -> Result<(), ShellError> {
+    let flags = if enabled {
+        MF_STRING
+    } else {
+        MF_STRING | MF_GRAYED
+    };
+    // SAFETY: The caller owns the menu and supplies a live NUL-terminated label.
+    unsafe { AppendMenuW(menu, flags, usize::from(command), text) }.map_err(menu_error)
+}
+
 fn append_menu_owned(menu: HMENU, command: u16, text: &str) -> Result<(), ShellError> {
     let mut encoded: Vec<u16> = text.encode_utf16().filter(|unit| *unit != 0).collect();
     encoded.push(0);
@@ -1110,15 +1397,18 @@ fn append_menu_owned(menu: HMENU, command: u16, text: &str) -> Result<(), ShellE
 
 fn handle_command(window: HWND, command: u16) {
     match command {
-        ID_FILE_OPEN => match choose_file(window) {
-            Ok(Some(path)) => {
-                if let Err(error) = queue_path(window, path) {
-                    set_status(window, &error.to_string());
-                }
-            }
-            Ok(None) => {}
+        ID_FILE_OPEN => match choose_files(window) {
+            Ok(paths) => open_documents(window, paths),
             Err(error) => set_status(window, &error.to_string()),
         },
+        ID_TAB_CLOSE => {
+            if let Err(error) = close_active_tab(window) {
+                set_status(window, &format!("Close tab failed: {error}"));
+            }
+        }
+        ID_TAB_NEXT => switch_tab(window, true),
+        ID_TAB_PREVIOUS => switch_tab(window, false),
+        ID_TAB_SELECT_FIRST..=ID_TAB_SELECT_LAST => select_tab_number(window, command),
         ID_FILE_RELOAD => {
             let pointer = state_pointer_for(window);
             // SAFETY: The path is cloned while the UI-owned state is attached.
@@ -1666,7 +1956,7 @@ fn parse_one_based_row(input: &[u16]) -> Result<u64, &'static str> {
         .ok_or("Row numbers are 1-based; enter 1 or greater.")
 }
 
-fn choose_file(window: HWND) -> Result<Option<PathBuf>, ShellError> {
+fn choose_files(window: HWND) -> Result<Vec<PathBuf>, ShellError> {
     let mut buffer = vec![0_u16; 32_768].into_boxed_slice();
     let dialog_size = u32::try_from(size_of::<OPENFILENAMEW>())
         .map_err(|_| ShellError::new("open-dialog structure size overflow"))?;
@@ -1680,27 +1970,47 @@ fn choose_file(window: HWND) -> Result<Option<PathBuf>, ShellError> {
         lpstrFile: PWSTR(buffer.as_mut_ptr()),
         nMaxFile: 32_768,
         lpstrTitle: w!("Open a large data file"),
-        Flags: OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY,
+        Flags: OFN_EXPLORER
+            | OFN_FILEMUSTEXIST
+            | OFN_PATHMUSTEXIST
+            | OFN_HIDEREADONLY
+            | OFN_ALLOWMULTISELECT,
         ..Default::default()
     };
     // SAFETY: The dialog owns no borrowed data after return; the path buffer is writable.
     if unsafe { GetOpenFileNameW(&raw mut dialog) }.as_bool() {
-        let length = buffer
-            .iter()
-            .position(|unit| *unit == 0)
-            .unwrap_or(buffer.len());
-        return Ok(Some(PathBuf::from(OsString::from_wide(&buffer[..length]))));
+        return Ok(parse_open_selection(&buffer));
     }
     // SAFETY: This immediately queries the thread-local extended dialog result.
     let code = unsafe { CommDlgExtendedError() };
     if code.0 == 0 {
-        Ok(None)
+        Ok(Vec::new())
+    } else if code == FNERR_BUFFERTOOSMALL {
+        Err(ShellError::new(
+            "Too many files were selected at once; select fewer files",
+        ))
     } else {
         Err(ShellError::new(format!(
             "Open dialog failed with code 0x{:04X}",
             code.0
         )))
     }
+}
+
+/// Reads an Explorer-style multi-select result: one full path, or a folder
+/// followed by file names, each NUL-terminated and ending with an empty entry.
+fn parse_open_selection(buffer: &[u16]) -> Vec<PathBuf> {
+    let mut parts = buffer
+        .split(|unit| *unit == 0)
+        .take_while(|part| !part.is_empty());
+    let Some(first) = parts.next() else {
+        return Vec::new();
+    };
+    let first = PathBuf::from(OsString::from_wide(first));
+    let names: Vec<PathBuf> = parts
+        .map(|name| first.join(OsString::from_wide(name)))
+        .collect();
+    if names.is_empty() { vec![first] } else { names }
 }
 
 fn set_status(window: HWND, text: &str) {
@@ -1742,7 +2052,7 @@ fn register_window_class(instance: HINSTANCE) -> Result<(), ShellError> {
         hbrBackground: unsafe { GetSysColorBrush(COLOR_WINDOW) },
         hIcon: large_icon,
         hIconSm: small_icon,
-        lpszClassName: w!("LeanRows.NativeWindow"),
+        lpszClassName: WINDOW_CLASS_NAME,
         ..Default::default()
     };
     // SAFETY: Every pointer in `class` is null or static and the callback ABI matches.
@@ -1806,6 +2116,7 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
         state.chrome.theme,
         state.chrome.open,
         state.chrome.more,
+        state.chrome.tab_strip,
         state.chrome.empty_body,
         state.chrome.empty_open,
     ] {
@@ -1912,6 +2223,7 @@ fn invalidate_native_presentation(state: &WindowState) {
         let _ = unsafe { InvalidateRect(Some(header), None, false) };
     }
     progress::invalidate(state.chrome.progress);
+    tabs::invalidate(state.chrome.tab_strip);
 }
 
 fn apply_font(handle: HWND, font: windows::Win32::Graphics::Gdi::HFONT) {
@@ -2044,6 +2356,11 @@ fn handle_shell_keyboard(window: HWND, message: &MSG) -> bool {
     if key != VK_TAB.0 {
         return false;
     }
+    // SAFETY: This is a read-only query of the current keyboard state.
+    if unsafe { GetKeyState(i32::from(VK_CONTROL.0)) } < 0 {
+        // Ctrl+Tab switches files through the accelerator table.
+        return false;
+    }
     focus_adjacent_control(state);
     true
 }
@@ -2057,6 +2374,7 @@ fn focus_adjacent_control(state: &WindowState) {
         state.chrome.find_next,
         state.chrome.theme,
         state.chrome.more,
+        state.chrome.tab_strip,
         state.chrome.empty_open,
         state.list,
     ];
@@ -2112,7 +2430,7 @@ unsafe extern "system" fn window_proc(
             Err(()) => LRESULT(-1),
         },
         WM_SIZE => {
-            layout_children(window);
+            handle_size(window, wparam);
             LRESULT(0)
         }
         WM_GETMINMAXINFO => {
@@ -2143,10 +2461,8 @@ unsafe extern "system" fn window_proc(
             refresh_current_theme(window);
             LRESULT(0)
         }
-        WM_NOTIFY => handle_custom_draw(window, lparam).unwrap_or_else(|| {
-            handle_list_notification(window, lparam);
-            LRESULT(0)
-        }),
+        WM_NOTIFY => handle_notify(window, lparam),
+        WM_COPYDATA => LRESULT(isize::from(receive_open_request(window, lparam))),
         WM_COMMAND => {
             if let Ok(command) = u16::try_from(wparam.0 & 0xffff)
                 && (command != ID_SEARCH_MATCH_CASE || lparam.0 == 0)
@@ -2160,10 +2476,14 @@ unsafe extern "system" fn window_proc(
             LRESULT(0)
         }
         WM_APP_WORKER_READY => {
-            apply_worker_event(window);
+            apply_worker_event(window, wparam.0);
             LRESULT(0)
         }
         WM_APP_PRESENT_SHELL => handle_initial_presentation(window),
+        WM_APP_OPEN_PENDING | WM_APP_CLOSE_TAB => {
+            handle_tab_message(window, message, wparam);
+            LRESULT(0)
+        }
         WM_TIMER if wparam.0 == DOCUMENT_SMOKE_TIMER_ID => {
             // SAFETY: This timer was created for this HWND with the same identifier.
             let _ = unsafe { KillTimer(Some(window), DOCUMENT_SMOKE_TIMER_ID) };
@@ -2177,15 +2497,7 @@ unsafe extern "system" fn window_proc(
             LRESULT(0)
         }
         WM_DESTROY => {
-            let pointer = state_pointer_for(window);
-            // SAFETY: The state remains attached through WM_NCDESTROY.
-            let worker = unsafe { pointer.as_mut() }.and_then(|state| {
-                let _ = state.clear_accessibility();
-                state.worker.take()
-            });
-            drop(worker);
-            // SAFETY: Standard termination for this thread's message loop.
-            unsafe { PostQuitMessage(0) };
+            handle_destroy(window);
             LRESULT(0)
         }
         WM_NCDESTROY => {
@@ -2207,6 +2519,50 @@ unsafe extern "system" fn window_proc(
             unsafe { DefWindowProcW(window, message, wparam, lparam) }
         }
     }
+}
+
+fn handle_notify(window: HWND, lparam: LPARAM) -> LRESULT {
+    if handle_tab_notification(window, lparam) {
+        return LRESULT(0);
+    }
+    handle_custom_draw(window, lparam).unwrap_or_else(|| {
+        handle_list_notification(window, lparam);
+        LRESULT(0)
+    })
+}
+
+fn handle_tab_message(window: HWND, message: u32, wparam: WPARAM) {
+    if message == WM_APP_OPEN_PENDING {
+        open_pending(window);
+    } else if let Err(error) = close_tab(window, wparam.0) {
+        set_status(window, &format!("Close tab failed: {error}"));
+    }
+}
+
+fn handle_size(window: HWND, wparam: WPARAM) {
+    if wparam.0 == SIZE_MINIMIZED as usize {
+        // Nothing is visible while minimized, so hand memory back to Windows.
+        process::trim_working_set();
+    } else {
+        layout_children(window);
+    }
+}
+
+fn handle_destroy(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The state remains attached through WM_NCDESTROY.
+    let workers = unsafe { pointer.as_mut() }.map(|state| {
+        state.closing = true;
+        let _ = state.clear_accessibility();
+        (
+            state.worker.take(),
+            std::mem::take(&mut state.background_tabs),
+        )
+    });
+    // Dropping each worker stops its thread and closes its file.
+    drop(workers);
+    // SAFETY: Standard termination for this thread's message loop.
+    unsafe { PostQuitMessage(0) };
 }
 
 fn handle_dpi_changed(window: HWND, lparam: LPARAM) {
@@ -2245,7 +2601,7 @@ fn apply_minimum_window_size(window: HWND, lparam: LPARAM) {
     let info = unsafe { &mut *(lparam.0 as *mut MINMAXINFO) };
     // SAFETY: The live HWND provides its current monitor DPI.
     let dpi = unsafe { GetDpiForWindow(window) }.max(96);
-    let metrics = UiLayout::calculate(0, 0, dpi).metrics;
+    let metrics = UiLayout::calculate(0, 0, dpi, false).metrics;
     let mut bounds = RECT {
         left: 0,
         top: 0,
@@ -2677,22 +3033,8 @@ fn create_children(window: HWND) -> Result<(), ()> {
         WS_CHILD | static_style(SS_ICON.0 | SS_CENTERIMAGE.0),
         None,
     )?;
-    let file_name = create_child(
-        instance,
-        window,
-        w!("STATIC"),
-        w!("LeanRows"),
-        WS_CHILD,
-        None,
-    )?;
-    let file_meta = create_child(
-        instance,
-        window,
-        w!("STATIC"),
-        w!("Large-file row viewer"),
-        WS_CHILD,
-        None,
-    )?;
+    let file_name = create_child(instance, window, w!("STATIC"), w!(""), WS_CHILD, None)?;
+    let file_meta = create_child(instance, window, w!("STATIC"), w!(""), WS_CHILD, None)?;
     let search_edit = create_child(
         instance,
         window,
@@ -2723,6 +3065,14 @@ fn create_children(window: HWND) -> Result<(), ()> {
         Some(ID_FILE_OPEN),
     )?;
     let more = create_button(instance, window, w!("..."), ID_APP_MORE)?;
+    let tab_strip = create_child(
+        instance,
+        window,
+        WC_TABCONTROLW,
+        w!("Open files"),
+        WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS | WINDOW_STYLE(TCS_FIXEDWIDTH),
+        Some(ID_TAB_STRIP),
+    )?;
     let progress = create_child(instance, window, PROGRESS_CLASSW, w!(""), WS_CHILD, None)?;
     let list = create_child(
         instance,
@@ -2736,7 +3086,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         instance,
         window,
         w!("STATIC"),
-        w!("LEANROWS"),
+        w!(""),
         WS_CHILD | static_style(SS_CENTER.0),
         None,
     )?;
@@ -2744,7 +3094,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         instance,
         window,
         w!("STATIC"),
-        w!("Open large files without loading them all."),
+        w!(""),
         WS_CHILD | static_style(SS_CENTER.0),
         None,
     )?;
@@ -2752,9 +3102,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         instance,
         window,
         w!("STATIC"),
-        w!(
-            "Open a local CSV, TSV, JSONL, NDJSON, log, or text file. LeanRows keeps memory bounded and never modifies the source."
-        ),
+        w!(""),
         WS_CHILD | static_style(SS_CENTER.0),
         None,
     )?;
@@ -2778,7 +3126,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         instance,
         window,
         w!("STATIC"),
-        w!("Ready"),
+        w!(""),
         WS_CHILD | static_style(SS_OWNERDRAW.0 | SS_CENTERIMAGE.0),
         None,
     )?;
@@ -2799,6 +3147,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         theme,
         open,
         more,
+        tab_strip,
         progress,
         empty_eyebrow,
         empty_title,
@@ -2806,10 +3155,9 @@ fn create_children(window: HWND) -> Result<(), ()> {
         empty_open,
         status_backdrop,
     };
+    // Workers start with their first file, so an empty window runs no
+    // background thread.
     let count = state.rows.visible_rows();
-    let raw_window = window.0 as usize;
-    let wake_ui: Arc<dyn Fn() + Send + Sync> = Arc::new(move || post_worker_ready(raw_window));
-    state.worker = Some(Worker::start(wake_ui).map_err(|_| ())?);
 
     insert_column(list, 0, w!("Row"), 112)?;
     insert_existing_data_columns(list, state.columns)?;
@@ -2841,6 +3189,22 @@ fn create_children(window: HWND) -> Result<(), ()> {
     progress::install_subclass(progress, window).map_err(|_| ())?;
     let header = list_header(list).ok_or(())?;
     header::install_subclass(header, window).map_err(|_| ())?;
+    tabs::install_subclass(tab_strip, window).map_err(|_| ())?;
+    // The progress rule straddles the lower edge of the chrome. Keeping it
+    // above its siblings stops the tab strip from painting over it.
+    // SAFETY: Both windows are live children created on this UI thread.
+    let _ = unsafe {
+        SetWindowPos(
+            progress,
+            Some(HWND_TOP),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
+    };
+    set_welcome_text(state).map_err(|_| ())?;
     apply_native_presentation(state).map_err(|_| ())?;
     apply_shell_visibility(state);
     state
@@ -3033,8 +3397,10 @@ fn layout_children(window: HWND) {
         (client.right - client.left).max(0),
         (client.bottom - client.top).max(0),
         dpi,
+        state.tab_order.len() > 1,
     );
     move_control(state.chrome.topbar, layout.top_bar);
+    place_tab_strip(state, layout.tab_strip, layout.metrics);
     move_control(state.chrome.progress, layout.progress_track);
     move_control(state.list, layout.grid);
     move_control(state.chrome.status_backdrop, layout.status_strip);
@@ -3076,6 +3442,19 @@ fn layout_children(window: HWND) {
     move_and_show(state.chrome.open, commands.open_button);
     move_and_show(state.chrome.more, commands.overflow_button);
     layout_empty_state(state, layout.empty_state, dpi);
+}
+
+fn place_tab_strip(state: &WindowState, rect: Option<UiRect>, metrics: layout::UiMetrics) {
+    let Some(rect) = rect else {
+        set_control_visible(state.chrome.tab_strip, false);
+        return;
+    };
+    tabs::set_item_size(
+        state.chrome.tab_strip,
+        tab_item_width(rect.width, state.tab_order.len(), metrics),
+        rect.height.saturating_sub(metrics.space_1),
+    );
+    move_and_show(state.chrome.tab_strip, rect);
 }
 
 fn move_control(handle: HWND, rect: UiRect) {
@@ -3303,11 +3682,19 @@ fn request_viewport_for_hint(state: &WindowState, notification: &NMLVCACHEHINT) 
     }
 }
 
-fn post_worker_ready(raw_window: usize) {
+fn post_worker_ready(raw_window: usize, tab_id: usize) {
     // SAFETY: The raw value was captured from this process's HWND. Posting a
     // pointer-free wake message is valid even if shutdown has begun; failure is ignored.
     let window = HWND(raw_window as *mut c_void);
-    let _ = unsafe { PostMessageW(Some(window), WM_APP_WORKER_READY, WPARAM(0), LPARAM(0)) };
+    let _ = unsafe { PostMessageW(Some(window), WM_APP_WORKER_READY, WPARAM(tab_id), LPARAM(0)) };
+}
+
+fn start_worker(window: HWND, tab_id: usize) -> Result<Worker, ShellError> {
+    let raw_window = window.0 as usize;
+    let wake_ui: Arc<dyn Fn() + Send + Sync> =
+        Arc::new(move || post_worker_ready(raw_window, tab_id));
+    Worker::start(wake_ui)
+        .map_err(|error| ShellError::new(format!("document worker could not start: {error}")))
 }
 
 fn queue_path(window: HWND, path: PathBuf) -> Result<(), ShellError> {
@@ -3316,6 +3703,9 @@ fn queue_path(window: HWND, path: PathBuf) -> Result<(), ShellError> {
     let Some(state) = (unsafe { pointer.as_mut() }) else {
         return Err(ShellError::new("window state is unavailable"));
     };
+    if state.worker.is_none() {
+        state.worker = Some(start_worker(window, state.tab_id)?);
+    }
     set_document_title(window, &path)?;
     state.replace_cache(
         SlidingRowWindow::new(0, 0),
@@ -3358,17 +3748,561 @@ fn queue_path(window: HWND, path: PathBuf) -> Result<(), ShellError> {
     Ok(())
 }
 
-fn handle_drop(window: HWND, raw_drop: usize) {
-    let result = drop_files::one_path(raw_drop).and_then(|path| {
-        if !is_supported_document_path(&path) {
-            return Err(ShellError::new(
-                "unsupported drop; use CSV, TSV, JSONL, NDJSON, LOG, or TXT",
-            ));
+/// Shows `path` in a tab: the tab that already has it, the empty tab, or a
+/// new tab to the right of the active one.
+fn open_document(window: HWND, path: PathBuf) -> Result<(), ShellError> {
+    let path = std::path::absolute(&path).unwrap_or(path);
+    let pointer = state_pointer_for(window);
+    // SAFETY: Commands and posted messages run on the UI thread that owns the state.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    if state
+        .current_path
+        .as_deref()
+        .is_some_and(|open| process::same_path(open, &path))
+    {
+        return Ok(());
+    }
+    if let Some(id) = state
+        .background_tabs
+        .iter()
+        .find(|tab| {
+            tab.path
+                .as_deref()
+                .is_some_and(|open| process::same_path(open, &path))
+        })
+        .map(|tab| tab.id)
+    {
+        return activate_tab(window, id);
+    }
+    let mut new_tab = None;
+    if state.current_path.is_some() {
+        if state.tab_order.len() >= MAX_OPEN_TABS {
+            return Err(ShellError::new(format!(
+                "close a tab first; LeanRows keeps at most {MAX_OPEN_TABS} files open"
+            )));
         }
-        queue_path(window, path)
+        let outgoing = stash_active(state)?;
+        state.background_tabs.push(outgoing);
+        let id = state.next_tab_id;
+        state.next_tab_id = id.wrapping_add(1).max(FIRST_TAB_ID);
+        let position = state
+            .tab_order
+            .iter()
+            .position(|open| *open == state.tab_id)
+            .map_or(state.tab_order.len(), |index| index + 1);
+        state.tab_order.insert(position, id);
+        state.tab_id = id;
+        new_tab = Some(id);
+    }
+    if let Err(error) = queue_path(window, path) {
+        if let Some(id) = new_tab {
+            let _ = close_tab(window, id);
+        }
+        return Err(error);
+    }
+    sync_tab_strip(window);
+    Ok(())
+}
+
+fn open_documents(window: HWND, paths: Vec<PathBuf>) {
+    let mut failures = 0_usize;
+    let mut first_error = None;
+    for path in paths {
+        if let Err(error) = open_document(window, path) {
+            failures += 1;
+            first_error.get_or_insert(error);
+        }
+    }
+    if let Some(error) = first_error {
+        let message = if failures == 1 {
+            format!("Could not open a file: {error}")
+        } else {
+            format!("Could not open {failures} files: {error}")
+        };
+        set_status(window, &message);
+    }
+}
+
+/// Accepts files forwarded by a later launch. The paths are copied out and
+/// opened from a posted message, after the sending process has been released.
+fn receive_open_request(window: HWND, lparam: LPARAM) -> bool {
+    let pointer = state_pointer_for(window);
+    // SAFETY: WM_COPYDATA is dispatched on the UI thread that owns the state.
+    let Some(state) = (unsafe { pointer.as_mut() }) else {
+        return false;
+    };
+    // A closing window refuses, so the sender keeps trying and opens its own
+    // window once this one has gone, instead of losing the files.
+    if state.closing {
+        return false;
+    }
+    let Some(paths) = process::read_open_request(lparam) else {
+        return false;
+    };
+    let has_paths = !paths.is_empty();
+    let room = process::MAX_FORWARDED_PATHS.saturating_sub(state.pending_opens.len());
+    state.pending_opens.extend(paths.into_iter().take(room));
+    // SAFETY: These calls act on this live top-level window.
+    unsafe {
+        if IsIconic(window).as_bool() {
+            let _ = ShowWindow(window, SW_RESTORE);
+        }
+        if IsWindowVisible(window).as_bool() {
+            let _ = SetForegroundWindow(window);
+        }
+    }
+    if has_paths {
+        // SAFETY: This posts a pointer-free private message to the live window.
+        let _ = unsafe { PostMessageW(Some(window), WM_APP_OPEN_PENDING, WPARAM(0), LPARAM(0)) };
+    }
+    true
+}
+
+fn open_pending(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Posted messages run on the UI thread that owns the state.
+    let Some(paths) =
+        (unsafe { pointer.as_mut() }).map(|state| std::mem::take(&mut state.pending_opens))
+    else {
+        return;
+    };
+    open_documents(window, paths);
+}
+
+/// Moves the active document out of the shared view, leaving the view empty.
+fn stash_active(state: &mut WindowState) -> Result<BackgroundTab, ShellError> {
+    let top_row = top_visible_row(state);
+    let selected_row = first_selected_row(state);
+    let column_widths = column_widths(state.list, state.columns);
+    let chrome = capture_chrome(state);
+    let rows = state.rows;
+    let cache = Arc::clone(&state.cache);
+    state.replace_cache(
+        SlidingRowWindow::new(0, 0),
+        Arc::new(ImmutableRowCache::default()),
+    )?;
+    Ok(BackgroundTab {
+        id: state.tab_id,
+        worker: state.worker.take(),
+        path: state.current_path.take(),
+        serial: state.active_serial.take(),
+        columns: state.columns,
+        column_widths,
+        rows,
+        cache,
+        top_row,
+        selected_row,
+        pending_reveal: state.pending_reveal.take(),
+        active_find: state.active_find.take(),
+        revealed_match: state.revealed_match.take(),
+        chrome,
+    })
+}
+
+/// Shows a background tab's document in the shared view.
+fn restore_tab(
+    window: HWND,
+    state: &mut WindowState,
+    tab: BackgroundTab,
+) -> Result<(), ShellError> {
+    // The document moves in first, so a failed view update cannot lose it.
+    state.tab_id = tab.id;
+    state.worker = tab.worker;
+    state.current_path = tab.path;
+    state.active_serial = tab.serial;
+    state.active_find = tab.active_find;
+    state.revealed_match = tab.revealed_match;
+    state.pending_reveal = None;
+
+    reset_data_columns(state)?;
+    insert_existing_data_columns(state.list, tab.columns)
+        .map_err(|()| ShellError::new("native data-column restore failed"))?;
+    state.columns = tab.columns;
+    set_column_widths(state.list, &tab.column_widths);
+    state.replace_cache(tab.rows, tab.cache)?;
+    set_native_item_count(state.list, state.rows.visible_rows());
+    apply_chrome(state, &tab.chrome)?;
+    match state.current_path.as_deref() {
+        Some(path) => set_document_title(window, path)?,
+        None => initialize_window_title(window)?,
+    }
+    restore_view(state, tab.top_row, tab.selected_row);
+    // SAFETY: The list is live and every visible row now belongs to this tab.
+    let _ = unsafe { InvalidateRect(Some(state.list), None, true) };
+    if let Some(row) = tab.pending_reveal {
+        return begin_reveal(state, row);
+    }
+    if let (Some(worker), Some(serial), Some(top_row)) =
+        (state.worker.as_ref(), state.active_serial, tab.top_row)
+        && !state.cache.contains_row(top_row)
+    {
+        let _ = worker.request_viewport(serial, top_row);
+    }
+    Ok(())
+}
+
+fn activate_tab(window: HWND, id: usize) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Commands and notifications run on the UI thread that owns the state.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    if id == state.tab_id {
+        return Ok(());
+    }
+    let index = state
+        .background_tabs
+        .iter()
+        .position(|tab| tab.id == id)
+        .ok_or_else(|| ShellError::new("that tab is no longer open"))?;
+    let outgoing = stash_active(state)?;
+    let incoming = state.background_tabs.swap_remove(index);
+    state.background_tabs.push(outgoing);
+    let restored = restore_tab(window, state, incoming);
+    sync_tab_strip(window);
+    restored
+}
+
+/// Closes one tab. Closing the active tab shows its right neighbour, or its
+/// left one at the end of the strip; closing the last tab shows the welcome
+/// view in a fresh, empty tab.
+fn close_tab(window: HWND, id: usize) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Commands and posted messages run on the UI thread that owns the state.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    let Some(position) = state.tab_order.iter().position(|open| *open == id) else {
+        return Ok(());
+    };
+    if id != state.tab_id {
+        state.tab_order.remove(position);
+        if let Some(index) = state.background_tabs.iter().position(|tab| tab.id == id) {
+            // Dropping the tab stops its worker and closes its file.
+            drop(state.background_tabs.swap_remove(index));
+        }
+        sync_tab_strip(window);
+        return Ok(());
+    }
+    let neighbour = state
+        .tab_order
+        .get(position + 1)
+        .or_else(|| {
+            position
+                .checked_sub(1)
+                .and_then(|previous| state.tab_order.get(previous))
+        })
+        .copied();
+    let closing = stash_active(state)?;
+    state.tab_order.remove(position);
+    drop(closing);
+    let incoming = neighbour
+        .and_then(|next| state.background_tabs.iter().position(|tab| tab.id == next))
+        .map(|index| state.background_tabs.swap_remove(index));
+    let shown = if let Some(incoming) = incoming {
+        restore_tab(window, state, incoming)
+    } else {
+        let fresh = state.next_tab_id;
+        state.next_tab_id = fresh.wrapping_add(1).max(FIRST_TAB_ID);
+        state.tab_id = fresh;
+        state.tab_order.push(fresh);
+        show_welcome(window, state)
+    };
+    sync_tab_strip(window);
+    shown
+}
+
+fn close_active_tab(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Commands run on the UI thread that owns the state.
+    let target = unsafe { pointer.as_ref() }
+        .filter(|state| state.current_path.is_some() || state.tab_order.len() > 1)
+        .map(|state| state.tab_id);
+    match target {
+        Some(id) => close_tab(window, id),
+        None => Ok(()),
+    }
+}
+
+fn switch_tab(window: HWND, forward: bool) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Commands run on the UI thread that owns the state.
+    let target = unsafe { pointer.as_ref() }.and_then(|state| {
+        let count = state.tab_order.len();
+        let position = state.tab_order.iter().position(|id| *id == state.tab_id)?;
+        if count < 2 {
+            return None;
+        }
+        let next = if forward {
+            (position + 1) % count
+        } else {
+            (position + count - 1) % count
+        };
+        state.tab_order.get(next).copied()
     });
-    if let Err(error) = result {
-        set_status(window, &format!("Could not open dropped file: {error}"));
+    if let Some(id) = target
+        && let Err(error) = activate_tab(window, id)
+    {
+        set_status(window, &format!("Could not switch tabs: {error}"));
+    }
+}
+
+/// Ctrl+1 through Ctrl+8 pick a tab by position; Ctrl+9 picks the last one.
+fn select_tab_number(window: HWND, command: u16) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Commands run on the UI thread that owns the state.
+    let target = unsafe { pointer.as_ref() }.and_then(|state| {
+        let index = if command == ID_TAB_SELECT_LAST {
+            state.tab_order.len().checked_sub(1)?
+        } else {
+            usize::from(command.checked_sub(ID_TAB_SELECT_FIRST)?)
+        };
+        state.tab_order.get(index).copied()
+    });
+    if let Some(id) = target
+        && let Err(error) = activate_tab(window, id)
+    {
+        set_status(window, &format!("Could not switch tabs: {error}"));
+    }
+}
+
+fn handle_tab_notification(window: HWND, lparam: LPARAM) -> bool {
+    if lparam.0 == 0 {
+        return false;
+    }
+    let pointer = state_pointer_for(window);
+    // SAFETY: Every WM_NOTIFY payload starts with a readable NMHDR, and the
+    // state stays attached for this synchronous callback.
+    let (Some(state), header) = (unsafe { pointer.as_ref() }, unsafe {
+        &*(lparam.0 as *const NMHDR)
+    }) else {
+        return false;
+    };
+    if header.hwndFrom != state.chrome.tab_strip {
+        return false;
+    }
+    if header.code == TCN_SELCHANGE {
+        let target = tabs::selected_index(state.chrome.tab_strip)
+            .and_then(|index| state.tab_order.get(index).copied());
+        if let Some(id) = target
+            && let Err(error) = activate_tab(window, id)
+        {
+            set_status(window, &format!("Could not switch tabs: {error}"));
+        }
+    }
+    true
+}
+
+fn tab_path(state: &WindowState, id: usize) -> Option<&Path> {
+    if id == state.tab_id {
+        return state.current_path.as_deref();
+    }
+    state
+        .background_tabs
+        .iter()
+        .find(|tab| tab.id == id)
+        .and_then(|tab| tab.path.as_deref())
+}
+
+/// Brings the tab strip in line with the open tabs. The strip is laid out
+/// again only when its labels change, which covers opening and closing.
+fn sync_tab_strip(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Callers run on the UI thread that owns the state.
+    let Some(state) = (unsafe { pointer.as_mut() }) else {
+        return;
+    };
+    let paths: Vec<Option<&Path>> = state
+        .tab_order
+        .iter()
+        .map(|id| tab_path(state, *id))
+        .collect();
+    let labels = tabs::labels(&paths);
+    let selected = state
+        .tab_order
+        .iter()
+        .position(|id| *id == state.tab_id)
+        .unwrap_or_default();
+    if labels == state.tab_labels {
+        tabs::select(state.chrome.tab_strip, selected);
+        return;
+    }
+    tabs::set_items(state.chrome.tab_strip, &labels, selected);
+    state.tab_labels = labels;
+    state.tab_hover = TabHover::default();
+    layout_children(window);
+}
+
+fn set_welcome_text(state: &WindowState) -> Result<(), ShellError> {
+    set_control_text(state.chrome.file_name, IDLE_FILE_NAME)?;
+    set_control_text(state.chrome.file_meta, IDLE_FILE_META)?;
+    set_empty_state(state, WELCOME_EYEBROW, EMPTY_TITLE_CAPTION, WELCOME_BODY)?;
+    set_control_text(state.status, IDLE_STATUS)
+}
+
+fn show_welcome(window: HWND, state: &mut WindowState) -> Result<(), ShellError> {
+    reset_data_columns(state)?;
+    set_native_item_count(state.list, 0);
+    set_welcome_text(state)?;
+    state.grid_visible = false;
+    state.progress_visible = false;
+    progress::update_position(state.chrome.progress, 0);
+    apply_shell_visibility(state);
+    initialize_window_title(window)
+}
+
+fn capture_chrome(state: &WindowState) -> TabChrome {
+    // SAFETY: PBM_GETPOS is a pointer-free query of the live progress control.
+    let progress = unsafe { SendMessageW(state.chrome.progress, PBM_GETPOS, None, None) }.0;
+    TabChrome {
+        file_name: control_text(state.chrome.file_name),
+        file_meta: control_text(state.chrome.file_meta),
+        empty_eyebrow: control_text(state.chrome.empty_eyebrow),
+        empty_title: control_text(state.chrome.empty_title),
+        empty_body: control_text(state.chrome.empty_body),
+        status: control_text(state.status),
+        grid_visible: state.grid_visible,
+        progress_visible: state.progress_visible,
+        progress_percent: u64::try_from(progress).unwrap_or_default(),
+    }
+}
+
+fn apply_chrome(state: &mut WindowState, chrome: &TabChrome) -> Result<(), ShellError> {
+    set_control_text(state.chrome.file_name, &chrome.file_name)?;
+    set_control_text(state.chrome.file_meta, &chrome.file_meta)?;
+    set_empty_state(
+        state,
+        &chrome.empty_eyebrow,
+        &chrome.empty_title,
+        &chrome.empty_body,
+    )?;
+    set_status_handle(state.status, &chrome.status);
+    state.grid_visible = chrome.grid_visible;
+    state.progress_visible = chrome.progress_visible;
+    progress::update_position(state.chrome.progress, chrome.progress_percent);
+    apply_shell_visibility(state);
+    Ok(())
+}
+
+fn control_text(handle: HWND) -> String {
+    // SAFETY: This is a read-only length query for a live child control.
+    let length = unsafe { GetWindowTextLengthW(handle) };
+    let length = usize::try_from(length)
+        .unwrap_or_default()
+        .min(MAX_CHROME_TEXT_UNITS);
+    let mut buffer = vec![0_u16; length + 1];
+    // SAFETY: The buffer has room for the text and its terminator.
+    let copied = unsafe { GetWindowTextW(handle, &mut buffer) };
+    let copied = usize::try_from(copied).unwrap_or_default().min(length);
+    String::from_utf16_lossy(&buffer[..copied])
+}
+
+fn column_widths(list: HWND, columns: NativeColumns) -> Vec<i32> {
+    (0..=usize::from(columns.data_columns))
+        .map(|column| {
+            // SAFETY: LVM_GETCOLUMNWIDTH carries a column index and no pointers.
+            let width =
+                unsafe { SendMessageW(list, LVM_GETCOLUMNWIDTH, Some(WPARAM(column)), None) }.0;
+            i32::try_from(width).unwrap_or_default()
+        })
+        .collect()
+}
+
+fn set_column_widths(list: HWND, widths: &[i32]) {
+    for (column, width) in widths.iter().enumerate() {
+        if *width > 0 {
+            // SAFETY: LVM_SETCOLUMNWIDTH carries a column index and a width.
+            unsafe {
+                SendMessageW(
+                    list,
+                    LVM_SETCOLUMNWIDTH,
+                    Some(WPARAM(column)),
+                    Some(LPARAM(isize::try_from(*width).unwrap_or_default())),
+                );
+            }
+        }
+    }
+}
+
+fn top_visible_row(state: &WindowState) -> Option<u64> {
+    // SAFETY: LVM_GETTOPINDEX is a pointer-free query of the live list.
+    let top = unsafe { SendMessageW(state.list, LVM_GETTOPINDEX, None, None) }.0;
+    state.rows.local_to_absolute(i32::try_from(top).ok()?)
+}
+
+fn first_selected_row(state: &WindowState) -> Option<u64> {
+    // SAFETY: Starting from -1 finds the first selected item; no pointers.
+    let selected = unsafe {
+        SendMessageW(
+            state.list,
+            LVM_GETNEXTITEM,
+            Some(WPARAM(usize::MAX)),
+            Some(LPARAM(isize::try_from(LVNI_SELECTED).unwrap_or_default())),
+        )
+    }
+    .0;
+    state.rows.local_to_absolute(i32::try_from(selected).ok()?)
+}
+
+fn restore_view(state: &WindowState, top_row: Option<u64>, selected_row: Option<u64>) {
+    if let Some(local) = selected_row.and_then(|row| state.rows.absolute_to_local(row)) {
+        let _ = mark_selected(state.list, local);
+    }
+    if let Some(local) = top_row.and_then(|row| state.rows.absolute_to_local(row)) {
+        scroll_to_top(state.list, local, state.rows.visible_rows());
+    }
+}
+
+/// Scrolls so `target` is the first visible row with one ensure-visible
+/// request: the far edge of the page when moving down, the row itself when
+/// moving up. Row indices never become pixel offsets, so large files are safe.
+fn scroll_to_top(list: HWND, target: i32, count: u32) {
+    // SAFETY: Both queries are pointer-free reads of the live list.
+    let current = unsafe { SendMessageW(list, LVM_GETTOPINDEX, None, None) }.0;
+    let Ok(current) = i32::try_from(current) else {
+        return;
+    };
+    let final_row = i32::try_from(count).unwrap_or(i32::MAX).saturating_sub(1);
+    if target == current || final_row < 0 {
+        return;
+    }
+    let edge = if target > current {
+        let per_page = unsafe { SendMessageW(list, LVM_GETCOUNTPERPAGE, None, None) }.0;
+        let per_page = i32::try_from(per_page).unwrap_or(1).max(1);
+        target.saturating_add(per_page - 1).min(final_row)
+    } else {
+        target
+    };
+    let Ok(edge) = usize::try_from(edge) else {
+        return;
+    };
+    // SAFETY: The index is within the current item count; no pointers.
+    unsafe {
+        SendMessageW(list, LVM_ENSUREVISIBLE, Some(WPARAM(edge)), Some(LPARAM(0)));
+    }
+}
+
+fn handle_drop(window: HWND, raw_drop: usize) {
+    let paths = match drop_files::paths(raw_drop, MAX_OPEN_TABS) {
+        Ok(paths) => paths,
+        Err(error) => {
+            set_status(window, &format!("Could not open dropped files: {error}"));
+            return;
+        }
+    };
+    let dropped = paths.len();
+    let supported: Vec<PathBuf> = paths
+        .into_iter()
+        .filter(|path| is_supported_document_path(path))
+        .collect();
+    let skipped = dropped - supported.len();
+    open_documents(window, supported);
+    if skipped > 0 {
+        set_status(
+            window,
+            &format!(
+                "Skipped {skipped} unsupported file(s); use CSV, TSV, JSONL, NDJSON, LOG, or TXT"
+            ),
+        );
     }
 }
 
@@ -3403,11 +4337,14 @@ fn set_file_identity(
             |value| value.to_string_lossy(),
         );
     set_control_text(state.chrome.file_name, &name)?;
-    let metadata = source_bytes.map_or_else(
+    set_control_text(state.chrome.file_meta, &file_meta_text(source_bytes))
+}
+
+fn file_meta_text(source_bytes: Option<u64>) -> String {
+    source_bytes.map_or_else(
         || String::from("Opening local file..."),
         |bytes| format!("{bytes} bytes | read-only source"),
-    );
-    set_control_text(state.chrome.file_meta, &metadata)
+    )
 }
 
 fn set_empty_state(
@@ -3419,13 +4356,6 @@ fn set_empty_state(
     set_control_text(state.chrome.empty_eyebrow, eyebrow)?;
     set_control_text(state.chrome.empty_title, title)?;
     set_control_text(state.chrome.empty_body, body)
-}
-
-fn update_progress_presentation(state: &mut WindowState, event: &WorkerEvent) {
-    let terminal = matches!(event.phase, WorkerPhase::Complete | WorkerPhase::Failed);
-    state.progress_visible = !terminal;
-    let percent = progress_percent(event.progress.scanned_bytes, event.progress.source_bytes);
-    progress::update_position(state.chrome.progress, percent);
 }
 
 fn document_title(path: &Path) -> Result<Vec<u16>, ShellError> {
@@ -3445,13 +4375,24 @@ fn document_title(path: &Path) -> Result<Vec<u16>, ShellError> {
     Ok(title)
 }
 
-fn apply_worker_event(window: HWND) {
+fn apply_worker_event(window: HWND, tab_id: usize) {
     let pointer = state_pointer_for(window);
     // SAFETY: The UI thread owns this state and is the only event consumer.
-    let event = unsafe { pointer.as_ref() }
-        .and_then(|state| state.worker.as_ref())
-        .and_then(Worker::poll);
-    let Some(event) = event else {
+    let Some(state) = (unsafe { pointer.as_mut() }) else {
+        return;
+    };
+    if tab_id != state.tab_id {
+        if let Some(tab) = state
+            .background_tabs
+            .iter_mut()
+            .find(|tab| tab.id == tab_id)
+            && let Some(event) = tab.worker.as_ref().and_then(Worker::poll)
+        {
+            tab.apply_event(&event);
+        }
+        return;
+    }
+    let Some(event) = state.worker.as_ref().and_then(Worker::poll) else {
         return;
     };
     if apply_document_event(window, &event) {
@@ -3462,45 +4403,63 @@ fn apply_worker_event(window: HWND) {
 }
 
 fn update_document_chrome(state: &mut WindowState, event: &WorkerEvent) {
+    let chrome = event_chrome(event);
+    let _ = set_file_identity(state, &event.path, chrome.source_bytes);
+    state.progress_visible = chrome.progress_visible;
+    progress::update_position(state.chrome.progress, chrome.progress_percent);
+    state.grid_visible = chrome.grid_visible;
+    if let Some([eyebrow, title, body]) = chrome.empty_state {
+        let _ = set_empty_state(state, eyebrow, title, body);
+    }
+    apply_shell_visibility(state);
+}
+
+fn event_chrome(event: &WorkerEvent) -> EventChrome<'_> {
     let source_bytes = match &event.result {
         WorkerResult::Ready { size } => Some(*size),
         WorkerResult::Failed { .. } => None,
     };
-    let _ = set_file_identity(state, &event.path, source_bytes);
-    update_progress_presentation(state, event);
-    match &event.result {
-        WorkerResult::Failed { message } => {
-            state.grid_visible = false;
-            let _ = set_empty_state(
-                state,
+    let (grid_visible, empty_state) = match &event.result {
+        WorkerResult::Failed { message } => (
+            false,
+            Some([
                 "COULD NOT OPEN",
                 "This file could not be displayed.",
-                message,
-            );
-        }
+                message.as_str(),
+            ]),
+        ),
         WorkerResult::Ready { .. }
             if event.progress.complete && event.progress.available_rows == 0 =>
         {
-            state.grid_visible = false;
-            let _ = set_empty_state(
-                state,
-                "EMPTY FILE",
-                "This file has no rows.",
-                "Choose another supported local file to continue.",
-            );
+            (
+                false,
+                Some([
+                    "EMPTY FILE",
+                    "This file has no rows.",
+                    "Choose another supported local file to continue.",
+                ]),
+            )
         }
-        WorkerResult::Ready { .. } if event.cached_rows > 0 => state.grid_visible = true,
-        WorkerResult::Ready { .. } => {
-            state.grid_visible = false;
-            let _ = set_empty_state(
-                state,
+        WorkerResult::Ready { .. } if event.cached_rows > 0 => (true, None),
+        WorkerResult::Ready { .. } => (
+            false,
+            Some([
                 "INDEXING",
                 "Finding the first complete row.",
                 "Memory stays bounded while LeanRows scans forward cooperatively.",
-            );
-        }
+            ]),
+        ),
+    };
+    EventChrome {
+        source_bytes,
+        grid_visible,
+        progress_visible: !matches!(event.phase, WorkerPhase::Complete | WorkerPhase::Failed),
+        progress_percent: progress_percent(
+            event.progress.scanned_bytes,
+            event.progress.source_bytes,
+        ),
+        empty_state,
     }
-    apply_shell_visibility(state);
 }
 
 fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
@@ -3654,6 +4613,22 @@ fn select_absolute_row(state: &WindowState, absolute_row: u64) -> Result<(), She
         .rows
         .absolute_to_local(absolute_row)
         .ok_or_else(|| ShellError::new("target row is outside the current native row window"))?;
+    let local_parameter = mark_selected(state.list, local_row)?;
+    // SAFETY: The index is valid and focus stays on this UI thread.
+    unsafe {
+        SendMessageW(
+            state.list,
+            LVM_ENSUREVISIBLE,
+            Some(WPARAM(local_parameter)),
+            Some(LPARAM(0)),
+        );
+        let _ = SetFocus(Some(state.list));
+    }
+    Ok(())
+}
+
+/// Makes one row the only selected and focused row, without scrolling.
+fn mark_selected(list: HWND, local_row: i32) -> Result<usize, ShellError> {
     let selection_state = LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0);
     let mut clear = LVITEMW {
         stateMask: selection_state,
@@ -3663,7 +4638,7 @@ fn select_absolute_row(state: &WindowState, absolute_row: u64) -> Result<(), She
     // pointer remains valid through this synchronous call.
     let cleared = unsafe {
         SendMessageW(
-            state.list,
+            list,
             LVM_SETITEMSTATE,
             Some(WPARAM(usize::MAX)),
             Some(LPARAM((&raw mut clear).cast::<c_void>() as isize)),
@@ -3684,7 +4659,7 @@ fn select_absolute_row(state: &WindowState, absolute_row: u64) -> Result<(), She
     // SAFETY: local_row is mapped within the current virtual item count.
     let applied = unsafe {
         SendMessageW(
-            state.list,
+            list,
             LVM_SETITEMSTATE,
             Some(WPARAM(local_parameter)),
             Some(LPARAM((&raw mut selected).cast::<c_void>() as isize)),
@@ -3693,17 +4668,7 @@ fn select_absolute_row(state: &WindowState, absolute_row: u64) -> Result<(), She
     if applied.0 == 0 {
         return Err(ShellError::new("target row could not be selected"));
     }
-    // SAFETY: The index is valid and focus stays on this UI thread.
-    unsafe {
-        SendMessageW(
-            state.list,
-            LVM_ENSUREVISIBLE,
-            Some(WPARAM(local_parameter)),
-            Some(LPARAM(0)),
-        );
-        let _ = SetFocus(Some(state.list));
-    }
-    Ok(())
+    Ok(local_parameter)
 }
 
 fn set_native_item_count(list: HWND, visible_rows: u32) {
@@ -3956,9 +4921,10 @@ mod tests {
         ActiveFind, EMPTY_TITLE_CAPTION, MAX_COPY_ROWS, MAX_COPY_UTF16_UNITS,
         MAX_STARTUP_ERROR_UTF16_UNITS, NativeColumns, RevealedMatch, SHELL_SMOKE_TEXT_UNITS,
         append_copy_units, build_copy_text, control_style, document_event_is_usable,
-        document_smoke_evidence, document_title, failure_requires_reload, find_needle,
-        is_supported_document_path, parse_one_based_row, query_match_to_reveal, query_status,
-        startup_error_text, worker_status,
+        document_smoke_evidence, document_title, event_chrome, failure_requires_reload,
+        file_meta_text, find_needle, is_supported_document_path, parse_one_based_row,
+        parse_open_selection, query_match_to_reveal, query_status, startup_error_text,
+        worker_status,
     };
     use crate::document_engine::{UiColumnKind, UiColumnLayout};
     use crate::worker::{
@@ -3997,7 +4963,7 @@ mod tests {
 
     #[test]
     fn modern_shell_contract_is_bounded_and_actionable_at_minimum_size() {
-        let layout = UiLayout::calculate(640, 480, 96);
+        let layout = UiLayout::calculate(640, 480, 96, false);
         for rect in [
             layout.top_bar,
             layout.commands.search_field,
@@ -4234,6 +5200,83 @@ mod tests {
         ));
         assert!(!failure_requires_reload("access was denied"));
         Ok(())
+    }
+
+    #[test]
+    fn open_dialog_selection_reads_one_or_several_files() {
+        let one: Vec<u16> = "C:\\data\\rows.csv\0\0".encode_utf16().collect();
+        assert_eq!(
+            parse_open_selection(&one),
+            vec![PathBuf::from(r"C:\data\rows.csv")]
+        );
+        let several: Vec<u16> = "C:\\data\0a.csv\0b.log\0\0".encode_utf16().collect();
+        assert_eq!(
+            parse_open_selection(&several),
+            vec![
+                PathBuf::from(r"C:\data\a.csv"),
+                PathBuf::from(r"C:\data\b.log")
+            ]
+        );
+        assert!(parse_open_selection(&[0, 0]).is_empty());
+    }
+
+    #[test]
+    fn background_columns_grow_within_one_kind() -> Result<(), Box<dyn std::error::Error>> {
+        let mut columns = NativeColumns {
+            kind: None,
+            data_columns: 0,
+        };
+        columns.grow(UiColumnLayout::fields(2).ok_or("invalid layout")?)?;
+        columns.grow(UiColumnLayout::fields(1).ok_or("invalid layout")?)?;
+        assert_eq!(
+            columns,
+            NativeColumns {
+                kind: Some(UiColumnKind::Fields),
+                data_columns: 2,
+            }
+        );
+        assert!(columns.grow(UiColumnLayout::preview()).is_err());
+        assert_eq!(columns.data_columns, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn event_chrome_is_shared_by_active_and_background_tabs() {
+        let ready = ready_event();
+        let chrome = event_chrome(&ready);
+        assert!(chrome.grid_visible && chrome.progress_visible);
+        assert_eq!(chrome.empty_state, None);
+        assert_eq!(chrome.source_bytes, Some(12));
+
+        let mut failed = ready_event();
+        failed.result = WorkerResult::Failed {
+            message: String::from("access was denied"),
+        };
+        failed.phase = WorkerPhase::Failed;
+        let chrome = event_chrome(&failed);
+        assert!(!chrome.grid_visible && !chrome.progress_visible);
+        assert_eq!(
+            chrome.empty_state,
+            Some([
+                "COULD NOT OPEN",
+                "This file could not be displayed.",
+                "access was denied"
+            ])
+        );
+
+        let mut empty = ready_event();
+        empty.cached_rows = 0;
+        empty.progress.complete = true;
+        empty.progress.available_rows = 0;
+        empty.phase = WorkerPhase::Complete;
+        assert_eq!(
+            event_chrome(&empty)
+                .empty_state
+                .map(|[eyebrow, _, _]| eyebrow),
+            Some("EMPTY FILE")
+        );
+        assert_eq!(file_meta_text(None), "Opening local file...");
+        assert_eq!(file_meta_text(Some(12)), "12 bytes | read-only source");
     }
 
     #[test]
