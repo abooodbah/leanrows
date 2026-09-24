@@ -35,6 +35,11 @@ currently in the viewport are materialized. Peak memory is governed by window
 size rather than file size, which is why the figure above stays flat whether the
 source is 15 MB or 1.5 GB.
 
+LeanRows is for viewing large row-based data files without loading everything
+into memory. [LeanMark](https://github.com/abooodbah/leanmark) is for reading
+Markdown documents in a clean, focused interface. Both are read-only tools
+designed to make local files easier to inspect without changing them.
+
 ## Why LeanRows
 
 - **Progressive viewing:** the first bounded viewport is prepared before the
