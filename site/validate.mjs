@@ -108,6 +108,16 @@ requireMatch(
   /tagged release workflow separately\s+verifies the release commit, rebuild, quality gates, package checksum,\s+and published assets; the local receipt is not a substitute for that\s+tagged proof/i,
   "the evidence copy must distinguish local qualification from tagged proof",
 );
+requireMatch(
+  html,
+  /LeanRows is for viewing large row-based data files without loading\s+everything into memory\. LeanMark is for reading Markdown documents\s+in a clean, focused interface\. Both are read-only tools designed to\s+make local files easier to inspect without changing them\./i,
+  "the footer must summarize the distinct LeanRows and LeanMark purposes",
+);
+requireMatch(
+  html,
+  /href="https:\/\/abooodbah\.github\.io\/leanmark\/"/i,
+  "the footer must link to the LeanMark project site",
+);
 requireMatch(html, /<main\s+id="main-content">/i, "a named main landmark is required");
 requireMatch(css, /:focus-visible\s*\{[^}]*outline:/s, "visible focus styles are required");
 requireMatch(css, /prefers-reduced-motion:\s*reduce/i, "reduced-motion support is required");

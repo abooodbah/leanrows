@@ -55,6 +55,9 @@ or accessibility testing.
   bar, inline search, the owner-data grid, System/Light/Dark appearance, System
   resolution from the active Windows app theme, a flat two-DIP progress rule,
   and the Windows high-contrast system-color fallback.
+- Companion-project copy must preserve the separate purposes of LeanRows and
+  LeanMark, their shared read-only boundary, and the link to
+  https://abooodbah.github.io/leanmark/.
 - Local release-evidence copy may state the 25/25 final-frozen result, but it
   must distinguish that receipt from the tagged workflow's independent release
   commit, rebuild, quality-gate, checksum, and published-asset verification.
