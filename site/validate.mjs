@@ -45,8 +45,13 @@ requireMatch(html, /src="assets\/leanrows-app\.png"/i, "the real application cap
 requireMatch(html, /synthetic data/i, "the application capture must be identified as synthetic data");
 requireMatch(
   html,
-  /LeanRows v0\.1\.3 keeps the virtual owner-data grid/i,
-  "the current interface description must identify v0.1.3 and its owner-data grid",
+  /LeanRows v0\.2\.0 keeps the virtual owner-data grid/i,
+  "the current interface description must identify v0.2.0 and its owner-data grid",
+);
+requireMatch(
+  html,
+  /Files open\s+as tabs in one window/i,
+  "the current interface description must identify tabs in one window",
 );
 requireMatch(
   html,
@@ -80,8 +85,8 @@ requireMatch(
 );
 requireMatch(
   html,
-  /exact 1180&times;720 capture of the frozen v0\.1\.3 release\s+executable in Light appearance/i,
-  "the application capture must identify the exact frozen v0.1.3 release and appearance",
+  /exact\s+1180&times;720 capture of the frozen v0\.2\.0 release\s+executable in Light appearance/i,
+  "the application capture must identify the exact frozen v0.2.0 release and appearance",
 );
 requireMatch(
   html,
@@ -90,12 +95,12 @@ requireMatch(
 );
 requireMatch(
   html,
-  /alt="LeanRows v0\.1\.3 frozen Windows release in Light appearance/i,
-  "the application capture alternative text must identify v0.1.3 and Light appearance",
+  /alt="LeanRows v0\.2\.0 frozen Windows release in Light appearance/i,
+  "the application capture alternative text must identify v0.2.0 and Light appearance",
 );
 requireMatch(
   html,
-  /frozen local v0\.1\.3 candidate passed 25\/25 aggregate checks/i,
+  /frozen local v0\.2\.0 candidate passed 25\/25 aggregate checks/i,
   "the evidence copy must identify the final-frozen local QA result",
 );
 requireMatch(
@@ -118,7 +123,7 @@ if (structuredDataMatch) {
     if (structuredData["@type"] !== "SoftwareApplication") {
       failures.push("JSON-LD must describe a SoftwareApplication");
     }
-    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.1.3") {
+    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.2.0") {
       failures.push("JSON-LD name and release version must match the product");
     }
     if (structuredData.downloadUrl !== "https://github.com/abooodbah/leanrows/releases/latest") {
@@ -138,9 +143,9 @@ try {
   if (capture.length < 24 || capture.subarray(0, 8).toString("hex") !== pngSignature) {
     failures.push("the application capture must be a valid PNG file");
   } else {
-    const expectedCaptureBytes = 67555;
+    const expectedCaptureBytes = 63395;
     const expectedCaptureSha256 =
-      "40b5c9b9358fac0a0882005333876255f551997d8ebb84c8a050f3de8284c011";
+      "90de75f43c8dd66ac4ad11a1ef10749cb78bcf5dff45cbbde6b96df72a582650";
     const captureWidth = capture.readUInt32BE(16);
     const captureHeight = capture.readUInt32BE(20);
     if (captureWidth !== 1180 || captureHeight !== 720) {

@@ -8,7 +8,7 @@ runtime, no admin rights.**
 *20,000,001 rows, 1,532,454,643 bytes, fully indexed. Peak working set: 18.4 MB.*
 
 Excel stops at about 1.05 million rows. Most tools that go further are paid, need
-an installer, or live in a terminal. LeanRows is a single 546 KB executable you
+an installer, or live in a terminal. LeanRows is a single 618 KB executable you
 can copy onto a locked-down work machine and run.
 
 It is strictly read-only, so it cannot alter the file it is inspecting. There is
@@ -59,15 +59,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.1.3-windows-x64-unsigned.zip
-LeanRows-v0.1.3-windows-x64-unsigned.sha256
+LeanRows-v0.2.0-windows-x64-unsigned.zip
+LeanRows-v0.2.0-windows-x64-unsigned.sha256
 ```
 
-LeanRows 0.1 is not Authenticode-signed. Windows may therefore show a security
+LeanRows 0.2 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.1.3-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.2.0-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
@@ -111,18 +111,18 @@ registry behavior.
 
 ## Supported input
 
-| Format | Extensions | v0.1 behavior |
+| Format | Extensions | v0.2 behavior |
 | --- | --- | --- |
 | Comma-separated data | `.csv` | Quote-aware logical records in independently bounded native columns |
 | Tab-separated data | `.tsv` | Quote-aware logical records in independently bounded native columns |
 | JSON Lines | `.jsonl`, `.ndjson` | One physical line per displayed record; no schema or JSON-tree view |
 | Logs and text | `.log`, `.txt` | One physical line per displayed record |
 
-Format selection is extension-based in 0.1. Input is treated as bytes and
+Format selection is extension-based in 0.2. Input is treated as bytes and
 decoded for display as UTF-8; invalid bytes are shown as `\xNN`. Long records,
 fields, and display strings use bounded previews and are marked when truncated.
 
-LeanRows 0.1 deliberately excludes editing, saving, export, sorting, filtering,
+LeanRows 0.2 deliberately excludes editing, saving, export, sorting, filtering,
 regular expressions, SQL, charts, archives, remote or UNC paths, reparse points,
 tail/follow mode, plug-ins, scripts, and arbitrary JSON documents.
 
@@ -183,7 +183,7 @@ qualification records full process-tree memory independently; see
 
 Find compares raw UTF-8 bytes. Its optional case-insensitive mode folds ASCII
 letters only; non-ASCII bytes remain exact. Regular expressions are not
-supported in 0.1.
+supported in 0.2.
 
 The interface provides System, Light, and Dark appearance modes. System follows
 the active Windows app theme. The application also provides per-monitor DPI
@@ -218,6 +218,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
+- [LeanRows 0.2.0 release notes](docs/releases/v0.2.0.md)
 - [LeanRows 0.1.3 release notes](docs/releases/v0.1.3.md)
 - [LeanRows 0.1.2 release notes](docs/releases/v0.1.2.md)
 - [LeanRows 0.1.1 release notes](docs/releases/v0.1.1.md)

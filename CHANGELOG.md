@@ -4,7 +4,7 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-09-24
 
 ### Added
 
@@ -26,11 +26,11 @@ All notable changes to LeanRows are recorded in this file. The format follows
 ### Changed
 
 - Five open files now run in one process instead of five. Measured with the
-  QA fixtures, five files use 3.8 MiB private memory and an 18.4 MiB working
-  set, compared with 14.8 MiB and 87.5 MiB for five 0.1.3 windows. One file
-  uses the same memory as before.
+  QA fixtures, five files use 3.8 MiB private memory and an 18.5 MiB working
+  set, compared with 14.7 MiB and 88.1 MiB for five 0.1.3 windows. With one
+  file open, the two versions measure within 0.1 MiB of each other.
 - Minimizing the window returns its working set to Windows. In the same
-  measurement it drops from 18.4 MiB to 0.7 MiB, and pages come back as the
+  measurement it drops from 18.5 MiB to 0.8 MiB, and pages come back as the
   window is used.
 - Starting LeanRows again while it is running brings the running window
   forward instead of opening a second, empty window.
@@ -40,6 +40,14 @@ All notable changes to LeanRows are recorded in this file. The format follows
 - The command line accepts several files. An unknown option that starts with
   `--` is now a usage error, and `--` ends option parsing for file names that
   start with `--`.
+
+### Fixed
+
+- Fixed the file name, file details, and Match case controls showing as white
+  blocks in the top bar, most visibly in the Dark appearance. Their background
+  brush was returned through a conversion that failed for some Windows brush
+  handles, so the controls were left unpainted. The problem dated from the
+  0.1.2 redesign and appeared in about half of launches.
 
 ## [0.1.3] - 2026-08-09
 
@@ -134,6 +142,7 @@ All notable changes to LeanRows are recorded in this file. The format follows
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.2.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.2.0
 [0.1.3]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.3
 [0.1.2]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.2
 [0.1.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.1

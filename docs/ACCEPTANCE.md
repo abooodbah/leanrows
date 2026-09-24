@@ -1,6 +1,6 @@
 # Acceptance and assurance
 
-LeanRows separates practical 0.1.x release qualification from longer assurance
+LeanRows separates practical 0.2.x release qualification from longer assurance
 campaigns. This prevents an unrun research-scale test from being described as a
 pass while keeping the project accountable for the evidence required to ship a
 useful first release.
@@ -31,7 +31,7 @@ Measurements use these terms:
 - **Logical sparse size:** the addressable file length of an NTFS sparse
   fixture. It is not the amount of physical data scanned.
 
-## Required for a 0.1.x tag
+## Required for a 0.2.x tag
 
 | ID | Release requirement | Repository evidence path |
 | --- | --- | --- |
@@ -63,7 +63,7 @@ the sparse scale fixtures were skipped.
 ## Extended assurance
 
 The following campaigns strengthen later releases and comparative claims, but
-they are not represented as completed 0.1.x release gates:
+they are not represented as completed 0.2.x release gates:
 
 | ID | Extended campaign | Claim boundary |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ accepted architecture decision. Until then, their status remains explicit in
 
 ## Release decision
 
-A 0.1.x tag requires every item in the release table to pass or to have a
+A 0.2.x tag requires every item in the release table to pass or to have a
 written, publicly reviewed exception that narrows the release claim. A failed
 check is fixed or the release scope changes; it is never relabeled as a pass.
 Final ZIP digests and host-specific memory results are recorded only after the
