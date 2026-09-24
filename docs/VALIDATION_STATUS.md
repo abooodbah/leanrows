@@ -1,54 +1,96 @@
 # Validation status
 
-**Status date:** 2026-08-09<br>
-**Scope:** LeanRows 0.1.3 published release, Windows x64;<br>
-local, post-commit, tagged-CI, public-package, installed-binary, and Pages
-verification complete<br>
-**Current public release:** LeanRows 0.1.3
+**Status date:** 2026-09-24<br>
+**Scope:** LeanRows 0.2.0 release candidate, Windows x64;<br>
+local frozen verification complete; tagged-CI, public-package, and Pages
+verification pending<br>
+**Current public release:** LeanRows 0.1.3 until the `v0.2.0` tag publishes
 
-LeanRows 0.1.3 corrects System-theme resolution, restores the complete
-System/Light/Dark appearance cycle, and aligns the indexing indicator with
-LeanMark's flat progress rule. The frozen local candidate passed the current
-source, native-shell, document, packaging, aggregate QA, and live installer
-checks. That local executable is 546,816 bytes with SHA-256
-`F8394AC84BFDD1E4857AF087B509088B5586172048A499E761DF0D5701F8A7A1`.
-The clean release commit, post-commit rerun, tagged CI rebuild, public package,
-installed executable, and product site have now been verified separately.
+LeanRows 0.2.0 opens every file in one window, each in its own tab, cuts memory
+when several files are open, and fixes white file name, file details, and
+Match case backgrounds in the Dark appearance. The frozen local candidate
+passed the source, native-shell, document, packaging, aggregate QA, and live
+installer checks. That local executable is 618,496 bytes with SHA-256
+`D0D24FCA9730BE6C7A0E1385AAB5CB6F08C8D495A595FC32E4066F583BC88A8D`.
+The release commit, tagged CI rebuild, public package, installed public
+executable, and product site are verified separately after tagging.
 
-LeanRows 0.1.3 is published on
-[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.1.3).
-
-## v0.1.3 repository state
+## v0.2.0 repository state
 
 | Area | Current state | Evidence boundary |
 | --- | --- | --- |
-| Toolchain and quality policy | Passed locally | Formatting passed; workspace all-target locked tests passed 143/143; strict Clippy passed; release app and spike builds passed. |
-| CSV and line boundaries | Passed locally | Workspace tests and document smokes passed, including the small fixture and a 57,671,680-byte document. |
-| Source snapshot integrity | Passed within the recorded local scope | Document, seek, reload, source-integrity, and clean-close checks passed. The corrective release does not change document ownership. |
-| Native appearance | Passed on the frozen executable | Shell smoke exercised System, Light, Dark, and System, including persistence, effective runtime appearance, and grid repainting. |
-| Native child rendering | Passed on the frozen executable | Documented Windows painting retained native roles, focus, input, and accessibility semantics. The exact Light capture is recorded below. |
-| Progress rule | Passed on the frozen executable | Smoke retained `PROGRESS_CLASS`, rejected marquee style, verified 50 percent, and compared the expected accent, surface, and border pixels. |
+| Toolchain and quality policy | Passed locally | Formatting passed; workspace all-target locked tests passed 158/158; strict Clippy passed; release app and spike builds passed. |
+| CSV and line boundaries | Passed locally | Workspace tests and document smokes passed. The document engine is unchanged from 0.1.3. |
+| Source snapshot integrity | Passed within the recorded local scope | Document, seek, reload, source-integrity, and clean-close checks passed. Each tab owns its own snapshot handle. |
+| Tabs and one window | Passed on the frozen executable | The shell smoke painted a two-tab strip and checked a second launch handing its file to the running window. Separate scripted checks switched, clicked, and closed tabs and restored scroll position and selection. |
+| Native child rendering | Passed on the frozen executable | The shell smoke sampled the file name, file details, and Match case backgrounds on first presentation. The exact Light capture is recorded below. |
 | Packaging and installer | Passed locally | Release engineering, deterministic packaging, checksum, installer static checks, `ValidateOnly`, and a live upgrade/reinstall/uninstall/final-install cycle passed. |
-| Process memory, sparse scale, and network observation | Passed locally | The authoritative 25-check receipt records memory, 1 and 10 GiB sparse fixtures, 24 seeks, and a polling-bounded network observation. |
-| Tagged release package and site | Published and verified | Tag `v0.1.3`, its two public release assets, the installed public executable, and the deployed Pages site passed the checks recorded below. |
+| Process memory, sparse scale, and network observation | Passed locally | The 25-check receipt records memory, 1 and 10 GiB sparse fixtures, 24 seeks, and a polling-bounded network observation. |
+| Tagged release package and site | Pending | Recorded after tag `v0.2.0` publishes. |
 
 ## Native-shell verification result
 
-The frozen v0.1.3 executable passed the strengthened shell smoke:
+The frozen v0.2.0 executable passed the extended shell smoke:
 
-- It clicked the complete System to Light to Dark to System cycle and checked the
-  button label, persisted preference, effective runtime appearance, and grid
-  color after repainting.
-- It verified that the indexing indicator retains the native progress-control
-  class, does not carry marquee style, reports a 50 percent position, and
-  renders the exact expected accent, surface, and border pixels.
-- It continued to cover native accessibility names and roles, focus behavior,
-  responsive layout bands, document controls, and deterministic cleanup.
+- It laid the shell out as it is with two open files, checked that the tab
+  strip held both tabs with the second selected, and compared the rendered
+  surface, selected-tab accent, and border pixels. It then restored the
+  one-file layout and checked that the strip was hidden again.
+- It sampled the file name, file details, and Match case backgrounds on first
+  presentation. With the old brush conversion put back, this check failed in 3
+  and 5 of two batches of 10 runs; with the fix it passed every run.
+- A second ordinary launch exited 0 and its file became the active tab,
+  reopening the first file selected its tab again, one process remained, and
+  the two-tab window exited 0 on `WM_CLOSE`.
+- It kept the existing checks: the System to Light to Dark to System cycle,
+  the progress rule's class, value, and pixels, accessibility names and roles,
+  focus behavior, responsive layout bands, and deterministic cleanup.
 
-The standalone shell smoke and the small and 57,671,680-byte document smokes
-all passed against the frozen executable.
+## Frozen v0.2.0 local evidence
 
-## Frozen v0.1.3 local evidence
+The aggregate receipt is
+`artifacts/qa/v0.2.0-final-frozen-pass/qa-receipt.json`. It passed 25/25
+checks with 0 failures in 53,651 ms.
+
+| Frozen evidence field | v0.2.0 local value |
+| --- | --- |
+| Source identity | This receipt applies to the pre-commit frozen worktree and local executable identified below. The release commit and tag are verified separately after publication. |
+| Executable | 618,496 bytes; version `0.2.0.0`; SHA-256 `D0D24FCA9730BE6C7A0E1385AAB5CB6F08C8D495A595FC32E4066F583BC88A8D`. |
+| Source and build gates | Formatting passed; workspace all-target locked tests passed 158/158; strict Clippy passed; release app and spike builds passed; shell smoke, document smokes, and release engineering passed. |
+| Aggregate result | 25/25 checks passed, 0 failed, in 53,651 ms. |
+| Cold process tree | Peak 2,445,312 private bytes and 17,625,088 working-set bytes across 3 samples; input-idle startup attestation took 122 ms. Commit bytes were not observed. |
+| Document process tree | Peak 3,346,432 private bytes and 18,833,408 working-set bytes across 3 samples; startup attestation took 145 ms. Commit bytes were not observed. |
+| Sparse logical scale | The 1 GiB and 10 GiB sparse fixtures each reported 131,072 allocated bytes and returned first viewports in 318 ms and 299 ms. These are sparse-file observations, not equivalent full-I/O measurements. |
+| Deterministic seeks | 24/24 seeks passed across 3 fixtures with seed `20260809`. |
+| Network observation | Six polling samples observed TCP = 0 and UDP = 0, with a maximum 1,288 ms sample-start gap and a maximum process-tree size of 1. Open, view, native seek, reload with a durable view reset, source integrity, clean close, and zero-residual-process checks passed. |
+| Unsigned package | ZIP SHA-256 `912AB4ACF7BCBEC30EBAA593CEA19ED8C07DA343B3A2112A71BD1E88E556504E`; installer static, `ValidateOnly`, package, checksum, and release-engineering checks passed. The aggregate run did not change the persistent installation. |
+| Live installer lifecycle | The baseline was an installed pre-release build of `main` labeled 0.1.3.0. Validation, upgrade, reinstall, uninstall, and final install all exited 0, and the reinstall state was identical. Uninstall removed the owned files, registry entries, shortcut, and **Open with** registrations and restored four direct defaults to absent. Final install left the frozen v0.2.0 executable installed, set four direct defaults to LeanRows, and registered five **Open with** entries. The protected Notepad `.log` choice and `.txt` were unchanged throughout. |
+| Installer command contract | The installer intentionally creates no App Paths key. Absolute ProgID and Applications open commands and the Start menu shortcut were verified. |
+| Application capture | `site/assets/leanrows-app.png` is 1,180 x 720, 63,395 bytes, and SHA-256 `90DE75F43C8DD66AC4AD11A1EF10749CB78BCF5DFF45CBBDE6B96DF72A582650`. It captures the frozen executable in Light appearance with the regenerated 120-row, six-field, 7,600-byte fixture active and a second synthetic file in another tab. The saved Dark preference was restored afterwards. |
+| Cleanup | The aggregate fixture root was removed and residual process count was 0. The live installer cycle left the frozen v0.2.0 installation intentionally present. |
+
+## Memory with several files open
+
+These observations come from a separate harness that launches LeanRows once per
+file, as Explorer does, waits 6 s, and sums every process started from the same
+executable path. The 0.2.0 column is the frozen executable above; the 0.1.3
+column is the published 0.1.3 executable. Five files were opened from the QA
+fixtures, two rounds per build; the rounds agreed within 0.05 MiB private.
+
+| Five files open | 0.1.3 | 0.2.0 |
+| --- | --- | --- |
+| Processes | 5 | 1 |
+| Private memory | 14.74 to 14.75 MiB | 3.84 to 3.85 MiB |
+| Working set | 88.02 to 88.10 MiB | 18.50 to 18.51 MiB |
+| Working set 4 s after minimizing | 88.05 to 88.10 MiB | 0.77 to 0.78 MiB |
+
+With one file open, 0.1.3 measured 3.23 to 3.28 MiB private and 17.98 to 18.03
+MiB working set, and 0.2.0 measured 3.28 to 3.30 MiB private and 18.09 to 18.10
+MiB working set. On a generated 20,000,001-row, 1,586,666,734-byte CSV indexed
+to completion, peak working set was 18.10 to 18.12 MiB for 0.1.3 and 18.15 to
+18.18 MiB for 0.2.0, two runs each. These are host-specific observations.
+
+## Historical v0.1.3 local evidence
 
 The authoritative aggregate receipt is
 `artifacts/qa/v0.1.3-final-frozen-pass/qa-receipt.json`. It passed 25/25
@@ -151,7 +193,7 @@ endpoints and left no residual process.
 
 ## Explicitly unclaimed extended evidence
 
-The 0.1.3 repository does not claim completion of:
+The 0.2.0 repository does not claim completion of:
 
 - a 24 CPU-hour fuzzing campaign;
 - 100,000 oracle-backed random seeks;
@@ -168,10 +210,10 @@ These items remain in the extended assurance program described in
 
 Current descriptions may state the implemented mechanisms and verified results
 above: progressive viewports, fixed-capacity indexing, bounded previews,
-snapshot integrity, the responsive native shell, inline literal search, the
-owner-data grid, System/Light/Dark appearance, System resolution from the
-active Windows app theme, high-contrast system colors, and the flat native
-progress rule. Numeric performance, whole-process memory, package identity,
+snapshot integrity, tabs in one window, the responsive native shell, inline
+literal search, the owner-data grid, System/Light/Dark appearance, System
+resolution from the active Windows app theme, high-contrast system colors, and
+the flat native progress rule. Numeric performance, whole-process memory, package identity,
 installer outcomes, network observations, and binary outcomes must remain tied
 to their recorded receipts and exact artifact identities. In particular, the
 local frozen hashes and tagged public hashes describe different artifacts and

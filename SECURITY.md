@@ -4,10 +4,10 @@
 
 | Version | Security updates |
 | --- | --- |
-| 0.1.x | Supported |
+| 0.2.x | Supported |
 | Earlier versions | Not supported |
 
-Security fixes are applied to the latest 0.1 patch release and the `main`
+Security fixes are applied to the latest 0.2 patch release and the `main`
 branch as appropriate.
 
 ## Report a vulnerability
@@ -28,7 +28,7 @@ LeanRows displays explicitly selected, regular files from a local Windows
 volume. File bytes, paths, metadata, record lengths, delimiters, encodings, and
 row counts are untrusted.
 
-The 0.1 implementation applies the following controls:
+The 0.2 implementation applies the following controls:
 
 - source handles are opened without write access;
 - remote and UNC paths, device paths, reparse points, symbolic links, and
@@ -61,7 +61,7 @@ LeanRows is designed to remain bounded when a file contains extremely long
 records or fields, malformed CSV quoting, invalid bytes, or very large row
 counts. Bounded previews may omit part of a value, but truncation remains
 visible. CSV row boundaries are quote-aware. JSONL and NDJSON are line-oriented
-in 0.1 and are not schema-validated or expanded into JSON trees.
+in 0.2 and are not schema-validated or expanded into JSON trees.
 
 Availability still depends on the operating system, storage device, and
 available process memory. A managed allocation bound is not a whole-process
@@ -70,7 +70,7 @@ overhead, and the operating-system file cache are outside that ledger.
 
 ## Release and supply-chain notes
 
-The Windows x64 0.1 package is not Authenticode-signed. A release includes a
+The Windows x64 0.2 package is not Authenticode-signed. A release includes a
 separate SHA-256 file and a manifest containing the digest and size of every
 payload. Verify the ZIP against the checksum from the same GitHub release.
 
@@ -78,7 +78,7 @@ The optional installer operates per user without elevation. It registers
 LeanRows as an available file handler but does not write the protected Windows
 `UserChoice` key or silently replace an existing default application.
 
-## Out of scope for 0.1
+## Out of scope for 0.2
 
 LeanRows does not accept remote URLs, UNC paths, archives, plug-ins, macros,
 scripts, SQL, active content, or file edits. Security reports for future or

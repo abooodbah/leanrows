@@ -5,7 +5,7 @@ of row-oriented local files. The source file remains the primary backing store;
 the application does not import the document into a database or construct a
 whole-file in-memory model.
 
-This document describes the 0.1.3 implementation. Future candidates are kept
+This document describes the 0.2.0 implementation. Future candidates are kept
 in the [roadmap](../ROADMAP.md) rather than presented as current behavior.
 
 ## System boundary
@@ -40,7 +40,7 @@ The production interface uses Win32 common controls. It does not embed a
 browser engine, start a helper process, or use a GUI framework with a second
 runtime.
 
-The 0.1.3 shell uses warm, opaque light surfaces, coordinated dark surfaces, a
+The 0.2.0 shell uses warm, opaque light surfaces, coordinated dark surfaces, a
 single blue action accent, and restrained rules. Its top bar arranges file
 identity, inline search, and document commands in wide, default, or narrow
 layouts based on the DPI-scaled client width. Commands that do not fit remain
@@ -82,7 +82,7 @@ an escaped quote, and permits CR, LF, or CRLF inside a quoted field. Scanner
 state crosses read-block boundaries, so an embedded newline does not become a
 new row merely because it occurs in another block.
 
-JSONL and NDJSON are deliberately line-oriented in 0.1. The viewer does not
+JSONL and NDJSON are deliberately line-oriented in 0.2. The viewer does not
 validate every line as JSON, infer a schema, or build a JSON tree. Log and text
 records use the same physical-line boundary rules.
 
@@ -101,7 +101,7 @@ preview is capped at 4 KiB. Delimited projection retains at most 64 fields,
 with a 1 KiB decoded-byte bound per field and a 4 KiB decoded-row bound. Display
 cells are capped at 1,024 UTF-16 code units plus a terminator.
 
-The caps are part of the 0.1 correctness and availability contract. They do not
+The caps are part of the 0.2 correctness and availability contract. They do not
 imply that the source value is shorter. Cache metadata records source and
 display truncation, and invalid UTF-8 bytes are rendered as `\xNN` escapes.
 
@@ -185,7 +185,7 @@ result. Search uses a fixed 64 KiB read-through cache, 256-hit pages, and a
 64 MiB scratch quota. Scratch files live below
 `%LOCALAPPDATA%\LeanRows\query-cache`, not beside the source, and concurrent
 processes coordinate stale-file recovery. Case-insensitive matching folds ASCII
-letters only. The 0.1 query path does not implement regular expressions.
+letters only. The 0.2 query path does not implement regular expressions.
 
 ## Accessibility and rendering
 
@@ -214,12 +214,12 @@ directory; normal shutdown removes it, and startup recovery is path-confined.
 The optional installer writes only the documented per-user application files
 and registry registrations.
 
-## 0.1 exclusions
+## 0.2 exclusions
 
 Editing and saving, export, type coercion, global sort, filtering, regular
 expressions, SQL, joins, charts, statistics, arbitrary JSON documents, remote
 sources, tail/follow, archives, compression, multiple-file merge, plug-ins,
-scripts, AI features, and non-Windows releases are outside the 0.1 boundary.
+scripts, AI features, and non-Windows releases are outside the 0.2 boundary.
 
 See [Acceptance and assurance](ACCEPTANCE.md) for release qualification and
 [architecture decisions](adr/README.md) for the rationale behind the main

@@ -39,19 +39,19 @@ or accessibility testing.
   limits change.
 - Runtime measurements must identify the exact executable and stable QA
   receipt. The current local evidence is tied to executable SHA-256
-  `F8394AC84BFDD1E4857AF087B509088B5586172048A499E761DF0D5701F8A7A1`
-  and `artifacts/qa/v0.1.3-final-frozen-pass/qa-receipt.json`. Do not present
+  `D0D24FCA9730BE6C7A0E1385AAB5CB6F08C8D495A595FC32E4066F583BC88A8D`
+  and `artifacts/qa/v0.2.0-final-frozen-pass/qa-receipt.json`. Do not present
   this pre-commit evidence as tagged or publicly verified.
 - The architecture visual is intentionally labeled as an explanatory diagram.
   The separate application figure is a real 1180x720 capture of the frozen
-  v0.1.3 executable in Light appearance using the generated 120-row,
-  six-field `operations-sample.csv` fixture. The image is 67,555 bytes with
-  SHA-256
-  `40B5C9B9358FAC0A0882005333876255F551997D8EBB84C8A050F3DE8284C011`.
+  v0.2.0 executable in Light appearance using the generated 120-row,
+  six-field `operations-sample.csv` fixture, with a second synthetic file open
+  in another tab. The image is 63,395 bytes with SHA-256
+  `90DE75F43C8DD66AC4AD11A1EF10749CB78BCF5DFF45CBBDE6B96DF72A582650`.
   It records `Ready | 120 rows | 7600 / 7600 bytes | 100%`; the binary and
-  fixture remained unchanged, the saved System preference was restored, and
+  fixtures remained unchanged, the saved Dark preference was restored, and
   the application closed cleanly. Never substitute a fabricated screenshot.
-- Current interface copy must retain the v0.1.3 boundaries: a responsive top
+- Current interface copy must retain the v0.2.0 boundaries: tabs in one window, a responsive top
   bar, inline search, the owner-data grid, System/Light/Dark appearance, System
   resolution from the active Windows app theme, a flat two-DIP progress rule,
   and the Windows high-contrast system-color fallback.
