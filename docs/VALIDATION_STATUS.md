@@ -1,10 +1,10 @@
 # Validation status
 
 **Status date:** 2026-09-24<br>
-**Scope:** LeanRows 0.2.0 release candidate, Windows x64;<br>
-local frozen verification complete; tagged-CI, public-package, and Pages
-verification pending<br>
-**Current public release:** LeanRows 0.1.3 until the `v0.2.0` tag publishes
+**Scope:** LeanRows 0.2.0 published release, Windows x64;<br>
+local, post-commit, tagged-CI, public-package, installed-binary, and Pages
+verification complete<br>
+**Current public release:** LeanRows 0.2.0
 
 LeanRows 0.2.0 opens every file in one window, each in its own tab, cuts memory
 when several files are open, and fixes white file name, file details, and
@@ -12,8 +12,11 @@ Match case backgrounds in the Dark appearance. The frozen local candidate
 passed the source, native-shell, document, packaging, aggregate QA, and live
 installer checks. That local executable is 618,496 bytes with SHA-256
 `D0D24FCA9730BE6C7A0E1385AAB5CB6F08C8D495A595FC32E4066F583BC88A8D`.
-The release commit, tagged CI rebuild, public package, installed public
-executable, and product site are verified separately after tagging.
+The release commit, post-commit rerun, tagged CI rebuild, public package,
+installed executable, and product site have now been verified separately.
+
+LeanRows 0.2.0 is published on
+[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.2.0).
 
 ## v0.2.0 repository state
 
@@ -26,7 +29,7 @@ executable, and product site are verified separately after tagging.
 | Native child rendering | Passed on the frozen executable | The shell smoke sampled the file name, file details, and Match case backgrounds on first presentation. The exact Light capture is recorded below. |
 | Packaging and installer | Passed locally | Release engineering, deterministic packaging, checksum, installer static checks, `ValidateOnly`, and a live upgrade/reinstall/uninstall/final-install cycle passed. |
 | Process memory, sparse scale, and network observation | Passed locally | The 25-check receipt records memory, 1 and 10 GiB sparse fixtures, 24 seeks, and a polling-bounded network observation. |
-| Tagged release package and site | Pending | Recorded after tag `v0.2.0` publishes. |
+| Tagged release package and site | Published and verified | Tag `v0.2.0`, its two public release assets, the installed public executable, and the deployed Pages site passed the checks recorded below. |
 
 ## Native-shell verification result
 
@@ -89,6 +92,38 @@ MiB working set, and 0.2.0 measured 3.28 to 3.30 MiB private and 18.09 to 18.10
 MiB working set. On a generated 20,000,001-row, 1,586,666,734-byte CSV indexed
 to completion, peak working set was 18.10 to 18.12 MiB for 0.1.3 and 18.15 to
 18.18 MiB for 0.2.0, two runs each. These are host-specific observations.
+
+## Published v0.2.0 verification
+
+The public release is anchored to commit
+`f39275895d6c0965de0894bb8c5b8381165fd36a` and annotated tag `v0.2.0`.
+The clean post-commit receipt at
+`artifacts/qa/v0.2.0-post-commit/qa-receipt.json` passed 25/25 checks in
+49,973 ms, against the same executable and package hashes as the frozen
+candidate. Tagged workflow
+[run 35997867462](https://github.com/abooodbah/leanrows/actions/runs/35997867462)
+completed with every job green and published the release and Pages site.
+
+| Published evidence field | v0.2.0 result |
+| --- | --- |
+| Release | [LeanRows v0.2.0](https://github.com/abooodbah/leanrows/releases/tag/v0.2.0) contains exactly the unsigned Windows x64 ZIP and its checksum sidecar. |
+| Public package | The downloaded sidecar records ZIP SHA-256 `5F8786D6542B0B362E849D96AA3BF56D7178501A88DA6FA67F4BF253CB2F3BB4`, and the downloaded 311,367-byte ZIP matched it. |
+| Public executable | The extracted and installed `leanrows.exe` is 618,496 bytes, reports version `0.2.0.0`, and has SHA-256 `9C187F629F63E92F62ADB81F1CC732A6DA39999773CF3DE9C36F1293085AE169`. |
+| Downloaded-package checks | The public assets passed `Test-ReleaseEngineering.ps1`, installer `ValidateOnly`, installation over the frozen v0.2.0 installation, and the native shell smoke including the second-launch forwarding check. The smoke completed in 383 ms with zero residual processes. |
+| Installed associations | Four direct per-user defaults point to LeanRows and all five **Open with** registrations are present. The protected Notepad `.log` choice and `.txt` remained unchanged. |
+| Installed appearance | The saved Dark preference was retained. |
+| Product site | GitHub Pages returned HTTP 200 with `softwareVersion` 0.2.0 and served the v0.2.0 capture with the recorded 63,395 bytes and SHA-256. |
+
+The local frozen executable and package remain identified by
+`D0D24FCA9730BE6C7A0E1385AAB5CB6F08C8D495A595FC32E4066F583BC88A8D`
+and
+`912AB4ACF7BCBEC30EBAA593CEA19ED8C07DA343B3A2112A71BD1E88E556504E`,
+respectively. They are local evidence and are not the public download hashes.
+The public executable and package identities are the values in the table
+above.
+
+This status update is a post-release documentation change on `main`; it is
+not part of the `v0.2.0` tag.
 
 ## Historical v0.1.3 local evidence
 
