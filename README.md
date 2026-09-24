@@ -16,12 +16,11 @@ no telemetry and no network access of any kind.
 
 ## Install
 
-```powershell
-scoop install leanrows
-```
-
-Or download the portable ZIP from [Releases](https://github.com/abooodbah/leanrows/releases)
-and run `leanrows.exe`. Nothing is written outside the folder you extract to.
+Download the portable ZIP from the
+[latest release](https://github.com/abooodbah/leanrows/releases/latest), extract
+it, and run `leanrows.exe`. Outside that folder, LeanRows writes only its
+appearance setting, under `HKCU\Software\LeanRows`, and a scratch folder for
+search results, under `%LOCALAPPDATA%\LeanRows`.
 
 ## Supported formats
 
