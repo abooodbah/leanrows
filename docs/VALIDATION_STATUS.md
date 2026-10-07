@@ -23,10 +23,10 @@ Receipt: `artifacts/qa/sort-benchmark.json`.
 
 | Rows | Mode | Time | Managed peak | Private peak | Scratch peak |
 | --- | --- | --- | --- | --- | --- |
-| 100,000 | Text | 1,206 ms | 2,752,512 B | 3,112,960 B | 25,600,000 B |
-| 100,000 | Numeric | 1,102 ms | 2,752,512 B | 3,104,768 B | 25,600,000 B |
-| 1,000,000 | Text | 11,994 ms | 2,752,512 B | 3,117,056 B | 256,000,000 B |
-| 1,000,000 | Numeric | 13,252 ms | 2,752,512 B | 3,117,056 B | 256,000,000 B |
+| 100,000 | Text | 973 ms | 2,752,512 B | 3,121,152 B | 25,600,000 B |
+| 100,000 | Numeric | 921 ms | 2,752,512 B | 3,112,960 B | 25,600,000 B |
+| 1,000,000 | Text | 15,094 ms | 2,752,512 B | 3,117,056 B | 256,000,000 B |
+| 1,000,000 | Numeric | 14,132 ms | 2,752,512 B | 3,108,864 B | 256,000,000 B |
 
 Managed storage stayed constant as row count grew tenfold. Times include full
 ordering and inverse-map construction. Long common prefixes can require more
