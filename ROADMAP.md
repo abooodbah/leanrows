@@ -21,6 +21,11 @@ This roadmap describes direction, not release commitments or dates.
 
 ## Near-term candidates
 
+Whole-document external column sorting is implemented in the current development
+branch, with explicit text/numeric ordering and bounded memory/disk resources.
+It is not part of the published 0.2.0 release. See README for its controls and
+VALIDATION_STATUS for local observations.
+
 - Provide explicit format and encoding overrides without silent detection.
 - Improve CSV column naming and schema inspection while preserving bounded
   field projection.

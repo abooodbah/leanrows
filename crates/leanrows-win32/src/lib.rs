@@ -15,6 +15,7 @@ mod model;
 mod native;
 #[cfg(not(windows))]
 mod native_stub;
+mod sort_coordinator;
 mod worker;
 
 use std::fmt;
@@ -33,6 +34,8 @@ pub struct ShellOptions {
     pub smoke_test: bool,
     /// Verify that one real document row reaches the owner-data grid, then exit.
     pub document_smoke_test: bool,
+    /// Exercise whole-document sorting through native header actions.
+    pub sort_smoke_test: bool,
 }
 
 /// Worker and grid evidence captured by the document smoke path.
@@ -93,6 +96,8 @@ pub enum DocumentSmokePhase {
 )]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ShellOutcome {
+    /// True only after the native sorting workflow passed its fixture checks.
+    pub sort_smoke_verified: bool,
     /// True only when smoke mode verified both native child controls.
     pub smoke_controls_verified: bool,
     /// True only when smoke mode retrieved the expected owner-data item name.

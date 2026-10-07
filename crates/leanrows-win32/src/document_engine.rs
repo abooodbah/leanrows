@@ -513,6 +513,58 @@ impl DocumentEngine {
     }
 
     /// Revalidates the retained handle and selected path after one query work
+    pub(crate) fn snapshot_ordered(
+        &self,
+        order: &leanrows_core::SortedOrder,
+        first_row: u64,
+        token: &CancellationToken,
+        generation: CancellationGeneration,
+    ) -> Result<UiRowSnapshot, DocumentEngineError> {
+        self.verify_source(true)?;
+        let count = usize::try_from(order.len().saturating_sub(first_row))
+            .unwrap_or(usize::MAX)
+            .min(MAX_VIEWPORT_ROWS);
+        let mut rows = Vec::new();
+        rows.try_reserve_exact(count)
+            .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
+        let column_kind = if self.format.delimited_dialect().is_some() {
+            UiColumnKind::Fields
+        } else {
+            UiColumnKind::Preview
+        };
+        let mut data_columns = usize::from(column_kind == UiColumnKind::Preview);
+        for index in 0..count {
+            let rank = first_row
+                + u64::try_from(index).map_err(|_| DocumentEngineError::ArithmeticOverflow)?;
+            let descriptor = order.record_at(rank).map_err(|e| DocumentEngineError::Io {
+                operation: "read sorted order",
+                source: io::Error::other(e),
+            })?;
+            let record = leanrows_core::RecordPreview::read_at(
+                &self.source,
+                descriptor.source_row,
+                descriptor.span,
+                MAX_RECORD_PREVIEW_BYTES,
+                token,
+                generation,
+            )
+            .map_err(map_viewport_error)?;
+            let mut row = build_cached_row(&record, self.format, self.projection_limits)?;
+            row.display_rank = rank;
+            data_columns = data_columns.max(row.data_columns());
+            rows.push(row);
+        }
+        self.verify_source(true)?;
+        Ok(UiRowSnapshot {
+            first_row,
+            rows,
+            columns: UiColumnLayout::new(column_kind, data_columns)?,
+            reached_eof: first_row.saturating_add(count as u64) >= order.len(),
+            diagnostic: self.scan.diagnostic(),
+        })
+    }
+
+    /// Revalidates the retained handle and selected path after one query work
     /// quantum, before any newly found match is published to the UI.
     pub(crate) fn validate_query_snapshot(&self) -> Result<(), DocumentEngineError> {
         self.verify_source(true)
@@ -860,7 +912,7 @@ impl UiRowSnapshot {
     pub(crate) fn cell(&self, absolute_row: u64, subitem: usize) -> Option<&[u16]> {
         let index = self
             .rows
-            .binary_search_by_key(&absolute_row, |row| row.absolute_row)
+            .binary_search_by_key(&absolute_row, |row| row.display_rank)
             .ok()?;
         self.rows.get(index)?.cell(subitem)
     }
@@ -870,7 +922,7 @@ impl UiRowSnapshot {
     pub(crate) fn row(&self, absolute_row: u64) -> Option<&UiCachedRow> {
         let index = self
             .rows
-            .binary_search_by_key(&absolute_row, |row| row.absolute_row)
+            .binary_search_by_key(&absolute_row, |row| row.display_rank)
             .ok()?;
         self.rows.get(index)
     }
@@ -885,6 +937,7 @@ impl UiRowSnapshot {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct UiCachedRow {
     absolute_row: u64,
+    display_rank: u64,
     cells: Vec<Utf16Cell>,
     source_truncated: bool,
     display_truncated: bool,
@@ -893,6 +946,7 @@ pub(crate) struct UiCachedRow {
 
 pub(crate) struct UiCachedRowParts {
     pub(crate) absolute_row: u64,
+    pub(crate) display_rank: u64,
     pub(crate) cells: Vec<Utf16Cell>,
     pub(crate) source_truncated: bool,
     pub(crate) display_truncated: bool,
@@ -938,6 +992,7 @@ impl UiCachedRow {
     pub(crate) fn into_parts(self) -> UiCachedRowParts {
         UiCachedRowParts {
             absolute_row: self.absolute_row,
+            display_rank: self.display_rank,
             cells: self.cells,
             source_truncated: self.source_truncated,
             display_truncated: self.display_truncated,
@@ -1160,6 +1215,7 @@ fn build_cached_row(
     }
     Ok(UiCachedRow {
         absolute_row: record.row(),
+        display_rank: record.row(),
         cells,
         source_truncated,
         display_truncated,

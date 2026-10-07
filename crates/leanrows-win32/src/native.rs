@@ -7,6 +7,8 @@ mod header;
 mod layout;
 mod process;
 mod progress;
+mod sort_smoke;
+mod sorting;
 mod tabs;
 mod theme;
 
@@ -225,6 +227,8 @@ struct WindowState {
     current_path: Option<PathBuf>,
     active_serial: Option<u64>,
     columns: NativeColumns,
+    sort: Option<crate::worker::WorkerSortState>,
+    sort_column: usize,
     pending_reveal: Option<u64>,
     active_find: Option<ActiveFind>,
     revealed_match: Option<RevealedMatch>,
@@ -319,6 +323,8 @@ struct BackgroundTab {
     active_find: Option<ActiveFind>,
     revealed_match: Option<RevealedMatch>,
     chrome: TabChrome,
+    sort: Option<crate::worker::WorkerSortState>,
+    sort_column: usize,
 }
 
 impl BackgroundTab {
@@ -327,7 +333,10 @@ impl BackgroundTab {
         if self.path.as_ref() != Some(&event.path) || self.serial != Some(event.serial) {
             return;
         }
+        let changed_order = self.sort.as_ref().and_then(|s| s.committed)
+            != event.sort.as_ref().and_then(|s| s.committed);
         let chrome = event_chrome(event);
+        self.sort.clone_from(&event.sort);
         self.chrome.file_meta = file_meta_text(chrome.source_bytes);
         self.chrome.grid_visible = chrome.grid_visible;
         self.chrome.progress_visible = chrome.progress_visible;
@@ -345,9 +354,22 @@ impl BackgroundTab {
         }
         self.chrome.status = worker_status(event, self.active_find.as_ref());
         let mut rows = SlidingRowWindow::new(event.progress.available_rows, u32::MAX);
-        rows.seek(self.rows.first_row());
+        rows.seek(if changed_order {
+            0
+        } else {
+            self.rows.first_row()
+        });
+        if changed_order {
+            self.top_row = Some(0);
+            self.selected_row = None;
+            self.pending_reveal = None;
+            self.revealed_match = None;
+        }
         self.rows = rows;
         self.cache = Arc::clone(&event.cache);
+        if let Some(rank) = event.reveal_rank {
+            self.pending_reveal = Some(rank);
+        }
         if let Some(reveal) = query_match_to_reveal(event, self.active_find.as_ref())
             && self.revealed_match != Some(reveal)
         {
@@ -484,6 +506,8 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         current_path: None,
         active_serial: None,
         columns: NativeColumns::preview(),
+        sort: None,
+        sort_column: 1,
         pending_reveal: None,
         active_find: None,
         revealed_match: None,
@@ -503,7 +527,15 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let (window, state_pointer) = create_shell_window(instance, state, reclaimed.as_ref())?;
     initialize_window_title(window)?;
 
-    let smoke_evidence = if options.smoke_test {
+    let smoke_evidence = if options.sort_smoke_test {
+        post_initial_presentation(window)?;
+        dispatch_initial_presentation(window)?;
+        let evidence = verify_shell_smoke(window, state_pointer, &smoke_verified)?;
+        let result = sort_smoke::run(window, initial_paths);
+        let _ = destroy_shell_window(window);
+        result?;
+        evidence
+    } else if options.smoke_test {
         run_smoke(window, state_pointer, &smoke_verified)?
     } else if options.document_smoke_test {
         start_document_smoke(window, state_pointer, &smoke_verified, initial_paths)?
@@ -521,6 +553,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         ));
     }
     Ok(ShellOutcome {
+        sort_smoke_verified: options.sort_smoke_test,
         smoke_controls_verified: smoke_verified.load(Ordering::Acquire),
         smoke_accessibility_verified: smoke_evidence.accessibility,
         smoke_keyboard_focus_verified: smoke_evidence.keyboard_focus,
@@ -582,15 +615,20 @@ fn take_document_smoke(
 }
 
 fn validate_shell_options(options: &ShellOptions) -> Result<bool, ShellError> {
-    if options.smoke_test && options.document_smoke_test {
+    if u8::from(options.smoke_test)
+        + u8::from(options.document_smoke_test)
+        + u8::from(options.sort_smoke_test)
+        > 1
+    {
         return Err(ShellError::new("native smoke modes are mutually exclusive"));
     }
-    if options.document_smoke_test && options.initial_paths.len() != 1 {
+    if (options.document_smoke_test || options.sort_smoke_test) && options.initial_paths.len() != 1
+    {
         return Err(ShellError::new(
             "document smoke requires exactly one input file",
         ));
     }
-    Ok(options.smoke_test || options.document_smoke_test)
+    Ok(options.smoke_test || options.document_smoke_test || options.sort_smoke_test)
 }
 
 fn initialize_native_controls() -> Result<(), ShellError> {
@@ -1334,6 +1372,7 @@ fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
         w!("Find &previous\tShift+F3"),
     )?;
     append_menu_text(menu.handle(), ID_EDIT_GOTO, w!("&Go to row...\tCtrl+G"))?;
+    sorting::append_menu(menu.handle())?;
     let case_flag = if inline_match_case(state.chrome.match_case) {
         MF_STRING | MF_CHECKED
     } else {
@@ -1413,6 +1452,9 @@ fn append_menu_owned(menu: HMENU, command: u16, text: &str) -> Result<(), ShellE
 }
 
 fn handle_command(window: HWND, command: u16) {
+    if sorting::command(window, command) {
+        return;
+    }
     match command {
         ID_FILE_OPEN => match choose_files(window) {
             Ok(paths) => open_documents(window, paths),
@@ -1829,10 +1871,12 @@ fn append_copy_units(destination: &mut Vec<u16>, units: &[u16]) -> Result<(), Sh
 fn show_goto_row(window: HWND) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: The state is borrowed only until the modal dialog starts.
-    let initial_row = unsafe { pointer.as_ref() }
-        .ok_or_else(|| ShellError::new("window state is unavailable"))?
-        .rows
-        .first_row();
+    let state = unsafe { pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    let initial_row = state
+        .cache
+        .source_row(state.rows.first_row())
+        .unwrap_or(state.rows.first_row());
     let mut dialog_state = GoToDialogState {
         initial_row,
         selected_row: None,
@@ -2539,6 +2583,9 @@ unsafe extern "system" fn window_proc(
 }
 
 fn handle_notify(window: HWND, lparam: LPARAM) -> LRESULT {
+    if sorting::handle_notification(window, lparam) {
+        return LRESULT(0);
+    }
     if handle_tab_notification(window, lparam) {
         return LRESULT(0);
     }
@@ -3741,6 +3788,8 @@ fn queue_path(window: HWND, path: PathBuf) -> Result<(), ShellError> {
     state.document_smoke_observed.store(0, Ordering::Release);
     state.pending_reveal = None;
     state.active_find = None;
+    state.sort = None;
+    state.sort_column = 1;
     state.revealed_match = None;
     let worker = state
         .worker
@@ -3909,6 +3958,8 @@ fn stash_active(state: &mut WindowState) -> Result<BackgroundTab, ShellError> {
         Arc::new(ImmutableRowCache::default()),
     )?;
     Ok(BackgroundTab {
+        sort: state.sort.take(),
+        sort_column: state.sort_column,
         id: state.tab_id,
         worker: state.worker.take(),
         path: state.current_path.take(),
@@ -3938,6 +3989,8 @@ fn restore_tab(
     state.current_path = tab.path;
     state.active_serial = tab.serial;
     state.active_find = tab.active_find;
+    state.sort = tab.sort;
+    state.sort_column = tab.sort_column;
     state.revealed_match = tab.revealed_match;
     state.pending_reveal = None;
 
@@ -3945,6 +3998,7 @@ fn restore_tab(
     insert_existing_data_columns(state.list, tab.columns)
         .map_err(|()| ShellError::new("native data-column restore failed"))?;
     state.columns = tab.columns;
+    sorting::update_header(state);
     set_column_widths(state.list, &tab.column_widths);
     state.replace_cache(tab.rows, tab.cache)?;
     set_native_item_count(state.list, state.rows.visible_rows());
@@ -3957,7 +4011,7 @@ fn restore_tab(
     // SAFETY: The list is live and every visible row now belongs to this tab.
     let _ = unsafe { InvalidateRect(Some(state.list), None, true) };
     if let Some(row) = tab.pending_reveal {
-        return begin_reveal(state, row);
+        return begin_rank_reveal(state, row);
     }
     if let (Some(worker), Some(serial), Some(top_row)) =
         (state.worker.as_ref(), state.active_serial, tab.top_row)
@@ -4479,7 +4533,13 @@ fn event_chrome(event: &WorkerEvent) -> EventChrome<'_> {
     EventChrome {
         source_bytes,
         grid_visible,
-        progress_visible: !matches!(event.phase, WorkerPhase::Complete | WorkerPhase::Failed),
+        progress_visible: !matches!(event.phase, WorkerPhase::Complete | WorkerPhase::Failed)
+            || event.sort.as_ref().is_some_and(|s| {
+                !matches!(
+                    s.phase,
+                    leanrows_core::SortPhase::Complete | leanrows_core::SortPhase::Cancelled
+                )
+            }),
         progress_percent: progress_percent(
             event.progress.scanned_bytes,
             event.progress.source_bytes,
@@ -4488,6 +4548,10 @@ fn event_chrome(event: &WorkerEvent) -> EventChrome<'_> {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one coherent UI-thread event applies rows, accessibility and smoke evidence"
+)]
 fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
     let pointer = state_pointer_for(window);
     // SAFETY: The UI thread serializes cache swaps and display notifications.
@@ -4499,7 +4563,10 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
         return false;
     }
 
+    let changed_order = state.sort.as_ref().and_then(|s| s.committed)
+        != event.sort.as_ref().and_then(|s| s.committed);
     update_document_chrome(state, event);
+    state.sort.clone_from(&event.sort);
 
     if let Some(columns) = event.columns
         && let Err(error) = synchronize_data_columns(state, columns)
@@ -4509,8 +4576,13 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
     }
 
     let status_text = worker_status(event, state.active_find.as_ref());
+    sorting::update_header(state);
     let mut rows = SlidingRowWindow::new(event.progress.available_rows, u32::MAX);
-    rows.seek(state.rows.first_row());
+    rows.seek(if changed_order {
+        0
+    } else {
+        state.rows.first_row()
+    });
     if let Err(error) = state.replace_cache(rows, Arc::clone(&event.cache)) {
         set_status_handle(
             state.status,
@@ -4519,17 +4591,41 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
         return state.document_smoke;
     }
     set_native_item_count(state.list, state.rows.visible_rows());
+    if changed_order {
+        state.pending_reveal = None;
+        let mut clear = LVITEMW {
+            stateMask: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0),
+            ..Default::default()
+        };
+        // SAFETY: -1 clears the supplied selection/focus mask for every native item.
+        unsafe {
+            SendMessageW(
+                state.list,
+                LVM_SETITEMSTATE,
+                Some(WPARAM(usize::MAX)),
+                Some(LPARAM((&raw mut clear) as isize)),
+            )
+        };
+        scroll_to_top(state.list, 0, state.rows.visible_rows());
+    }
     redraw_cached_rows(
         state.list,
         state.rows,
         event.cache_first_row,
         event.cached_rows,
     );
+    if let Some(rank) = event.reveal_rank {
+        state.pending_reveal = Some(rank);
+        let mut rows = state.rows;
+        rows.center_on(rank);
+        let _ = state.replace_cache(rows, Arc::clone(&state.cache));
+        set_native_item_count(state.list, state.rows.visible_rows());
+    }
     if let Some(reveal) = query_match_to_reveal(event, state.active_find.as_ref())
         && state.revealed_match != Some(reveal)
     {
         state.revealed_match = Some(reveal);
-        if let Err(error) = begin_reveal(state, reveal.absolute_row) {
+        if let Err(error) = begin_rank_reveal(state, reveal.absolute_row) {
             set_status_handle(
                 state.status,
                 &format!("Find match could not be displayed: {error}"),
@@ -4573,6 +4669,30 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
 }
 
 fn begin_reveal(state: &mut WindowState, absolute_row: u64) -> Result<(), ShellError> {
+    let total_rows = state.rows.total_rows();
+    if absolute_row >= total_rows {
+        return Err(ShellError::new(format!(
+            "row {} is not indexed; the current available range is 1 through {total_rows}",
+            absolute_row.saturating_add(1)
+        )));
+    }
+    if state.sort.as_ref().is_some_and(|s| s.committed.is_some()) {
+        let serial = state
+            .active_serial
+            .ok_or_else(|| ShellError::new("no active document"))?;
+        if !state
+            .worker
+            .as_ref()
+            .is_some_and(|w| w.request_source_row(serial, absolute_row))
+        {
+            return Err(ShellError::new("source-row navigation was rejected"));
+        }
+        return Ok(());
+    }
+    begin_rank_reveal(state, absolute_row)
+}
+
+fn begin_rank_reveal(state: &mut WindowState, absolute_row: u64) -> Result<(), ShellError> {
     let total_rows = state.rows.total_rows();
     if total_rows == 0 {
         return Err(ShellError::new("no indexed rows are available yet"));
@@ -4630,7 +4750,7 @@ fn query_match_to_reveal(
     Some(RevealedMatch {
         query_serial: query.query_serial,
         hit_index: query.active_hit_index?,
-        absolute_row: query.active_row?,
+        absolute_row: event.query_rank.or(query.active_row)?,
     })
 }
 
@@ -4798,6 +4918,12 @@ fn worker_status(event: &WorkerEvent, active_find: Option<&ActiveFind>) -> Strin
         };
         return format!("Could not read file: {message}{reload}");
     }
+    if let Some(sort) = &event.sort
+        && (!matches!(sort.phase, leanrows_core::SortPhase::Complete) || active_find.is_none())
+        && let Some(status) = sorting::status(event)
+    {
+        return status;
+    }
     if let Some(query) = event.query.as_ref()
         && let Some(active) = active_find
         && active.query_serial == query.query_serial
@@ -4964,6 +5090,9 @@ mod tests {
 
     fn ready_event() -> WorkerEvent {
         WorkerEvent {
+            sort: None,
+            reveal_rank: None,
+            query_rank: None,
             path: PathBuf::from("fixture.log"),
             result: WorkerResult::Ready { size: 12 },
             serial: 7,
