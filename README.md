@@ -20,7 +20,8 @@ Download the portable ZIP from the
 [latest release](https://github.com/abooodbah/leanrows/releases/latest), extract
 it, and run `leanrows.exe`. Outside that folder, LeanRows writes only its
 appearance setting, under `HKCU\Software\LeanRows`, and a scratch folder for
-search results, under `%LOCALAPPDATA%\LeanRows`.
+search results, under `%LOCALAPPDATA%\LeanRows`. Development builds also keep
+temporary column-sort data there; the published 0.2.0 ZIP predates sorting.
 
 ## Supported formats
 
@@ -126,9 +127,30 @@ Format selection is extension-based in 0.2. Input is treated as bytes and
 decoded for display as UTF-8; invalid bytes are shown as `\xNN`. Long records,
 fields, and display strings use bounded previews and are marked when truncated.
 
-LeanRows 0.2 deliberately excludes editing, saving, export, sorting, filtering,
+Published LeanRows 0.2.0 excludes sorting. Current development builds add the
+column sorting described below. Editing, saving, export, filtering,
 regular expressions, SQL, charts, archives, remote or UNC paths, reparse points,
-tail/follow mode, plug-ins, scripts, and arbitrary JSON documents.
+tail/follow mode, plug-ins, scripts, and arbitrary JSON documents remain excluded.
+
+## Column sorting (development builds)
+
+Click a data-column header to sort the entire document ascending; click it again
+to reverse direction. Right-click the header for text or numeric ordering.
+The More menu exposes the same commands for the last selected sort column
+(initially the first column). Click Row or choose Restore source order to reset.
+More > Cancel sort stops pending work while keeping the last completed view.
+
+Sorting runs in the document worker, with a process-wide 16 MiB managed-memory
+limit and 8 GiB temporary-disk quota. Only one sort runs at a time. Large files
+require sequential merge passes and temporary disk space. No database is created
+and the source is never rewritten. Closing/reloading releases the sort data.
+
+Text order compares complete decoded bytes, case sensitively and without locale
+collation; displayed truncation does not truncate the sort key. Numeric mode
+compares decimal integers, fractions and scientific notation exactly, without
+floating-point rounding. Numbers precede text and empty/missing values in both
+directions. Equal keys retain original row order. CSV/TSV's first record remains
+data. Row numbers, Find results and Go to row identify the original source rows.
 
 ## Snapshot behavior
 

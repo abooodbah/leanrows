@@ -1,5 +1,16 @@
 # LeanRows engine-spike tooling
 
+## External sort measurements
+
+`rtk proxy pwsh -NoProfile -File tools/Measure-LeanRowsSort.ps1` writes nonsparse
+shuffled 100,000-row and 1,000,000-row CSV fixtures, measures text/numeric sorts
+through the production core engine, verifies an independent permutation oracle,
+and records elapsed time, managed/scratch peaks and process memory samples.
+Use `-Rows 20000000` for a larger run when disk capacity permits. The probe's
+`--sort FILE [--column N] [--numeric] [--descending]` interface reports bounded
+sample rows and cleans its scratch after every terminal path. Its observations
+are not measurements of the complete native GUI.
+
 These dependency-free PowerShell scripts create deterministic hostile/large-file fixtures and record raw observations from a supplied LeanRows spike executable. They make no performance claims.
 
 ## Requirements

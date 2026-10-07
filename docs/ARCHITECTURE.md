@@ -5,7 +5,8 @@ of row-oriented local files. The source file remains the primary backing store;
 the application does not import the document into a database or construct a
 whole-file in-memory model.
 
-This document describes the 0.2.0 implementation. Future candidates are kept
+This document describes the current development implementation, including
+column sorting added after the published 0.2.0 release. Future candidates are kept
 in the [roadmap](../ROADMAP.md) rather than presented as current behavior.
 
 ## System boundary
@@ -187,6 +188,35 @@ result. Search uses a fixed 64 KiB read-through cache, 256-hit pages, and a
 processes coordinate stale-file recovery. Case-insensitive matching folds ASCII
 letters only. The 0.2 query path does not implement regular expressions.
 
+## External column sorting
+
+Sorting extracts one selected full field into a bounded descriptor (raw spans,
+32-byte decoded prefix and exact decimal metadata). Full long keys are streamed
+only when the prefix cannot decide comparison. Fixed-size batches use resumable
+bottom-up merge sorting; sorted runs share one aggregate file per pass. A
+two-way external merge needs constant handles and buffers, even for many runs.
+
+The final disk maps contain 24 bytes per row for source row/start/end and 8 bytes
+per row for inverse source-row-to-display-rank lookup, plus versioned headers.
+The worker reads only the bounded current viewport by exact source spans. Cache
+and accessibility lookup use display ranks; Row cells keep source numbers.
+Find remains in source order and uses the inverse map to reveal its result.
+
+A process-wide coordinator admits one active sort and charges run arrays,
+comparison/merge buffers, source cache, result-map ownership and disk growth
+before allocation/write. Managed sorting memory is capped at 16 MiB and total
+live sort disk data at 8 GiB. Completed tab maps share this ledger; source order
+has no run or order-map allocations. Work steps yield after a fixed byte budget and validate
+the retained snapshot/path. Only a complete, validated order replaces the old
+view. Failures and cancellation discard pending data. Source replacement
+requires reload. Versioned owner directories below
+`%LOCALAPPDATA%\LeanRows\sort-cache` use exclusive live-owner locks; startup
+recovery skips active owners and rejects reparse directories.
+If another Windows handle blocks deletion, its disk charge remains live.
+A fixed 64-entry cleanup queue retries before the next session; queue paths
+are charged to managed memory. A full queue keeps the disk charge conservative
+until process exit and startup recovery, rather than permitting quota bypass.
+
 ## Accessibility and rendering
 
 The window, top-bar controls, virtual grid, progress control, and row items
@@ -216,7 +246,7 @@ and registry registrations.
 
 ## 0.2 exclusions
 
-Editing and saving, export, type coercion, global sort, filtering, regular
+Editing and saving, export, automatic type coercion, global in-memory sort, filtering, regular
 expressions, SQL, joins, charts, statistics, arbitrary JSON documents, remote
 sources, tail/follow, archives, compression, multiple-file merge, plug-ins,
 scripts, AI features, and non-Windows releases are outside the 0.2 boundary.

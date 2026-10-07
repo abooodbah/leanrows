@@ -4,6 +4,8 @@
 
 #![forbid(unsafe_code)]
 
+mod sorting;
+
 use leanrows_core::{
     AdaptiveRowIndex, CancellationToken, Checkpoint, CsvBoundaryScanner, CsvDiagnostic,
     CsvDiagnosticKind, CsvDialect, EmitControl, EngineLimits, FileSource, LineBoundaryScanner,
@@ -29,6 +31,7 @@ const HELP: &str = concat!(
     "LeanRows architecture-validation spike\n\n",
     "Usage:\n",
     "  leanrows-spike --scan FILE [--format csv|tsv|jsonl|log] [--row N] [--count N]\n\n",
+    "  leanrows-spike --sort FILE [--column N] [--numeric] [--descending]\n\n",
     "Options:\n",
     "  --scan FILE    File to inspect (required).\n",
     "  --format NAME  Record format. Inferred from .csv, .tsv/.tab, .jsonl/.ndjson,\n",
@@ -180,6 +183,10 @@ pub fn run<I>(arguments: I) -> Result<String, AppError>
 where
     I: IntoIterator<Item = OsString>,
 {
+    let mut arguments = arguments.into_iter().peekable();
+    if arguments.peek().is_some_and(|a| a == "--sort") {
+        return sorting::run(arguments.collect());
+    }
     let command = parse_arguments(arguments)?;
     let ParsedCommand::Scan(arguments) = command else {
         return Ok(HELP.to_owned());
@@ -606,6 +613,18 @@ fn append_json_string(output: &mut String, value: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sort_probe_reports_real_global_order() -> Result<(), Box<dyn std::error::Error>> {
+        let file = TempFile::create("csv", b"10\n2\n9007199254740993\n9007199254740992\n")?;
+        let output = run(vec![
+            OsString::from("--sort"),
+            file.path().as_os_str().to_owned(),
+            OsString::from("--numeric"),
+        ])?;
+        assert!(output.contains("\"sample_source_rows\":[1,0,3,2]"));
+        assert!(output.contains("\"record_count\":4"));
+        Ok(())
+    }
     use super::{
         AppError, ErrorKind, InputFormat, ParsedCommand, append_json_string, parse_arguments, run,
     };

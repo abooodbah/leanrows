@@ -15,6 +15,7 @@ mod query;
 mod scan;
 mod session;
 mod snapshot;
+mod sort;
 mod source;
 mod types;
 mod viewport;
@@ -42,6 +43,10 @@ pub use session::{
     ScanSession, ScanSessionConfig, ScanSessionError, ScanSessionProgress, ScanStep, ScanStepStatus,
 };
 pub use snapshot::{SourceChange, SourceFingerprint, SourceIdentity, SourceRevision};
+pub use sort::{
+    SortConfig, SortDirection, SortError, SortMemoryReservation, SortMode, SortPhase, SortRequest,
+    SortResources, SortSession, SortStep, SortedOrder, SortedRecord, recover_stale_sort_files,
+};
 pub use source::{FileSource, PositionedRead};
 pub use types::{Checkpoint, RecordSpan, SpanError};
 pub use viewport::{RecordPreview, Viewport, ViewportError, ViewportFormat, read_viewport};

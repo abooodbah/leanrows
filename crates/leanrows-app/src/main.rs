@@ -10,7 +10,8 @@ use leanrows_win32::{
 };
 
 const MAX_DOCUMENT_SMOKE_JSON_BYTES: usize = 64 * 1_024;
-const USAGE: &str = "usage: leanrows [--smoke-test | --document-smoke-test] [--] [FILE...]";
+const USAGE: &str =
+    "usage: leanrows [--smoke-test | --document-smoke-test | --sort-smoke] [--] [FILE...]";
 
 /// A parsed command line.
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -18,6 +19,7 @@ struct Arguments {
     paths: Vec<PathBuf>,
     smoke_test: bool,
     document_smoke_test: bool,
+    sort_smoke_test: bool,
 }
 
 /// A usage error. `automation` is true when an automation flag was present,
@@ -36,15 +38,25 @@ fn main() {
         paths,
         smoke_test,
         document_smoke_test,
+        sort_smoke_test,
     } = arguments;
-    let automation = smoke_test || document_smoke_test;
+    let automation = smoke_test || document_smoke_test || sort_smoke_test;
 
     match run_shell(ShellOptions {
         initial_paths: paths,
         smoke_test,
         document_smoke_test,
+        sort_smoke_test,
     }) {
         Ok(outcome) => {
+            if sort_smoke_test {
+                if !outcome.sort_smoke_verified {
+                    std::process::exit(1);
+                }
+                println!(
+                    "{{\"schema\":\"leanrows.sort-smoke\",\"version\":1,\"native_workflow\":true}}"
+                );
+            }
             if smoke_test && !shell_smoke_passed(&outcome) {
                 eprintln!("native shell smoke verification did not complete");
                 std::process::exit(1);
@@ -110,7 +122,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
     let automation = arguments
         .iter()
         .take_while(|argument| *argument != "--")
-        .any(|argument| argument == "--smoke-test" || argument == "--document-smoke-test");
+        .any(|argument| {
+            argument == "--smoke-test"
+                || argument == "--document-smoke-test"
+                || argument == "--sort-smoke"
+        });
     let usage = UsageError { automation };
     let mut parsed = Arguments::default();
     let mut options_ended = false;
@@ -123,14 +139,20 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
             parsed.smoke_test = true;
         } else if argument == "--document-smoke-test" {
             parsed.document_smoke_test = true;
+        } else if argument == "--sort-smoke" {
+            parsed.sort_smoke_test = true;
         } else if argument.to_str().is_some_and(|text| text.starts_with("--")) {
             return Err(usage);
         } else {
             parsed.paths.push(PathBuf::from(argument));
         }
     }
-    let conflicting = parsed.smoke_test && parsed.document_smoke_test;
-    let missing_document = parsed.document_smoke_test && parsed.paths.len() != 1;
+    let conflicting = u8::from(parsed.smoke_test)
+        + u8::from(parsed.document_smoke_test)
+        + u8::from(parsed.sort_smoke_test)
+        > 1;
+    let missing_document =
+        (parsed.document_smoke_test || parsed.sort_smoke_test) && parsed.paths.len() != 1;
     let too_many_files = automation && parsed.paths.len() > 1;
     if conflicting || missing_document || too_many_files {
         return Err(usage);
@@ -196,6 +218,12 @@ fn print_usage_and_exit(automation: bool) -> ! {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sort_smoke_accepts_one_real_fixture() {
+        assert!(parse(&["--sort-smoke", "rows.csv"]).is_ok());
+        assert!(parse(&["--sort-smoke"]).is_err());
+        assert!(parse(&["--sort-smoke", "--smoke-test", "rows.csv"]).is_err());
+    }
     use std::ffi::OsString;
     use std::path::PathBuf;
 

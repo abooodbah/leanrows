@@ -1,5 +1,41 @@
 # Validation status
 
+## Development column sorting: 2026-10-07
+
+This section applies to the local `codex/column-sort` build, not the published
+0.2.0 assets or installed binary described below. The native sort smoke passed
+real header clicks, text/numeric ordering in both directions, exact large
+integers, source-row navigation and invalid-row rejection, Find reveal, copy,
+tab restoration and background selection reset, source-order
+reset, pending cancellation, unchanged source hashes and scratch cleanup.
+Receipt: `artifacts/qa/sort-smoke.json`. The aggregate release harness passed
+25/25 checks including its 1 GiB/10 GiB sparse fixtures and package validation;
+receipt: `artifacts/qa/20261007T185843Z/qa-receipt.json`.
+After the final review correction pass, 177 workspace tests and strict Clippy
+passed. Regressions cover blocked Windows deletion retaining disk quota,
+cancellation/supersession during final viewport preparation, changed-source
+publication and numeric exponent overflow followed by invalid grammar.
+
+The following are actual nonsparse **core probe** observations on this local
+Windows machine; they are not complete GUI memory measurements. Files contain
+deterministically shuffled, zero-padded integers and a second text field.
+Receipt: `artifacts/qa/sort-benchmark.json`.
+
+| Rows | Mode | Time | Managed peak | Private peak | Scratch peak |
+| --- | --- | --- | --- | --- | --- |
+| 100,000 | Text | 1,206 ms | 2,752,512 B | 3,112,960 B | 25,600,000 B |
+| 100,000 | Numeric | 1,102 ms | 2,752,512 B | 3,104,768 B | 25,600,000 B |
+| 1,000,000 | Text | 11,994 ms | 2,752,512 B | 3,117,056 B | 256,000,000 B |
+| 1,000,000 | Numeric | 13,252 ms | 2,752,512 B | 3,117,056 B | 256,000,000 B |
+
+Managed storage stayed constant as row count grew tenfold. Times include full
+ordering and inverse-map construction. Long common prefixes can require more
+source reads than these fixtures. A 20-million-row nonsparse sort, a giant-key
+performance campaign, and GUI resource sampling throughout a million-row sort
+have not been run; do not infer their timing from these small-key observations.
+
+## Published release evidence
+
 **Status date:** 2026-09-24<br>
 **Scope:** LeanRows 0.2.0 published release, Windows x64;<br>
 local, post-commit, tagged-CI, public-package, installed-binary, and Pages
