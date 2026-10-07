@@ -23,6 +23,52 @@ pub struct RecordPreview {
 }
 
 impl RecordPreview {
+    /// Reads a bounded prefix of a previously indexed source record.
+    ///
+    /// # Errors
+    /// Rejects source changes, invalid spans, cancellation and allocation failure.
+    pub fn read_at<R: PositionedRead>(
+        source: &R,
+        row: u64,
+        span: RecordSpan,
+        max_bytes: usize,
+        token: &CancellationToken,
+        generation: CancellationGeneration,
+    ) -> Result<Self, ViewportError> {
+        if token.is_cancelled(generation) {
+            return Err(ViewportError::Cancelled);
+        }
+        let fingerprint = SourceFingerprint::capture(source)?;
+        if span.end() > fingerprint.size() {
+            return Err(ViewportError::InvalidCheckpoint);
+        }
+        let count = usize::try_from(span.end() - span.start())
+            .unwrap_or(usize::MAX)
+            .min(max_bytes);
+        let mut bytes = zeroed_buffer(count)?;
+        let mut read = 0;
+        while read < count {
+            if token.is_cancelled(generation) {
+                return Err(ViewportError::Cancelled);
+            }
+            let size = source.read_at(
+                span.start() + u64::try_from(read).map_err(|_| ViewportError::AddressSpace)?,
+                &mut bytes[read..],
+            )?;
+            let size = crate::source::validate_read_count(size, count - read)?;
+            if size == 0 {
+                return Err(ViewportError::SourceShrank);
+            }
+            read += size;
+        }
+        ensure_source_unchanged(source, fingerprint)?;
+        Ok(Self {
+            row,
+            span,
+            bytes,
+            truncated: u64::try_from(count).unwrap_or(u64::MAX) < span.end() - span.start(),
+        })
+    }
     #[must_use]
     pub const fn row(&self) -> u64 {
         self.row

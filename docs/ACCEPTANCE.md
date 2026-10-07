@@ -33,6 +33,14 @@ Measurements use these terms:
 
 ## Required for a 0.2.x tag
 
+Development column sorting additionally requires SORT-01: core order/inverse
+oracles, long-field/numeric/cancellation/quota/source-change tests, the real
+native header/Find/go-to/copy/tab/reset/cancel smoke, and nonsparse resource
+observations. Run `rtk cargo test --workspace --locked`,
+`rtk proxy pwsh -NoProfile -File tests/qa/Invoke-LeanRowsSortSmoke.ps1` and
+`rtk proxy pwsh -NoProfile -File tools/Measure-LeanRowsSort.ps1`.
+These checks do not alter evidence for the already published 0.2.0 binary.
+
 | ID | Release requirement | Repository evidence path |
 | --- | --- | --- |
 | BUILD-01 | Rust formatting, all workspace targets, and strict Clippy pass on Rust 1.97.1 with the lockfile enforced. | Root README commands and `.github/workflows/windows.yml` |

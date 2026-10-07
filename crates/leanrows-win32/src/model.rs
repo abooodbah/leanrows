@@ -163,6 +163,7 @@ impl DisplayCell {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CachedRow {
     absolute_row: u64,
+    display_rank: u64,
     cells: Box<[DisplayCell]>,
     accessible_name: AccessibleName,
 }
@@ -176,6 +177,27 @@ impl CachedRow {
         Self::new_with_accessible_name(absolute_row, cells, accessible_name)
     }
 
+    #[must_use]
+    pub fn new_at_rank(display_rank: u64, absolute_row: u64, cells: Vec<DisplayCell>) -> Self {
+        let name =
+            AccessibleName::from_utf16_cells(absolute_row, cells.iter().map(DisplayCell::as_utf16));
+        Self::with_rank_and_name(display_rank, absolute_row, cells, name)
+    }
+
+    pub(crate) fn with_rank_and_name(
+        display_rank: u64,
+        absolute_row: u64,
+        cells: Vec<DisplayCell>,
+        accessible_name: AccessibleName,
+    ) -> Self {
+        Self {
+            display_rank,
+            absolute_row,
+            cells: cells.into_boxed_slice(),
+            accessible_name,
+        }
+    }
+
     /// Creates an immutable row with a purpose-built semantic accessible name.
     #[must_use]
     pub fn new_with_accessible_name(
@@ -185,6 +207,7 @@ impl CachedRow {
     ) -> Self {
         Self {
             absolute_row,
+            display_rank: absolute_row,
             cells: cells.into_boxed_slice(),
             accessible_name,
         }
@@ -204,7 +227,7 @@ impl ImmutableRowCache {
     /// Sorts a new cache block once before it can be queried by the UI.
     #[must_use]
     pub fn new(mut rows: Vec<CachedRow>) -> Self {
-        rows.sort_unstable_by_key(|row| row.absolute_row);
+        rows.sort_unstable_by_key(|row| row.display_rank);
         Self {
             rows: rows.into_boxed_slice(),
         }
@@ -231,6 +254,11 @@ impl ImmutableRowCache {
         Some(self.row(absolute_row)?.cells.len())
     }
 
+    #[must_use]
+    pub fn source_row(&self, display_rank: u64) -> Option<u64> {
+        Some(self.row(display_rank)?.absolute_row)
+    }
+
     /// Returns the precomposed accessible name for one cached row.
     #[must_use]
     pub fn accessible_name(&self, absolute_row: u64) -> Option<&AccessibleName> {
@@ -240,13 +268,13 @@ impl ImmutableRowCache {
     pub(crate) fn accessible_entries(&self) -> impl Iterator<Item = (u64, &AccessibleName)> {
         self.rows
             .iter()
-            .map(|row| (row.absolute_row, &row.accessible_name))
+            .map(|row| (row.display_rank, &row.accessible_name))
     }
 
     fn row(&self, absolute_row: u64) -> Option<&CachedRow> {
         let index = self
             .rows
-            .binary_search_by_key(&absolute_row, |row| row.absolute_row)
+            .binary_search_by_key(&absolute_row, |row| row.display_rank)
             .ok()?;
         self.rows.get(index)
     }
@@ -254,6 +282,13 @@ impl ImmutableRowCache {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cache_indexes_rank_without_changing_source_row() {
+        let row = super::CachedRow::new_at_rank(0, 900, vec![super::DisplayCell::new("901")]);
+        let cache = super::ImmutableRowCache::new(vec![row]);
+        assert!(cache.cell(0, 0).is_some());
+        assert!(cache.cell(900, 0).is_none());
+    }
     use super::{AccessibleName, CachedRow, DisplayCell, ImmutableRowCache, SlidingRowWindow};
 
     #[test]

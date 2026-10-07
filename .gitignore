@@ -2,6 +2,7 @@
 /dist/
 /artifacts/
 /benchmark-results/
+/docs/superpowers/
 /tests/fixtures/generated/
 *.lridx
 *.lrresult

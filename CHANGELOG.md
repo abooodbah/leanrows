@@ -6,6 +6,15 @@ All notable changes to LeanRows are recorded in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Whole-document column sorting through native header clicks and text/numeric
+  menu commands, with exact decimal comparison and original-row tie ordering.
+- Cancellable external merge sorting with process-wide 16 MiB managed-memory
+  and 8 GiB scratch quotas; original Row, Find and Go to row semantics retained.
+- Native sort-workflow QA and nonsparse resource benchmarks through the existing
+  Rust engine.
+
 ## [0.3.0] - 2026-10-29
 
 ### Added
