@@ -37,8 +37,10 @@ source is 15 MB or 1.5 GB.
 
 LeanRows is for viewing large row-based data files without loading everything
 into memory. [LeanMark](https://github.com/abooodbah/leanmark) is for reading
-Markdown documents in a clean, focused interface. Both are read-only tools
-designed to make local files easier to inspect without changing them.
+Markdown documents in a clean, focused interface, and
+[LeanDoc](https://github.com/abooodbah/leandoc) is for reading Word documents
+without opening an office suite. All three are read-only tools designed to make
+local files easier to inspect without changing them.
 
 ## Why LeanRows
 
