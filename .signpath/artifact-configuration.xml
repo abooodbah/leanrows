@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration for LeanRows.
+
+  This file is a copy kept under version control. SignPath does not read it from
+  the repository: paste its contents into the SignPath project "leanrows"
+  (Artifact configurations > Edit) and keep the two in step when it changes.
+
+  The CI step "Upload the executable for SignPath signing" uploads
+  target/release/leanrows.exe with actions/upload-artifact, which wraps it in a
+  ZIP. The root element is therefore a zip-file that holds exactly one PE file,
+  leanrows.exe, which is Authenticode-signed. The product-name restriction makes
+  SignPath refuse any executable whose version resource does not say LeanRows.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="leanrows.exe" product-name="LeanRows">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -8,7 +8,11 @@ param(
     [string]$Version,
 
     [Parameter(Mandatory = $true)]
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+
+    # Package an executable that SignPath has already Authenticode-signed.
+    # Without this switch the unsigned v0.1 package contract is unchanged.
+    [switch]$Signed
 )
 
 Set-StrictMode -Version 3.0
@@ -31,13 +35,24 @@ if (-not [System.IO.File]::Exists($binary)) {
 }
 
 $signature = Get-AuthenticodeSignature -LiteralPath $binary
-if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+if ($Signed) {
+    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+        throw "The signed package contract expected a Valid signature, but found '$($signature.Status)'."
+    }
+}
+elseif ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
     throw "The v0.1 unsigned package contract expected NotSigned, but found '$($signature.Status)'."
 }
+$signingStatus = if ($Signed) { 'signed' } else { 'unsigned' }
 
 [System.IO.Directory]::CreateDirectory($outputRoot) | Out-Null
 
-$artifactBase = "LeanRows-v$Version-windows-x64-unsigned"
+$artifactBase = if ($Signed) {
+    "LeanRows-v$Version-windows-x64"
+}
+else {
+    "LeanRows-v$Version-windows-x64-unsigned"
+}
 $zipPath = Join-Path $outputRoot "$artifactBase.zip"
 $checksumPath = Join-Path $outputRoot "$artifactBase.sha256"
 $archiveRoot = "$artifactBase/"
@@ -62,13 +77,15 @@ $sourceFiles = @(
         Name = 'LICENSE.txt'
         Source = (Join-Path $repositoryRoot 'LICENSE')
         Install = $true
-    },
-    [pscustomobject]@{
+    }
+)
+if (-not $Signed) {
+    $sourceFiles += [pscustomobject]@{
         Name = 'UNSIGNED.txt'
         Source = (Join-Path $repositoryRoot 'installer/UNSIGNED.txt')
         Install = $true
     }
-)
+}
 
 $manifestFiles = @()
 foreach ($item in $sourceFiles) {
@@ -90,7 +107,7 @@ $manifest = [ordered]@{
     product = 'LeanRows'
     version = $Version
     platform = 'windows-x64'
-    signing_status = 'unsigned'
+    signing_status = $signingStatus
     default_install_scope = 'current-user'
     files = $manifestFiles
     file_associations = @('.csv', '.tsv', '.jsonl', '.ndjson', '.log')
@@ -167,5 +184,5 @@ $checksumLine = "$archiveHash  $([System.IO.Path]::GetFileName($zipPath))`n"
     ZipPath = $zipPath
     ChecksumPath = $checksumPath
     Sha256 = $archiveHash
-    SigningStatus = 'unsigned'
+    SigningStatus = $signingStatus
 }

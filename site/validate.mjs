@@ -119,6 +119,31 @@ requireMatch(
   "the footer must link to the LeanMark project site",
 );
 requireMatch(html, /<main\s+id="main-content">/i, "a named main landmark is required");
+requireMatch(
+  html,
+  /<h2 id="code-signing-title">Code signing policy<\/h2>/,
+  "the download page must carry a section titled exactly Code signing policy",
+);
+requireMatch(
+  html,
+  /Free code signing provided by\s+<a href="https:\/\/about\.signpath\.io\/">SignPath\.io<\/a>, certificate by\s+<a href="https:\/\/signpath\.org\/">SignPath Foundation<\/a>\./,
+  "the code signing policy must credit SignPath.io and SignPath Foundation with their links",
+);
+requireMatch(
+  html,
+  /Committers and reviewers:\s+<a href="https:\/\/github\.com\/abooodbah">abooodbah<\/a>\. Approvers:\s+<a href="https:\/\/github\.com\/abooodbah">abooodbah<\/a>\./,
+  "the code signing policy must name the committers, reviewers, and approvers",
+);
+requireMatch(
+  html,
+  /This program will not transfer any\s+information to other networked systems unless specifically requested\s+by the user or the person installing or operating it\./,
+  "the code signing policy must state the SignPath privacy policy",
+);
+requireMatch(
+  html,
+  /<strong>Uninstallation\.<\/strong> LeanRows is portable/,
+  "the code signing policy must explain uninstallation",
+);
 requireMatch(css, /:focus-visible\s*\{[^}]*outline:/s, "visible focus styles are required");
 requireMatch(css, /prefers-reduced-motion:\s*reduce/i, "reduced-motion support is required");
 requireMatch(css, /@media\s*\(max-width:\s*48rem\)/i, "mobile layout rules are required");
@@ -220,7 +245,12 @@ const externalHosts = new Set(
   [...html.matchAll(/(?:href|src)="(https?:\/\/[^"/]+)/g)].map((match) => match[1]),
 );
 for (const host of externalHosts) {
-  if (host !== "https://github.com" && host !== "https://abooodbah.github.io") {
+  if (
+    host !== "https://github.com" &&
+    host !== "https://abooodbah.github.io" &&
+    host !== "https://about.signpath.io" &&
+    host !== "https://signpath.org"
+  ) {
     failures.push(`unexpected external host: ${host}`);
   }
 }
