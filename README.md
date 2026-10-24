@@ -235,3 +235,57 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 ## License
 
 LeanRows is available under the [MIT License](LICENSE).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/),
+certificate by [SignPath Foundation](https://signpath.org/).
+
+Signing is being set up. Releases made before it is active stay unsigned and
+keep the `-unsigned` suffix in the ZIP name. A signed release is named
+`LeanRows-vX.Y.Z-windows-x64.zip` and its `leanrows.exe` carries the SignPath
+Foundation certificate.
+
+Only `leanrows.exe` is signed. It is built by the
+[Windows workflow](.github/workflows/windows.yml) on GitHub Actions from a
+tagged commit in this repository, and every signing request is approved by hand
+before SignPath signs it. The setup is described in
+[docs/code-signing.md](docs/code-signing.md).
+
+### Team roles
+
+LeanRows is a one-person project, so one person holds every role.
+
+- Committers and reviewers: [abooodbah](https://github.com/abooodbah)
+- Approvers: [abooodbah](https://github.com/abooodbah)
+
+### Privacy policy
+
+This program will not transfer any information to other networked systems
+unless specifically requested by the user or the person installing or operating
+it.
+
+In practice LeanRows makes no network connections at all. It has no telemetry,
+update checker, account system, or network retrieval path, and it refuses
+remote and UNC file paths.
+
+### Uninstallation
+
+LeanRows is portable. To remove it, close it and delete the folder you
+extracted it to. Outside that folder it keeps two things, which you can delete
+as well:
+
+- the appearance setting, under `HKCU\Software\LeanRows`
+- a scratch folder for search results, under `%LOCALAPPDATA%\LeanRows`
+
+```powershell
+Remove-Item -Path 'HKCU:\Software\LeanRows' -Recurse
+Remove-Item -LiteralPath "$env:LOCALAPPDATA\LeanRows" -Recurse
+```
+
+If you ran the optional `install.ps1`, uninstall it first, either from
+Installed apps in Windows Settings or with
+`& "$env:LOCALAPPDATA\Programs\LeanRows\uninstall.ps1"`. That removes the
+installed files, the Start menu shortcut, the file associations, and the
+Installed apps entry. It leaves the appearance setting and the scratch folder,
+which you can then delete with the two commands above.
