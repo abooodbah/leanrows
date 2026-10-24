@@ -48,9 +48,13 @@ function Get-ValidatedPackageManifest {
     if ([int]$manifest.schema_version -ne 1 -or [string]$manifest.product -ne $productName) {
         throw 'Package manifest schema or product identity is not supported.'
     }
-    if ([string]$manifest.signing_status -ne 'unsigned') {
-        throw 'This installer supports only the explicitly unsigned v0.1 package contract.'
+    $signingStatus = [string]$manifest.signing_status
+    if ($signingStatus -ne 'unsigned' -and $signingStatus -ne 'signed') {
+        throw 'This installer supports only the explicitly unsigned or signed package contract.'
     }
+    # A signed package carries no UNSIGNED.txt notice; an unsigned one must.
+    $expectedPackageFiles = @($allowedPackageFiles |
+            Where-Object { $signingStatus -eq 'unsigned' -or $_ -ne 'UNSIGNED.txt' })
 
     $extensions = @($manifest.file_associations | ForEach-Object { [string]$_ })
     if ($extensions.Count -ne $supportedExtensions.Count) {
@@ -66,13 +70,16 @@ function Get-ValidatedPackageManifest {
         [System.StringComparer]::OrdinalIgnoreCase
     )
     $files = @($manifest.files)
-    if ($files.Count -ne $allowedPackageFiles.Count) {
+    if ($files.Count -ne $expectedPackageFiles.Count) {
         throw 'Package manifest does not contain the exact expected file set.'
     }
 
     foreach ($entry in $files) {
         $name = [string]$entry.name
         Assert-SafeLeafName -Name $name
+        if ($expectedPackageFiles -notcontains $name) {
+            throw "Package manifest file '$name' does not belong to a $signingStatus package."
+        }
         if (-not $seen.Add($name)) {
             throw "Package manifest contains duplicate file '$name'."
         }
@@ -381,6 +388,14 @@ foreach ($entry in @($manifest.files)) {
             -Destination (Join-Path $installRoot $name) -Force
     }
 }
+if ([string]$manifest.signing_status -eq 'signed') {
+    # A signed package replacing an unsigned installation must not leave the old
+    # notice behind, because the signed manifest no longer lists it for cleanup.
+    $staleNotice = Join-Path $installRoot 'UNSIGNED.txt'
+    if ([System.IO.File]::Exists($staleNotice)) {
+        Remove-Item -LiteralPath $staleNotice -Force
+    }
+}
 Copy-Item -LiteralPath (Join-Path $packageRoot 'manifest.json') `
     -Destination (Join-Path $installRoot 'leanrows-install-manifest.json') -Force
 
@@ -464,7 +479,9 @@ Install-StartMenuShortcut -ExecutablePath $executablePath -InstallRoot $installR
 Notify-ShellAssociationChange
 
 Write-Output "Installed LeanRows v$($manifest.version) for the current user at: $installRoot"
-Write-Output 'This build is unsigned. Its package checksum should be verified before installation.'
+if ([string]$manifest.signing_status -eq 'unsigned') {
+    Write-Output 'This build is unsigned. Its package checksum should be verified before installation.'
+}
 Write-Output ('LeanRows is registered in Open With for: {0}.' -f `
         ($supportedExtensions -join ', '))
 if ($directDefaultsSet.Count -gt 0) {

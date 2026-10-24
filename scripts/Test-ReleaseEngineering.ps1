@@ -1,7 +1,10 @@
 [CmdletBinding()]
 param(
     [string]$BinaryPath,
-    [string]$ArtifactDirectory
+    [string]$ArtifactDirectory,
+
+    # Check the artifact directory against the signed package contract.
+    [switch]$Signed
 )
 
 Set-StrictMode -Version 3.0
@@ -846,12 +849,91 @@ function Test-WorkflowContract {
         -Message 'Portable release upload must include the top-level checksum.'
     Assert-True -Condition (-not $releaseUploadStep.Value.Contains('ci-qa')) `
         -Message 'CI QA evidence must not contaminate the exact portable release artifact set.'
+
+    Assert-True -Condition $releaseUploadStep.Value.Contains(
+        "if: `${{ steps.signpath.outcome != 'success' }}") `
+        -Message 'The unsigned package upload must run only when SignPath did not sign.'
+
+    $signingGuard = "if: `${{ vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v') }}"
+    $exeUploadStep = [regex]::Match(
+        $workflow,
+        '(?ms)^[ ]{6}- name: Upload the executable for SignPath signing\r?\n(?<body>.*?)(?=^[ ]{6}- name:|\z)'
+    )
+    Assert-True -Condition $exeUploadStep.Success `
+        -Message 'The SignPath executable upload step was not found.'
+    foreach ($contract in @(
+        'id: upload-unsigned-exe',
+        $signingGuard,
+        'uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        'path: target/release/leanrows.exe'
+    )) {
+        Assert-True -Condition $exeUploadStep.Value.Contains($contract) `
+            -Message "SignPath executable upload is missing: $contract"
+    }
+
+    $signStep = [regex]::Match(
+        $workflow,
+        '(?ms)^[ ]{6}- name: Submit the executable to SignPath\r?\n(?<body>.*?)(?=^[ ]{6}- name:|\z)'
+    )
+    Assert-True -Condition $signStep.Success `
+        -Message 'The SignPath signing step was not found.'
+    foreach ($contract in @(
+        'id: signpath',
+        $signingGuard,
+        'uses: signpath/github-action-submit-signing-request@',
+        'api-token: ${{ secrets.SIGNPATH_API_TOKEN }}',
+        'organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}',
+        'project-slug: leanrows',
+        'signing-policy-slug: release-signing',
+        'github-artifact-id: ${{ steps.upload-unsigned-exe.outputs.artifact-id }}',
+        'wait-for-completion: true',
+        'output-artifact-directory: artifacts/signed'
+    )) {
+        Assert-True -Condition $signStep.Value.Contains($contract) `
+            -Message "SignPath signing step is missing: $contract"
+    }
+
+    $signedUploadStep = [regex]::Match(
+        $workflow,
+        '(?ms)^[ ]{6}- name: Upload the signed portable package\r?\n(?<body>.*?)(?=^[ ]{6}- name:|\z)'
+    )
+    Assert-True -Condition $signedUploadStep.Success `
+        -Message 'The signed package upload step was not found.'
+    Assert-True -Condition $signedUploadStep.Value.Contains(
+        "if: `${{ steps.signpath.outcome == 'success' }}") `
+        -Message 'The signed package upload must run only when SignPath signed.'
+    Assert-True -Condition $signedUploadStep.Value.Contains('name: leanrows-windows-x64') `
+        -Message 'The signed package must use the artifact name the release job downloads.'
+
+    $packageStep = [regex]::Match(
+        $workflow,
+        '(?ms)^[ ]{6}- name: Create the portable release artifact\r?\n(?<body>.*?)(?=^[ ]{6}- name:|\z)'
+    )
+    Assert-True -Condition ($packageStep.Success -and
+        $packageStep.Value.Contains('-BinaryPath ./artifacts/signed/leanrows.exe') -and
+        $packageStep.Value.Contains('-Signed') -and
+        $packageStep.Value.Contains('-BinaryPath ./target/release/leanrows.exe')) `
+        -Message 'Packaging must use the SignPath executable when signed and the build output otherwise.'
+
+    $artifactConfigurationPath = Join-Path $repositoryRoot '.signpath/artifact-configuration.xml'
+    Assert-True -Condition ([System.IO.File]::Exists($artifactConfigurationPath)) `
+        -Message 'The SignPath artifact configuration is missing.'
+    [xml]$artifactConfiguration = [System.IO.File]::ReadAllText($artifactConfigurationPath)
+    $namespace = [System.Xml.XmlNamespaceManager]::new($artifactConfiguration.NameTable)
+    $namespace.AddNamespace('sp', 'http://signpath.io/artifact-configuration/v1')
+    $signedExe = $artifactConfiguration.SelectSingleNode(
+        '/sp:artifact-configuration/sp:zip-file/sp:pe-file[@path="leanrows.exe"]/sp:authenticode-sign',
+        $namespace)
+    Assert-True -Condition ($null -ne $signedExe) `
+        -Message 'The SignPath artifact configuration must Authenticode-sign leanrows.exe inside the artifact ZIP.'
 }
 
 function Test-ChecksumArtifact {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Directory
+        [string]$Directory,
+
+        [switch]$Signed
     )
 
     $artifactRoot = [System.IO.Path]::GetFullPath($Directory)
@@ -861,9 +943,18 @@ function Test-ChecksumArtifact {
         -Message 'Artifact directory must contain exactly one ZIP.'
     Assert-True -Condition ($checksumFiles.Count -eq 1) `
         -Message 'Artifact directory must contain exactly one checksum file.'
-    Assert-Matches -Text $zipFiles[0].Name `
-        -Pattern '^LeanRows-v.+-windows-x64-unsigned\.zip$' `
-        -Message 'Portable ZIP name must disclose unsigned status.'
+    if ($Signed) {
+        Assert-Matches -Text $zipFiles[0].Name `
+            -Pattern '^LeanRows-v.+-windows-x64\.zip$' `
+            -Message 'Signed portable ZIP name must not carry the unsigned suffix.'
+        Assert-True -Condition (-not $zipFiles[0].Name.Contains('-unsigned')) `
+            -Message 'Signed portable ZIP name must not carry the unsigned suffix.'
+    }
+    else {
+        Assert-Matches -Text $zipFiles[0].Name `
+            -Pattern '^LeanRows-v.+-windows-x64-unsigned\.zip$' `
+            -Message 'Portable ZIP name must disclose unsigned status.'
+    }
 
     $line = [System.IO.File]::ReadAllText($checksumFiles[0].FullName).Trim()
     $match = [regex]::Match($line, '^(?<hash>[0-9a-f]{64})  (?<file>[^\\/]+\.zip)$')
@@ -990,6 +1081,74 @@ function Test-WindowsBinaryMetadata {
     }
 }
 
+function Test-SignedPackageContract {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ApplicationBinary,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TemporaryRoot
+    )
+
+    $version = & (Join-Path $PSScriptRoot 'Get-WorkspaceVersion.ps1')
+    $packageScript = Join-Path $PSScriptRoot 'Package-Windows.ps1'
+
+    $rejected = $false
+    try {
+        & $packageScript -BinaryPath $ApplicationBinary -Version $version `
+            -OutputDirectory (Join-Path $TemporaryRoot 'signed-rejected') -Signed | Out-Null
+    }
+    catch {
+        $rejected = $_.Exception.Message.Contains('expected a Valid signature')
+    }
+    Assert-True -Condition $rejected `
+        -Message 'Signed packaging must reject an executable without a valid signature.'
+
+    # The packaging contract does not depend on which executable carries the
+    # signature, so the running PowerShell host stands in for a SignPath-signed
+    # leanrows.exe. This exercises naming, payload, manifest, and installer
+    # validation for the signed release path without a SignPath account.
+    $standIn = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    $standInSignature = Get-AuthenticodeSignature -LiteralPath $standIn
+    Assert-True -Condition ($standInSignature.Status -eq [System.Management.Automation.SignatureStatus]::Valid) `
+        -Message "The signed-package stand-in '$standIn' is not validly signed ($($standInSignature.Status))."
+
+    $signedDirectory = Join-Path $TemporaryRoot 'signed'
+    $signed = & $packageScript -BinaryPath $standIn -Version $version `
+        -OutputDirectory $signedDirectory -Signed
+    Assert-True -Condition ([string]$signed.SigningStatus -eq 'signed') `
+        -Message 'Signed packaging must report signed status.'
+    Test-ChecksumArtifact -Directory $signedDirectory -Signed
+
+    $extractDirectory = Join-Path $TemporaryRoot 'signed-extracted'
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($signed.ZipPath, $extractDirectory)
+    $packageRoot = @(Get-ChildItem -LiteralPath $extractDirectory -Directory)
+    Assert-True -Condition ($packageRoot.Count -eq 1 -and
+        $packageRoot[0].Name -eq "LeanRows-v$version-windows-x64") `
+        -Message 'Signed portable ZIP must contain one top-level directory without the unsigned suffix.'
+    $expectedNames = @(
+        'install.ps1',
+        'leanrows.exe',
+        'LICENSE.txt',
+        'manifest.json',
+        'uninstall.ps1'
+    )
+    $actualNames = @(
+        Get-ChildItem -LiteralPath $packageRoot[0].FullName -File |
+            Select-Object -ExpandProperty Name |
+            Sort-Object
+    )
+    Assert-True -Condition (($actualNames -join ',') -eq (($expectedNames | Sort-Object) -join ',')) `
+        -Message "Signed portable package contains an unexpected file set: $($actualNames -join ', ')"
+    $manifest = Get-Content -LiteralPath (Join-Path $packageRoot[0].FullName 'manifest.json') `
+        -Raw | ConvertFrom-Json
+    Assert-True -Condition ([string]$manifest.signing_status -eq 'signed') `
+        -Message 'Signed package manifest must disclose signed status.'
+    $validation = & (Join-Path $packageRoot[0].FullName 'install.ps1') -ValidateOnly
+    Assert-True -Condition ([string]$validation -match '\(signed\)\.$') `
+        -Message "Installer did not validate the signed package: $validation"
+}
+
 function Test-DeterministicPackage {
     param(
         [Parameter(Mandatory = $true)]
@@ -1055,6 +1214,8 @@ function Test-DeterministicPackage {
             -Message 'Package manifest association set is not the approved set.'
 
         & (Join-Path $packageRoot[0].FullName 'install.ps1') -ValidateOnly | Out-Host
+
+        Test-SignedPackageContract -ApplicationBinary $binary -TemporaryRoot $temporaryRoot
     }
     finally {
         $resolvedForCleanup = [System.IO.Path]::GetFullPath($temporaryRoot)
@@ -1078,7 +1239,7 @@ if (-not [string]::IsNullOrWhiteSpace($BinaryPath)) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ArtifactDirectory)) {
-    Test-ChecksumArtifact -Directory $ArtifactDirectory
+    Test-ChecksumArtifact -Directory $ArtifactDirectory -Signed:$Signed
 }
 
 Write-Output 'LeanRows release-engineering gates passed.'

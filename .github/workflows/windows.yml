@@ -20,7 +20,9 @@ jobs:
   quality-and-package:
     name: Quality gates and Windows x64 package
     runs-on: windows-2022
-    timeout-minutes: 45
+    # Signing waits for a manual approval in SignPath, so tagged releases need
+    # more than the 45 minutes the build alone uses.
+    timeout-minutes: 120
 
     steps:
       - name: Check out the tagged source
@@ -101,19 +103,92 @@ jobs:
         shell: pwsh
         run: ./scripts/Test-ReleaseEngineering.ps1 -BinaryPath ./target/release/leanrows.exe
 
-      - name: Create the portable release artifact
+      # SignPath signing stays off until the owner sets the repository variable
+      # SIGNPATH_ORGANIZATION_ID (and the secret SIGNPATH_API_TOKEN). It runs only
+      # for v* tags, because every request waits for a manual approval.
+      - name: Upload the executable for SignPath signing
+        id: upload-unsigned-exe
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: leanrows-exe-for-signing
+          path: target/release/leanrows.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Submit the executable to SignPath
+        id: signpath
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v') }}
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: leanrows
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.upload-unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: artifacts/signed
+
+      - name: Verify the SignPath signature
+        if: ${{ steps.signpath.outcome == 'success' }}
         shell: pwsh
         run: |
-          ./scripts/Package-Windows.ps1 `
-            -BinaryPath ./target/release/leanrows.exe `
-            -Version $env:LEANROWS_VERSION `
-            -OutputDirectory ./artifacts
+          $binary = './artifacts/signed/leanrows.exe'
+          $signature = Get-AuthenticodeSignature -LiteralPath $binary
+          if ($signature.Status -ne 'Valid') {
+            throw "The SignPath executable signature is '$($signature.Status)', expected Valid."
+          }
+          $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $binary).Path)
+          if ($info.ProductName -ne 'LeanRows' -or $info.ProductVersion -ne "$env:LEANROWS_VERSION.0") {
+            throw "The signed executable reports '$($info.ProductName) $($info.ProductVersion)'."
+          }
+          Write-Output "Signed by: $($signature.SignerCertificate.Subject)"
+
+      - name: Create the portable release artifact
+        shell: pwsh
+        env:
+          LEANROWS_SIGNED: ${{ steps.signpath.outcome == 'success' }}
+        run: |
+          if ($env:LEANROWS_SIGNED -eq 'true') {
+            ./scripts/Package-Windows.ps1 `
+              -BinaryPath ./artifacts/signed/leanrows.exe `
+              -Version $env:LEANROWS_VERSION `
+              -OutputDirectory ./artifacts `
+              -Signed
+          }
+          else {
+            ./scripts/Package-Windows.ps1 `
+              -BinaryPath ./target/release/leanrows.exe `
+              -Version $env:LEANROWS_VERSION `
+              -OutputDirectory ./artifacts
+          }
 
       - name: Verify the final checksum contract
         shell: pwsh
-        run: ./scripts/Test-ReleaseEngineering.ps1 -ArtifactDirectory ./artifacts
+        env:
+          LEANROWS_SIGNED: ${{ steps.signpath.outcome == 'success' }}
+        run: |
+          if ($env:LEANROWS_SIGNED -eq 'true') {
+            ./scripts/Test-ReleaseEngineering.ps1 -ArtifactDirectory ./artifacts -Signed
+          }
+          else {
+            ./scripts/Test-ReleaseEngineering.ps1 -ArtifactDirectory ./artifacts
+          }
+
+      - name: Upload the signed portable package
+        if: ${{ steps.signpath.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: leanrows-windows-x64
+          path: |
+            artifacts/*.zip
+            artifacts/*.sha256
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload the unsigned portable package
+        if: ${{ steps.signpath.outcome != 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: leanrows-windows-x64
