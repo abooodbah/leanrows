@@ -1,0 +1,111 @@
+name: Microsoft Store package
+
+# Builds the x64 MSIX that is uploaded to Partner Center, from the Windows ZIP
+# already attached to a GitHub release. The Store signs the package, so this
+# workflow does not. See store/submission-steps.md.
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "store/**"
+      - ".github/workflows/store-msix.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to package, such as v0.2.0. Empty means the version in Cargo.toml."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  msix:
+    name: Store MSIX (x64)
+    runs-on: windows-latest
+    # A tag push waits for its release build, which can take an hour when
+    # signing needs a manual approval.
+    timeout-minutes: 150
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve the release to package
+        id: release
+        shell: pwsh
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $tag = $env:INPUT_TAG
+          if (-not $tag -and $env:REF_TYPE -eq 'tag') { $tag = $env:REF_NAME }
+          if (-not $tag) { $tag = 'v' + (& ./scripts/Get-WorkspaceVersion.ps1) }
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { throw ('Not a release tag: {0}' -f $tag) }
+          ('tag={0}' -f $tag) | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          ('version={0}' -f $Matches[1]) | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Download the Windows release ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          WAIT_MINUTES: ${{ github.ref_type == 'tag' && github.event_name == 'push' && '120' || '0' }}
+        run: |
+          $pattern = (Import-PowerShellDataFile ./store/msix/app.psd1).ReleaseAssetPattern -f $env:VERSION
+          $deadline = [DateTime]::UtcNow.AddMinutes([int]$env:WAIT_MINUTES)
+          while ($true) {
+            gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --pattern $pattern --dir release-zip --clobber
+            if ($LASTEXITCODE -eq 0) { break }
+            if ([DateTime]::UtcNow -ge $deadline) { throw ('{0} has no asset matching {1}.' -f $env:TAG, $pattern) }
+            Write-Host 'The release is not published yet; checking again in a minute.'
+            Start-Sleep -Seconds 60
+          }
+          Get-ChildItem release-zip | Format-Table Name, Length
+
+      - name: Build the MSIX
+        id: msix
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          $zip = Get-ChildItem release-zip -Filter *.zip | Select-Object -First 1
+          $result = ./store/msix/New-StorePackage.ps1 -Version $env:VERSION -ReleaseZip $zip.FullName `
+            -OutputDirectory (Join-Path $env:RUNNER_TEMP 'msix') -SignTestCopy
+          $result | Format-List
+          if ($result.UsesPlaceholders) {
+            Write-Host '::warning::Built with placeholder identity values. Set MSIX_IDENTITY_NAME and MSIX_PUBLISHER from Partner Center before uploading this package.'
+          }
+          ('package={0}' -f $result.Package) | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          ('test_package={0}' -f $result.TestPackage) | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          ('test_certificate={0}' -f $result.TestCertificate) | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # The runner is discarded after the job, so the throwaway certificate may
+      # be trusted here for the install; the script removes it again.
+      - name: Install the test-signed copy, start it, and remove it
+        shell: pwsh
+        env:
+          TEST_PACKAGE: ${{ steps.msix.outputs.test_package }}
+          TEST_CERTIFICATE: ${{ steps.msix.outputs.test_certificate }}
+        run: |
+          $sample = (Import-PowerShellDataFile ./store/msix/app.psd1).SampleFile
+          ./store/msix/Test-StorePackage.ps1 -PackagePath $env:TEST_PACKAGE -CertificatePath $env:TEST_CERTIFICATE `
+            -TrustTestCertificateOnThisMachine -SampleFile $sample | Format-List
+
+      - name: Upload the Store package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: LeanRows-v${{ steps.release.outputs.version }}-store-msix
+          path: |
+            ${{ runner.temp }}/msix/*.msix
+            ${{ runner.temp }}/msix/*.msix.sha256
+          if-no-files-found: error
+          retention-days: 30
