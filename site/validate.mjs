@@ -121,28 +121,31 @@ requireMatch(
 requireMatch(html, /<main\s+id="main-content">/i, "a named main landmark is required");
 requireMatch(
   html,
-  /<h2 id="code-signing-title">Code signing policy<\/h2>/,
-  "the download page must carry a section titled exactly Code signing policy",
+  /<section class="section evidence-section" id="privacy" aria-labelledby="privacy-title">/,
+  "the privacy policy section must keep its #privacy anchor",
 );
 requireMatch(
   html,
-  /Free code signing provided by\s+<a href="https:\/\/about\.signpath\.io\/">SignPath\.io<\/a>, certificate by\s+<a href="https:\/\/signpath\.org\/">SignPath Foundation<\/a>\./,
-  "the code signing policy must credit SignPath.io and SignPath Foundation with their links",
+  /<h2 id="privacy-title">Privacy policy<\/h2>/,
+  "the download page must carry a section titled Privacy policy",
 );
 requireMatch(
   html,
-  /Committers and reviewers:\s+<a href="https:\/\/github\.com\/abooodbah">abooodbah<\/a>\. Approvers:\s+<a href="https:\/\/github\.com\/abooodbah">abooodbah<\/a>\./,
-  "the code signing policy must name the committers, reviewers, and approvers",
+  /href="https:\/\/github\.com\/abooodbah\/leanrows#privacy-policy"/,
+  "the privacy section must link to the README privacy policy, which the Store listing uses",
 );
+if (/signpath/i.test(html)) {
+  failures.push("the SignPath Foundation application was declined; the page must not claim SignPath signing");
+}
 requireMatch(
   html,
   /This program will not transfer any\s+information to other networked systems unless specifically requested\s+by the user or the person installing or operating it\./,
-  "the code signing policy must state the SignPath privacy policy",
+  "the privacy policy statement is missing or changed",
 );
 requireMatch(
   html,
   /<strong>Uninstallation\.<\/strong> LeanRows is portable/,
-  "the code signing policy must explain uninstallation",
+  "the privacy section must explain uninstallation",
 );
 requireMatch(css, /:focus-visible\s*\{[^}]*outline:/s, "visible focus styles are required");
 requireMatch(css, /prefers-reduced-motion:\s*reduce/i, "reduced-motion support is required");
@@ -247,9 +250,7 @@ const externalHosts = new Set(
 for (const host of externalHosts) {
   if (
     host !== "https://github.com" &&
-    host !== "https://abooodbah.github.io" &&
-    host !== "https://about.signpath.io" &&
-    host !== "https://signpath.org"
+    host !== "https://abooodbah.github.io"
   ) {
     failures.push(`unexpected external host: ${host}`);
   }
