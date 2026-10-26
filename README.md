@@ -22,6 +22,19 @@ it, and run `leanrows.exe`. Outside that folder, LeanRows writes only its
 appearance setting, under `HKCU\Software\LeanRows`, and a scratch folder for
 search results, under `%LOCALAPPDATA%\LeanRows`.
 
+### Microsoft Store
+
+<a href="https://apps.microsoft.com/detail/9NMV8GKJXSN0"><img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" alt="Download from the Microsoft Store"></a>
+
+LeanRows is also in the [Microsoft Store](https://apps.microsoft.com/detail/9NMV8GKJXSN0). The Store build is
+signed by Microsoft, so Windows installs it without the SmartScreen warning
+that the unsigned GitHub ZIP can show. It can also be installed from the Store
+with winget:
+
+```powershell
+winget install --id 9NMV8GKJXSN0 --source msstore
+```
+
 ## Supported formats
 
 CSV, TSV, JSONL, NDJSON, log, and plain text, on Windows x64. CSV and TSV record

@@ -144,6 +144,16 @@ requireMatch(
   /<strong>Uninstallation\.<\/strong> LeanRows is portable/,
   "the code signing policy must explain uninstallation",
 );
+requireMatch(
+  html,
+  /href="https:\/\/apps\.microsoft\.com\/detail\/9NMV8GKJXSN0">Microsoft Store<\/a>/,
+  "the page must link the Microsoft Store listing",
+);
+requireMatch(
+  html,
+  /<code>winget install --id 9NMV8GKJXSN0 --source msstore<\/code>/,
+  "the page must give the winget command for the Microsoft Store build",
+);
 requireMatch(css, /:focus-visible\s*\{[^}]*outline:/s, "visible focus styles are required");
 requireMatch(css, /prefers-reduced-motion:\s*reduce/i, "reduced-motion support is required");
 requireMatch(css, /@media\s*\(max-width:\s*48rem\)/i, "mobile layout rules are required");
@@ -246,6 +256,8 @@ const externalHosts = new Set(
 );
 for (const host of externalHosts) {
   if (
+    // A plain link to the Microsoft Store listing. The page loads nothing from it.
+    host !== "https://apps.microsoft.com" &&
     host !== "https://github.com" &&
     host !== "https://abooodbah.github.io" &&
     host !== "https://about.signpath.io" &&
