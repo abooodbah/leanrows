@@ -35,6 +35,13 @@ with winget:
 winget install --id 9NMV8GKJXSN0 --source msstore
 ```
 
+### Scoop
+
+```powershell
+scoop bucket add lean https://github.com/abooodbah/scoop-bucket
+scoop install lean/leanrows
+```
+
 ## Supported formats
 
 CSV, TSV, JSONL, NDJSON, log, and plain text, on Windows x64. CSV and TSV record
