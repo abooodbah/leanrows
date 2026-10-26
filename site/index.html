@@ -97,6 +97,8 @@
               <p id="release-note">
                 v0.2.0 is an unsigned Windows x64 ZIP. Verify the accompanying
                 <code>.sha256</code> file before running it.
+                LeanRows is also in the
+                <a href="https://apps.microsoft.com/detail/9NMV8GKJXSN0">Microsoft Store</a>, signed by Microsoft.
               </p>
             </div>
           </div>
@@ -357,6 +359,13 @@
               published value before running or installing LeanRows.
             </p>
             <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.2.0-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
+            <p>
+              To avoid the warning, install LeanRows from the
+              <a href="https://apps.microsoft.com/detail/9NMV8GKJXSN0">Microsoft Store</a>
+              instead. The Store build is signed by Microsoft, so Windows installs it
+              without the SmartScreen warning. With winget:
+            </p>
+            <pre aria-label="winget command for the Microsoft Store build"><code>winget install --id 9NMV8GKJXSN0 --source msstore</code></pre>
             <p class="small-copy">
               Installation is per-user and requires no administrator access. Protected
               Windows choices are preserved; direct defaults are recorded and changed
