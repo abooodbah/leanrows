@@ -1,17 +1,22 @@
 # Code signing with SignPath Foundation
 
-This note is for the project owner. It lists the steps that only the owner can
-take to turn on free code signing from SignPath Foundation. The repository side
-is already in place:
+## Status: signing is off
 
-- the "Code signing policy" section in [README.md](../README.md) and on the
-  product site ([site/index.html](../site/index.html)), with the SignPath credit,
-  team roles, privacy policy, and uninstallation notes that SignPath Foundation
-  asks for
-- the SignPath steps in [.github/workflows/windows.yml](../.github/workflows/windows.yml),
-  which stay off until the repository variable below is set
-- the artifact configuration in
-  [.signpath/artifact-configuration.xml](../.signpath/artifact-configuration.xml)
+LeanRows applied to [SignPath Foundation](https://signpath.org/) for free code
+signing. The application was declined in October 2026, so signing is off.
+
+- The Windows ZIP on GitHub Releases is unsigned and keeps the `-unsigned`
+  suffix. Windows SmartScreen may show a warning for it.
+- The Microsoft Store build is signed by Microsoft when the Store publishes it.
+
+The SignPath steps in [.github/workflows/windows.yml](../.github/workflows/windows.yml)
+and [.signpath/artifact-configuration.xml](../.signpath/artifact-configuration.xml)
+are kept, but they do nothing: they run only when the repository variable
+`SIGNPATH_ORGANIZATION_ID` is set, and it is not set. The README and the product
+site no longer carry a code signing policy or a SignPath credit; both keep the
+privacy policy and the uninstallation notes. If a later application is
+accepted, the policy section has to be added back before applying, and the
+steps below apply.
 
 ## Before applying
 
