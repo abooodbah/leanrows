@@ -1523,7 +1523,13 @@ fn remove_owned_active_marker(directory: &Path, path: &Path) -> io::Result<()> {
             "query active-marker cleanup target is not a plain file",
         ));
     }
-    fs::remove_file(path)
+    match fs::remove_file(path) {
+        // A worker that is shutting down removes its own marker without the
+        // startup lock, so it can win the race against stale-marker cleanup.
+        // The marker is gone either way.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
 }
 
 fn is_query_active_marker_name(name: &std::ffi::OsStr) -> bool {
