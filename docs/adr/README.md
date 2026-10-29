@@ -6,6 +6,8 @@ implementation:
 - [0001 - Read-only external-memory pipeline](0001-read-only-external-memory-pipeline.md)
 - [0002 - Managed-memory accounting](0002-managed-memory-accounting.md)
 - [0003 - Malformed-input policy](0003-malformed-input-policy.md)
+- [0004 - Read-only XLSX workbooks](0004-read-only-xlsx-workbooks.md)
+  (proposed)
 
 `Accepted` means that the decision governs the current implementation. It does
 not turn an unrun benchmark or extended assurance campaign into passing

@@ -7,5 +7,10 @@ license.workspace = true
 repository.workspace = true
 description = "Bounded-memory record indexing and viewport engine for LeanRows"
 
+[dependencies]
+# Raw deflate for .xlsx parts. No unsafe code; default features off, so no
+# allocation inside the crate.
+miniz_oxide = { version = "=0.9.1", default-features = false }
+
 [lints]
 workspace = true

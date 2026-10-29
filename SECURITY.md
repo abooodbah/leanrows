@@ -81,7 +81,10 @@ LeanRows as an available file handler but does not write the protected Windows
 ## Out of scope for 0.2
 
 LeanRows does not accept remote URLs, UNC paths, archives, plug-ins, macros,
-scripts, SQL, active content, or file edits. Security reports for future or
+scripts, SQL, active content, or file edits. The one exception to archives is
+the `.xlsx` workbook package, which is read with the size, ratio, DOCTYPE and
+external-link limits in [XLSX cell text](docs/XLSX.md#limits). Formulas in a
+workbook are shown as their cached values and never evaluated. Security reports for future or
 third-party features remain useful, but they may be handled as feature-design
 feedback rather than as vulnerabilities in the supported release.
 
