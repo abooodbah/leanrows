@@ -441,6 +441,31 @@ fn lying_zip_sizes_are_caught_while_streaming() -> TestResult {
 }
 
 #[test]
+fn a_changed_byte_in_a_stored_part_fails_its_crc_check() -> TestResult {
+    let opened = open("hostile-crc-mismatch.xlsx")?;
+    let error = opened
+        .scan_all(0)
+        .err()
+        .ok_or("the changed byte was not detected")?;
+    assert!(
+        matches!(error, XlsxError::ChecksumMismatch { .. }),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
+fn phonetic_runs_are_left_out_of_shared_strings() -> TestResult {
+    let opened = open("excel-style-phonetic.xlsx")?;
+    let scan = opened.scan(0)?;
+    assert_eq!(
+        opened.texts(&scan, 0, 1)?,
+        vec![strings(&["alpha", "quoted, value", "line1\nline2"])]
+    );
+    Ok(())
+}
+
+#[test]
 fn a_truncated_workbook_is_refused() {
     assert!(matches!(
         open("hostile-truncated.xlsx"),

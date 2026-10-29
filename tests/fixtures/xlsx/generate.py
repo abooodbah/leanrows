@@ -373,6 +373,52 @@ def hostile_files():
     )
 
 
+def stored_crc_mismatch():
+    """Store the sheet uncompressed, then change one byte of it."""
+    with zipfile.ZipFile(out("libreoffice-document-smoke.xlsx")) as source, zipfile.ZipFile(
+        out("hostile-crc-mismatch.xlsx"), "w", zipfile.ZIP_DEFLATED
+    ) as target:
+        for info in source.infolist():
+            method = (
+                zipfile.ZIP_STORED
+                if info.filename == "xl/worksheets/sheet1.xml"
+                else zipfile.ZIP_DEFLATED
+            )
+            target.writestr(info.filename, source.read(info.filename), method)
+    data = bytearray(open(out("hostile-crc-mismatch.xlsx"), "rb").read())
+    # The first cell refers to shared string 0; make it refer to string 1.
+    marker = b'<c r="A1" s="0" t="s"><v>0</v>'
+    position = data.find(marker)
+    if position == -1:
+        raise RuntimeError("first cell not found")
+    data[position + len(marker) - 5] = ord("1")
+    open(out("hostile-crc-mismatch.xlsx"), "wb").write(data)
+
+
+def excel_style_phonetic():
+    """Add an Excel-style phonetic run to the first shared string.
+
+    None of the producers available here writes <rPh>. Excel writes phonetic
+    guides for East Asian text in this form, so the run is added to a
+    LibreOffice table by hand.
+    """
+    with zipfile.ZipFile(out("libreoffice-document-smoke.xlsx")) as source:
+        strings = source.read("xl/sharedStrings.xml").decode()
+    plain = '<si><t xml:space="preserve">alpha</t></si>'
+    phonetic = (
+        '<si><t xml:space="preserve">alpha</t>'
+        '<rPh sb="0" eb="5"><t>\u30a2\u30eb\u30d5\u30a1</t></rPh>'
+        '<phoneticPr fontId="1" type="noConversion"/></si>'
+    )
+    if plain not in strings:
+        raise RuntimeError("first shared string not found")
+    rewrite_zip(
+        "libreoffice-document-smoke.xlsx",
+        "excel-style-phonetic.xlsx",
+        {"xl/sharedStrings.xml": strings.replace(plain, phonetic, 1).encode()},
+    )
+
+
 def main():
     libreoffice_document_smoke()
     openpyxl_features()
@@ -382,6 +428,8 @@ def main():
     xlsxwriter_large()
     libreoffice_resaved()
     hostile_files()
+    stored_crc_mismatch()
+    excel_style_phonetic()
     for name in sorted(os.listdir(HERE)):
         if name.endswith(".xlsx"):
             digest = hashlib.sha256(open(out(name), "rb").read()).hexdigest()

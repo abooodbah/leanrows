@@ -366,6 +366,28 @@ impl SheetCursor {
         }
     }
 
+    /// Reads the rest of the part without tokenizing it, so the entry's size
+    /// and CRC-32 are checked once the sheet data has ended.
+    fn drain<R: PositionedRead + ?Sized>(
+        &mut self,
+        source: &R,
+        token: &CancellationToken,
+        generation: CancellationGeneration,
+    ) -> Result<(), XlsxError> {
+        let mut chunks = 0_u32;
+        loop {
+            let available = self.stream.available().len();
+            self.stream.consume(available);
+            if !self.stream.fill(source)? {
+                return Ok(());
+            }
+            chunks = chunks.wrapping_add(1);
+            if chunks.is_multiple_of(64) {
+                check_cancelled(token, generation)?;
+            }
+        }
+    }
+
     fn malformed(&self, reason: &'static str) -> XlsxError {
         XlsxError::MalformedXml {
             part: self.xml.part().to_owned(),
@@ -760,6 +782,13 @@ impl XlsxSheetScan {
                 Err(error) => return Err(error),
             };
             let Some(row) = row else {
+                match self.cursor.drain(source, token, generation) {
+                    Ok(()) => {}
+                    Err(XlsxError::Cancelled) => {
+                        return Ok(step(self, XlsxScanStatus::Cancelled));
+                    }
+                    Err(error) => return Err(error),
+                }
                 self.complete = true;
                 return Ok(step(self, XlsxScanStatus::Complete));
             };

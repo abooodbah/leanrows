@@ -174,7 +174,9 @@ read.
 The size and ratio limits are checked against the ZIP headers before an entry
 is read, and again on the bytes actually produced while it is read. Headers
 that lie do not get past them. The CRC-32 and size of each entry are checked
-when it ends.
+when it ends. A full scan reads the sheet part to its end for this, including
+the XML after `</sheetData>`. A viewport read stops early and does not check
+the CRC-32 on its own.
 
 XML with a DOCTYPE is refused, so no entity can be declared. XML that is not
 UTF-8 is refused.
