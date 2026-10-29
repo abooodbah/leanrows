@@ -21,6 +21,8 @@ for (const required of [
   "assets/leanrows-app.png",
   "assets/leanrows-icon.png",
   "assets/leanrows-icon.svg",
+  "assets/leanrows-20m-rows.webp",
+  "assets/social-preview.png",
 ]) {
   try {
     const entry = await stat(resolve(siteRoot, required));
@@ -39,7 +41,18 @@ requireMatch(html, /<html\s+lang="en">/i, "the document language must be declare
 requireMatch(html, /<meta\s+name="viewport"/i, "the viewport meta tag is required");
 requireMatch(html, /<meta\s+name="description"/i, "a meta description is required");
 requireMatch(html, /<script\s+type="application\/ld\+json">/i, "SoftwareApplication JSON-LD is required");
-requireMatch(html, /assets\/leanrows-icon\.png/i, "the social preview must use the PNG icon");
+requireMatch(
+  html,
+  /<meta property="og:image" content="https:\/\/abooodbah\.github\.io\/leanrows\/assets\/social-preview\.png">/,
+  "the Open Graph image must be the 1280x640 social preview, not the icon",
+);
+requireMatch(html, /<meta name="twitter:card" content="summary_large_image">/, "a large-image Twitter card is required");
+requireMatch(html, /<section class="section capture-section" id="measured"/, "the measured 20 million row run must be on the page");
+requireMatch(html, /20,000,001 rows and 1,532,454,643\s+bytes/, "the measured run must give its exact rows and bytes");
+requireMatch(html, /src="assets\/leanrows-20m-rows\.webp"/, "the 20 million row capture must be rendered");
+requireMatch(html, /<section class="section faq-section" id="faq"/, "the visible FAQ section is required");
+requireMatch(html, /href="https:\/\/abooodbah\.github\.io\/leandoc\/"/i, "the page must link the LeanDoc site");
+requireMatch(html, /href="https:\/\/abooodbah\.github\.io\/"/, "the page must link the Lean Apps hub");
 requireMatch(html, /<figure\s+class="app-capture">/i, "a real application-capture figure is required");
 requireMatch(html, /src="assets\/leanrows-app\.png"/i, "the real application capture must be rendered");
 requireMatch(html, /synthetic data/i, "the application capture must be identified as synthetic data");
@@ -216,6 +229,18 @@ try {
 } catch (error) {
   failures.push(`the application capture could not be inspected: ${error.message}`);
 }
+
+try {
+  const preview = await readFile(resolve(siteRoot, "assets/social-preview.png"));
+  if (preview.readUInt32BE(16) !== 1280 || preview.readUInt32BE(20) !== 640) {
+    failures.push("assets/social-preview.png must be 1280x640");
+  }
+} catch {
+  // Reported above as a missing required file.
+}
+
+const sitemap = await readFile(resolve(siteRoot, "sitemap.xml"), "utf8");
+requireMatch(sitemap, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/, "sitemap.xml must give a lastmod date");
 
 const primaryCount = (html.match(/class="primary-action"/g) ?? []).length;
 if (primaryCount !== 1) {
