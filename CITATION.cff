@@ -5,11 +5,11 @@ type: software
 authors:
   - family-names: Bahbouh
     given-names: Abdulfatah
-version: 0.2.0
-date-released: 2026-09-24
+version: 0.3.0
+date-released: 2026-10-29
 license: MIT
 repository-code: https://github.com/abooodbah/leanrows
 url: https://abooodbah.github.io/leanrows/
 abstract: >-
   A native, read-only Windows viewer for bounded inspection of large CSV, TSV,
-  JSONL, NDJSON, log, and text files.
+  JSONL, NDJSON, log, and text files, and .xlsx workbooks.
