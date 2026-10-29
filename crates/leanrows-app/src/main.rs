@@ -65,7 +65,7 @@ fn main() {
                 };
                 let table = match document.column_kind {
                     DocumentSmokeColumnKind::Preview => String::new(),
-                    DocumentSmokeColumnKind::Fields => format!(
+                    DocumentSmokeColumnKind::Fields | DocumentSmokeColumnKind::Cells => format!(
                         ",\"table\":{{\"column_count\":{},\"sample\":{}}}",
                         document.data_columns,
                         json_string_array(&document.sample_cells),

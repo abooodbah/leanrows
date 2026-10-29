@@ -46,7 +46,8 @@ scoop install lean/leanrows
 
 ## Supported formats
 
-CSV, TSV, JSONL, NDJSON, log, and plain text, on Windows x64. CSV and TSV record
+CSV, TSV, JSONL, NDJSON, log, plain text, and `.xlsx` workbooks (stored cell
+values, read-only), on Windows x64. CSV and TSV record
 boundaries are quote-aware across read blocks, including quoted fields containing
 newlines. JSONL, NDJSON, log, and text files are treated as line-oriented records.
 
@@ -145,6 +146,7 @@ registry behavior.
 | Tab-separated data | `.tsv` | Quote-aware logical records in independently bounded native columns |
 | JSON Lines | `.jsonl`, `.ndjson` | One physical line per displayed record; no schema or JSON-tree view |
 | Logs and text | `.log`, `.txt` | One physical line per displayed record |
+| Excel workbooks | `.xlsx` | One worksheet at a time, stored values as text; see [XLSX cell text](docs/XLSX.md). Not yet released. |
 
 Format selection is extension-based in 0.2. Input is treated as bytes and
 decoded for display as UTF-8; invalid bytes are shown as `\xNN`. Long records,

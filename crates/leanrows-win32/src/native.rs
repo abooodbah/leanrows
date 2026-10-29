@@ -89,7 +89,7 @@ use self::theme::{EffectiveTheme, ThemeMode, ThemeResources};
 use crate::document_engine::{UiColumnKind, UiColumnLayout};
 use crate::worker::{
     QueryDirection, Worker, WorkerEvent, WorkerPhase, WorkerQueryPhase, WorkerQueryState,
-    WorkerResult,
+    WorkerResult, WorkerSheets,
 };
 use crate::{
     DocumentSmokeColumnKind, DocumentSmokeEvidence, ImmutableRowCache, ShellError, ShellOptions,
@@ -122,6 +122,8 @@ const ID_APP_MORE: u16 = 122;
 const ID_TAB_CLOSE: u16 = 130;
 const ID_TAB_NEXT: u16 = 131;
 const ID_TAB_PREVIOUS: u16 = 132;
+const ID_SHEET_NEXT: u16 = 133;
+const ID_SHEET_PREVIOUS: u16 = 134;
 const ID_TAB_SELECT_FIRST: u16 = 141;
 const ID_TAB_SELECT_LAST: u16 = 149;
 const ID_HELP_ABOUT: u16 = 200;
@@ -135,7 +137,7 @@ const MAX_COPY_UTF16_UNITS: usize = MAX_COPY_BYTES / size_of::<u16>();
 const MAX_FIND_UTF16_UNITS: usize = 1_024;
 const EMPTY_TITLE_CAPTION: &str = "Open large files without loading them all.";
 const WELCOME_EYEBROW: &str = "LEANROWS";
-const WELCOME_BODY: &str = "Open a local CSV, TSV, JSONL, NDJSON, log, or text file. LeanRows keeps memory bounded and never modifies the source.";
+const WELCOME_BODY: &str = "Open a local CSV, TSV, JSONL, NDJSON, log, text, or .xlsx file. LeanRows keeps memory bounded and never modifies the source.";
 const IDLE_FILE_NAME: &str = "LeanRows";
 const IDLE_FILE_META: &str = "Large-file row viewer";
 const IDLE_STATUS: &str = "Ready";
@@ -224,6 +226,8 @@ struct WindowState {
     worker: Option<Worker>,
     current_path: Option<PathBuf>,
     active_serial: Option<u64>,
+    /// Visible worksheets when the active document is a workbook.
+    sheets: Option<Arc<WorkerSheets>>,
     columns: NativeColumns,
     pending_reveal: Option<u64>,
     active_find: Option<ActiveFind>,
@@ -309,6 +313,7 @@ struct BackgroundTab {
     worker: Option<Worker>,
     path: Option<PathBuf>,
     serial: Option<u64>,
+    sheets: Option<Arc<WorkerSheets>>,
     columns: NativeColumns,
     column_widths: Vec<i32>,
     rows: SlidingRowWindow,
@@ -328,6 +333,7 @@ impl BackgroundTab {
             return;
         }
         let chrome = event_chrome(event);
+        self.sheets.clone_from(&event.sheets);
         self.chrome.file_meta = file_meta_text(chrome.source_bytes);
         self.chrome.grid_visible = chrome.grid_visible;
         self.chrome.progress_visible = chrome.progress_visible;
@@ -483,6 +489,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         worker: None,
         current_path: None,
         active_serial: None,
+        sheets: None,
         columns: NativeColumns::preview(),
         pending_reveal: None,
         active_find: None,
@@ -1319,6 +1326,22 @@ fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
         w!("Next ta&b\tCtrl+Tab"),
         state.tab_order.len() > 1,
     )?;
+    let several_sheets = state
+        .sheets
+        .as_ref()
+        .is_some_and(|sheets| sheets.choices.len() > 1);
+    append_menu_item(
+        menu.handle(),
+        ID_SHEET_NEXT,
+        w!("Next s&heet"),
+        several_sheets,
+    )?;
+    append_menu_item(
+        menu.handle(),
+        ID_SHEET_PREVIOUS,
+        w!("Pre&vious sheet"),
+        several_sheets,
+    )?;
     // SAFETY: The guarded popup is mutable until TrackPopupMenuEx returns.
     unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
     append_menu_text(
@@ -1425,13 +1448,18 @@ fn handle_command(window: HWND, command: u16) {
         }
         ID_TAB_NEXT => switch_tab(window, true),
         ID_TAB_PREVIOUS => switch_tab(window, false),
+        ID_SHEET_NEXT => switch_sheet(window, true),
+        ID_SHEET_PREVIOUS => switch_sheet(window, false),
         ID_TAB_SELECT_FIRST..=ID_TAB_SELECT_LAST => select_tab_number(window, command),
         ID_FILE_RELOAD => {
             let pointer = state_pointer_for(window);
             // SAFETY: The path is cloned while the UI-owned state is attached.
-            let path = unsafe { pointer.as_ref() }.and_then(|state| state.current_path.clone());
-            if let Some(path) = path
-                && let Err(error) = queue_path(window, path)
+            let target = unsafe { pointer.as_ref() }.and_then(|state| {
+                let sheet = state.sheets.as_ref().map(|sheets| sheets.current);
+                state.current_path.clone().map(|path| (path, sheet))
+            });
+            if let Some((path, sheet)) = target
+                && let Err(error) = queue_path_sheet(window, path, sheet)
             {
                 set_status(window, &error.to_string());
             }
@@ -1981,7 +2009,7 @@ fn choose_files(window: HWND) -> Result<Vec<PathBuf>, ShellError> {
         lStructSize: dialog_size,
         hwndOwner: window,
         lpstrFilter: w!(
-            "Data and log files\0*.csv;*.tsv;*.jsonl;*.ndjson;*.log;*.txt\0All files\0*.*\0"
+            "Data and log files\0*.csv;*.tsv;*.jsonl;*.ndjson;*.log;*.txt;*.xlsx\0All files\0*.*\0"
         ),
         nFilterIndex: 1,
         lpstrFile: PWSTR(buffer.as_mut_ptr()),
@@ -3353,7 +3381,24 @@ fn insert_data_column(list: HWND, kind: UiColumnKind, data_index: u8) -> Result<
             encoded.push(0);
             insert_column(list, index, PCWSTR(encoded.as_ptr()), 220)
         }
+        UiColumnKind::Cells => {
+            let mut encoded: Vec<u16> = sheet_column_letters(data_index).encode_utf16().collect();
+            encoded.push(0);
+            insert_column(list, index, PCWSTR(encoded.as_ptr()), 160)
+        }
     }
+}
+
+/// Spreadsheet column letters for a one-based column: 1 is A, 27 is AA.
+fn sheet_column_letters(column: u8) -> String {
+    let mut remaining = u32::from(column);
+    let mut letters = Vec::new();
+    while remaining > 0 {
+        let digit = (remaining - 1) % 26;
+        letters.push(char::from(b'A' + u8::try_from(digit).unwrap_or(0)));
+        remaining = (remaining - 1) / 26;
+    }
+    letters.iter().rev().collect()
 }
 
 fn reset_data_columns(state: &mut WindowState) -> Result<(), ShellError> {
@@ -3723,7 +3768,26 @@ fn start_worker(window: HWND, tab_id: usize) -> Result<Worker, ShellError> {
         .map_err(|error| ShellError::new(format!("document worker could not start: {error}")))
 }
 
+/// Shows the next or previous visible worksheet of the active workbook.
+fn switch_sheet(window: HWND, forward: bool) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The path and sheet list are cloned while the UI-owned state is attached.
+    let target = unsafe { pointer.as_ref() }.and_then(|state| {
+        let sheet = state.sheets.as_ref()?.adjacent(forward)?;
+        state.current_path.clone().map(|path| (path, sheet))
+    });
+    if let Some((path, sheet)) = target
+        && let Err(error) = queue_path_sheet(window, path, Some(sheet))
+    {
+        set_status(window, &error.to_string());
+    }
+}
+
 fn queue_path(window: HWND, path: PathBuf) -> Result<(), ShellError> {
+    queue_path_sheet(window, path, None)
+}
+
+fn queue_path_sheet(window: HWND, path: PathBuf, sheet: Option<usize>) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: Commands are handled only while the window state is attached.
     let Some(state) = (unsafe { pointer.as_mut() }) else {
@@ -3746,7 +3810,8 @@ fn queue_path(window: HWND, path: PathBuf) -> Result<(), ShellError> {
         .worker
         .as_ref()
         .ok_or_else(|| ShellError::new("document worker is unavailable"))?;
-    let serial = worker.submit_path(path.clone());
+    let serial = worker.submit_path_sheet(path.clone(), sheet);
+    state.sheets = None;
     state.grid_visible = false;
     state.progress_visible = true;
     set_file_identity(state, &path, None)?;
@@ -3913,6 +3978,7 @@ fn stash_active(state: &mut WindowState) -> Result<BackgroundTab, ShellError> {
         worker: state.worker.take(),
         path: state.current_path.take(),
         serial: state.active_serial.take(),
+        sheets: state.sheets.take(),
         columns: state.columns,
         column_widths,
         rows,
@@ -3937,6 +4003,7 @@ fn restore_tab(
     state.worker = tab.worker;
     state.current_path = tab.path;
     state.active_serial = tab.serial;
+    state.sheets = tab.sheets;
     state.active_find = tab.active_find;
     state.revealed_match = tab.revealed_match;
     state.pending_reveal = None;
@@ -4326,7 +4393,7 @@ fn handle_drop(window: HWND, raw_drop: usize) {
         set_status(
             window,
             &format!(
-                "Skipped {skipped} unsupported file(s); use CSV, TSV, JSONL, NDJSON, LOG, or TXT"
+                "Skipped {skipped} unsupported file(s); use CSV, TSV, JSONL, NDJSON, LOG, TXT, or XLSX"
             ),
         );
     }
@@ -4338,7 +4405,7 @@ fn is_supported_document_path(path: &Path) -> bool {
         .is_some_and(|extension| {
             matches!(
                 extension.to_ascii_lowercase().as_str(),
-                "csv" | "tsv" | "jsonl" | "ndjson" | "log" | "txt"
+                "csv" | "tsv" | "jsonl" | "ndjson" | "log" | "txt" | "xlsx"
             )
         })
 }
@@ -4500,6 +4567,7 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
     }
 
     update_document_chrome(state, event);
+    state.sheets.clone_from(&event.sheets);
 
     if let Some(columns) = event.columns
         && let Err(error) = synchronize_data_columns(state, columns)
@@ -4765,6 +4833,7 @@ fn document_smoke_evidence(event: &WorkerEvent) -> Option<DocumentSmokeEvidence>
         column_kind: match columns.kind() {
             UiColumnKind::Preview => DocumentSmokeColumnKind::Preview,
             UiColumnKind::Fields => DocumentSmokeColumnKind::Fields,
+            UiColumnKind::Cells => DocumentSmokeColumnKind::Cells,
         },
         data_columns: columns.data_columns(),
         sample_cells,
@@ -4812,7 +4881,31 @@ fn worker_status(event: &WorkerEvent, active_find: Option<&ActiveFind>) -> Strin
         WorkerPhase::Complete => "Ready",
         WorkerPhase::Failed => "Failed",
     };
-    let mut status = format!(
+    let mut status = String::new();
+    if let Some(sheets) = event.sheets.as_deref()
+        && let Some(position) = sheets.position()
+    {
+        let name: String = sheets.choices[position]
+            .name
+            .chars()
+            .take(64)
+            .map(|character| {
+                if character.is_control() {
+                    ' '
+                } else {
+                    character
+                }
+            })
+            .collect();
+        let _ = write!(
+            status,
+            "Sheet {} of {}: {name} | ",
+            position + 1,
+            sheets.choices.len()
+        );
+    }
+    let _ = write!(
+        status,
         "{phase} | {} rows | {} / {} bytes | {percent}%",
         progress.available_rows, progress.scanned_bytes, progress.source_bytes
     );
@@ -4951,8 +5044,8 @@ mod tests {
         append_copy_units, brush_result, build_copy_text, control_style, document_event_is_usable,
         document_smoke_evidence, document_title, event_chrome, failure_requires_reload,
         file_meta_text, find_needle, is_supported_document_path, parse_one_based_row,
-        parse_open_selection, query_match_to_reveal, query_status, startup_error_text,
-        worker_status,
+        parse_open_selection, query_match_to_reveal, query_status, sheet_column_letters,
+        startup_error_text, worker_status,
     };
     use crate::document_engine::{UiColumnKind, UiColumnLayout};
     use crate::worker::{
@@ -4986,6 +5079,7 @@ mod tests {
             source_truncated_rows: 0,
             display_truncated_rows: 0,
             escaped_non_utf8_rows: 0,
+            sheets: None,
         }
     }
 
@@ -5224,6 +5318,37 @@ mod tests {
     }
 
     #[test]
+    fn workbook_columns_are_titled_with_sheet_letters() {
+        let titles: Vec<String> = [1, 2, 26, 27, 52, 53, 64]
+            .into_iter()
+            .map(sheet_column_letters)
+            .collect();
+        assert_eq!(titles, ["A", "B", "Z", "AA", "AZ", "BA", "BL"]);
+    }
+
+    #[test]
+    fn workbook_status_names_the_shown_sheet() {
+        use crate::document_engine::SheetChoice;
+        use crate::worker::WorkerSheets;
+
+        let mut event = ready_event();
+        event.sheets = Some(Arc::new(WorkerSheets {
+            choices: vec![
+                SheetChoice {
+                    index: 1,
+                    name: "Types".to_owned(),
+                },
+                SheetChoice {
+                    index: 3,
+                    name: "Tab\there".to_owned(),
+                },
+            ],
+            current: 3,
+        }));
+        assert!(worker_status(&event, None).starts_with("Sheet 2 of 2: Tab here | "));
+    }
+
+    #[test]
     fn title_drop_extensions_and_reload_disclosure_are_exact()
     -> Result<(), Box<dyn std::error::Error>> {
         let encoded = document_title(Path::new(r"C:\data\résumé.CSV"))?;
@@ -5233,6 +5358,8 @@ mod tests {
         assert_eq!(String::from_utf16(payload)?, "résumé.CSV — LeanRows");
         assert!(is_supported_document_path(Path::new("rows.CSV")));
         assert!(is_supported_document_path(Path::new("events.ndjson")));
+        assert!(is_supported_document_path(Path::new("book.XLSX")));
+        assert!(!is_supported_document_path(Path::new("book.xlsm")));
         assert!(!is_supported_document_path(Path::new("rows.parquet")));
         assert!(failure_requires_reload(
             "the open document changed (RevisionChanged)"

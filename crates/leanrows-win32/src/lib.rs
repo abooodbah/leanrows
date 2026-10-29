@@ -73,6 +73,8 @@ pub enum DocumentSmokeColumnKind {
     Preview,
     /// CSV and TSV expose independently decoded field columns.
     Fields,
+    /// XLSX exposes workbook cells under the sheet's column letters.
+    Cells,
 }
 
 /// Successful worker phase observed by the document smoke path.

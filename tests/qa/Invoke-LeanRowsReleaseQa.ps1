@@ -253,6 +253,13 @@ try {
             $script:Utf8NoBom
         )
 
+        # A workbook written by LibreOffice from the CSV smoke fixture.
+        [System.IO.File]::Copy(
+            (Join-Path $repositoryRoot 'tests/fixtures/xlsx/libreoffice-document-smoke.xlsx'),
+            (Join-Path $smallFixtureDirectory 'small.xlsx'),
+            $true
+        )
+
         foreach ($name in @(
             'large-multiline.csv',
             'large.jsonl',
@@ -261,7 +268,8 @@ try {
             'giant-record.csv',
             'small.tsv',
             'small.ndjson',
-            'small.txt'
+            'small.txt',
+            'small.xlsx'
         )) {
             $id = 'DOC-' + $name.ToUpperInvariant().Replace('.', '-')
             try {

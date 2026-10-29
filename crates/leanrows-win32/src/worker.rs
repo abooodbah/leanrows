@@ -16,7 +16,7 @@ use leanrows_core::{
 
 use crate::document_engine::{
     DocumentEngine, DocumentEngineError, DocumentProgress, DocumentQuerySource, DocumentScanStatus,
-    UiColumnKind, UiColumnLayout, UiRowSnapshot,
+    SheetChoice, UiColumnKind, UiColumnLayout, UiRowSnapshot,
 };
 use crate::{
     AccessibleName, CachedRow, CoalescingMailbox, DisplayCell, ImmutableRowCache, SendOutcome,
@@ -40,8 +40,41 @@ static NEXT_QUERY_ACTIVE_MARKER: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug)]
 struct OpenCommand {
     path: PathBuf,
+    sheet: Option<usize>,
     serial: u64,
     generation: CancellationGeneration,
+}
+
+/// The visible worksheets of an open workbook and the one shown.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct WorkerSheets {
+    pub(crate) choices: Vec<SheetChoice>,
+    /// Workbook index of the shown sheet.
+    pub(crate) current: usize,
+}
+
+impl WorkerSheets {
+    /// Position of the shown sheet among the choices.
+    pub(crate) fn position(&self) -> Option<usize> {
+        self.choices
+            .iter()
+            .position(|choice| choice.index == self.current)
+    }
+
+    /// Workbook index of the next (or previous) visible sheet, wrapping.
+    pub(crate) fn adjacent(&self, forward: bool) -> Option<usize> {
+        let count = self.choices.len();
+        if count < 2 {
+            return None;
+        }
+        let position = self.position()?;
+        let next = if forward {
+            (position + 1) % count
+        } else {
+            (position + count - 1) % count
+        };
+        self.choices.get(next).map(|choice| choice.index)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -149,6 +182,7 @@ pub(crate) struct WorkerEvent {
     pub(crate) display_truncated_rows: u32,
     pub(crate) escaped_non_utf8_rows: u32,
     pub(crate) query: Option<WorkerQueryState>,
+    pub(crate) sheets: Option<Arc<WorkerSheets>>,
 }
 
 impl WorkerEvent {
@@ -286,7 +320,13 @@ impl Worker {
     }
 
     /// Cancels the current generation and coalesces this path over older opens.
+    #[cfg(test)]
     pub(crate) fn submit_path(&self, path: PathBuf) -> u64 {
+        self.submit_path_sheet(path, None)
+    }
+
+    /// Like `submit_path`, but for a workbook opens the given sheet.
+    pub(crate) fn submit_path_sheet(&self, path: PathBuf, sheet: Option<usize>) -> u64 {
         let previous = self.latest_serial.fetch_add(1, Ordering::AcqRel);
         let serial = previous.wrapping_add(1);
         let generation = self.cancellation.cancel();
@@ -300,6 +340,7 @@ impl Worker {
             .opens
             .send(OpenCommand {
                 path,
+                sheet,
                 serial,
                 generation,
             })
@@ -446,6 +487,7 @@ struct ActiveDocument {
     scan_complete: bool,
     unreported_bytes: u64,
     query: Option<ActiveQuery>,
+    sheets: Option<Arc<WorkerSheets>>,
 }
 
 struct ActiveQuery {
@@ -551,14 +593,18 @@ fn replace_document(
     command: OpenCommand,
 ) -> bool {
     *active = None;
-    let opened =
-        match DocumentEngine::open(&command.path, &runtime.cancellation, command.generation) {
-            Ok(opened) => opened,
-            Err(DocumentEngineError::Cancelled) => return true,
-            Err(error) => {
-                return emit_failed_open(runtime, command.path, command.serial, error.to_string());
-            }
-        };
+    let opened = match DocumentEngine::open_sheet(
+        &command.path,
+        command.sheet,
+        &runtime.cancellation,
+        command.generation,
+    ) {
+        Ok(opened) => opened,
+        Err(DocumentEngineError::Cancelled) => return true,
+        Err(error) => {
+            return emit_failed_open(runtime, command.path, command.serial, error.to_string());
+        }
+    };
     let (engine, first_snapshot) = opened.into_parts();
     let cache = match convert_cache(first_snapshot) {
         Ok(cache) => cache,
@@ -566,6 +612,12 @@ fn replace_document(
             return emit_failed_open(runtime, command.path, command.serial, error.to_string());
         }
     };
+    let sheets = engine.sheets().map(|(choices, current)| {
+        Arc::new(WorkerSheets {
+            choices: choices.to_vec(),
+            current,
+        })
+    });
     let mut document = ActiveDocument {
         path: command.path,
         serial: command.serial,
@@ -574,6 +626,7 @@ fn replace_document(
         scan_complete: false,
         unreported_bytes: 0,
         query: None,
+        sheets,
     };
     document.scan_complete = document.engine.progress().is_complete();
     runtime
@@ -1079,6 +1132,7 @@ fn emit_failed_open(runtime: &WorkerRuntime, path: PathBuf, serial: u64, message
         display_truncated_rows: 0,
         escaped_non_utf8_rows: 0,
         query: None,
+        sheets: None,
     };
     emit_event(runtime, event)
 }
@@ -1110,6 +1164,7 @@ fn emit_active(
         display_truncated_rows: document.cache.display_truncated_rows,
         escaped_non_utf8_rows: document.cache.escaped_non_utf8_rows,
         query: document.query.as_ref().map(|query| query.state.clone()),
+        sheets: document.sheets.clone(),
     };
     emit_event(runtime, event)
 }
@@ -1179,7 +1234,7 @@ fn convert_cache(snapshot: UiRowSnapshot) -> Result<CacheState, CacheConversionE
                     .ok_or(CacheConversionError::InconsistentColumns)?
                     .as_utf16(),
             ),
-            UiColumnKind::Fields => AccessibleName::from_utf16_cells(
+            UiColumnKind::Fields | UiColumnKind::Cells => AccessibleName::from_utf16_cells(
                 parts.absolute_row,
                 cells.iter().skip(1).map(DisplayCell::as_utf16),
             ),
@@ -1534,10 +1589,10 @@ mod tests {
 
     use super::{
         QUERY_ACTIVE_MARKER_PREFIX, QUERY_ACTIVE_MARKER_SUFFIX, QueryDirection, Worker,
-        WorkerEvent, WorkerPhase, WorkerQueryPhase, WorkerQueryState, WorkerResult,
+        WorkerEvent, WorkerPhase, WorkerQueryPhase, WorkerQueryState, WorkerResult, WorkerSheets,
         is_query_active_marker_name, prepare_query_scratch, remove_owned_active_marker,
     };
-    use crate::document_engine::UiColumnKind;
+    use crate::document_engine::{UiColumnKind, UiColumnLayout};
 
     static FIXTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -1783,6 +1838,48 @@ mod tests {
             io::Error::new(io::ErrorKind::InvalidData, "worker cache cell has no NUL")
         })?;
         String::from_utf16(payload).map_err(io::Error::other)
+    }
+
+    #[test]
+    fn workbook_sheet_choices_wrap_in_both_directions() {
+        use crate::document_engine::SheetChoice;
+
+        let choice = |index: usize| SheetChoice {
+            index,
+            name: format!("sheet {index}"),
+        };
+        let sheets = WorkerSheets {
+            choices: vec![choice(1), choice(2), choice(3)],
+            current: 3,
+        };
+        assert_eq!(sheets.position(), Some(2));
+        assert_eq!(sheets.adjacent(true), Some(1));
+        assert_eq!(sheets.adjacent(false), Some(2));
+        let single = WorkerSheets {
+            choices: vec![choice(1)],
+            current: 1,
+        };
+        assert_eq!(single.adjacent(true), None);
+    }
+
+    #[test]
+    fn xlsx_worker_events_carry_the_sheet_list() -> Result<(), Box<dyn std::error::Error>> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/xlsx/openpyxl-features.xlsx");
+        let worker = Worker::start(Arc::new(|| {}))?;
+        let serial = worker.submit_path_sheet(path, Some(2));
+        let complete = wait_complete(&worker, Duration::from_secs(20))?;
+        assert_eq!(complete.serial, serial);
+        assert_eq!(complete.progress.indexed_rows, 1_048_576);
+        let sheets = complete.sheets.as_deref().ok_or("no sheet list")?;
+        assert_eq!(sheets.current, 2);
+        assert_eq!(sheets.choices.len(), 3);
+        assert_eq!(
+            complete.columns.map(UiColumnLayout::kind),
+            Some(UiColumnKind::Cells)
+        );
+        assert_eq!(cell_text(&complete, 0, 1)?, "top-left");
+        Ok(())
     }
 
     #[test]

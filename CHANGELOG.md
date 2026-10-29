@@ -4,6 +4,23 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Read-only `.xlsx` workbooks. LeanRows shows the stored cell values of one
+  worksheet at a time, with columns titled A, B, C. The first visible sheet
+  opens; Next sheet and Previous sheet in the overflow menu switch between
+  visible sheets. Formulas are shown as their cached values and are never
+  evaluated. The rules and limits are in `docs/XLSX.md`.
+- Workbooks that look like ZIP bombs, are truncated, contain a DOCTYPE, or
+  point to external sheets are refused with a message.
+
+### Known gaps
+
+- Find does not work on `.xlsx` files yet.
+- The installer and the Store package do not register `.xlsx`.
+
 ## [0.2.0] - 2026-09-24
 
 ### Added

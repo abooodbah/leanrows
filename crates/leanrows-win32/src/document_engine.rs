@@ -15,7 +15,8 @@ use leanrows_core::{
     EngineLimits, FieldProjectionError, FieldProjectionLimits, FieldUtf8Status, FileSource,
     ManagedMemoryBudget, PositionedRead, RecordPreview, ScanSession, ScanSessionConfig,
     ScanSessionError, ScanStepStatus, SourceChange, SourceFingerprint, ViewportError,
-    ViewportFormat, project_delimited_record, read_viewport,
+    ViewportFormat, XlsxError, XlsxLimits, XlsxRow, XlsxRowLimits, XlsxScanStatus, XlsxSheetScan,
+    XlsxWorkbook, project_delimited_record, read_viewport,
 };
 
 const INDEX_CAPACITY: usize = 4_096;
@@ -257,15 +258,47 @@ impl OpenedDocument {
     }
 }
 
+/// What a path's extension selects: a row-text format or a workbook.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DocumentKind {
+    Text(DocumentFormat),
+    Xlsx,
+}
+
+/// A visible worksheet that can be shown.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SheetChoice {
+    pub(crate) index: usize,
+    pub(crate) name: String,
+}
+
+/// The format-specific part of an open document.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "one value per open document; boxing the scan session buys nothing"
+)]
+enum DocumentContent {
+    Text {
+        format: DocumentFormat,
+        scan: ScanSession,
+    },
+    Xlsx(Box<XlsxContent>),
+}
+
+struct XlsxContent {
+    workbook: XlsxWorkbook,
+    scan: XlsxSheetScan,
+    sheets: Vec<SheetChoice>,
+}
+
 /// One read-only document and its incrementally built core index.
 pub(crate) struct DocumentEngine {
-    format: DocumentFormat,
     path: PathBuf,
     source: FileSource,
     source_snapshot: SourceFingerprint,
     #[cfg(windows)]
     windows_snapshot: windows_integrity::FileEvidence,
-    scan: ScanSession,
+    content: DocumentContent,
     viewport_limits: EngineLimits,
     projection_limits: FieldProjectionLimits,
     integrity_failed: Cell<bool>,
@@ -275,12 +308,24 @@ pub(crate) struct DocumentEngine {
 impl DocumentEngine {
     /// Opens a regular local file read-only and materializes a bounded first
     /// viewport before any full-file indexing loop begins.
+    #[cfg(test)]
     pub(crate) fn open(
         path: &Path,
         token: &CancellationToken,
         generation: CancellationGeneration,
     ) -> Result<OpenedDocument, DocumentEngineError> {
-        let format = infer_format(path)?;
+        Self::open_sheet(path, None, token, generation)
+    }
+
+    /// Opens a document; for a workbook, `sheet` selects a visible worksheet
+    /// by its workbook index, and `None` selects the first visible one.
+    pub(crate) fn open_sheet(
+        path: &Path,
+        sheet: Option<usize>,
+        token: &CancellationToken,
+        generation: CancellationGeneration,
+    ) -> Result<OpenedDocument, DocumentEngineError> {
+        let kind = infer_format(path)?;
         let path = validate_local_regular_path(path)?;
         let file = open_source_file(&path).map_err(|source| DocumentEngineError::Io {
             operation: "open file read-only",
@@ -311,16 +356,24 @@ impl DocumentEngine {
                 operation: "capture opened file fingerprint",
                 source,
             })?;
-        let scan = ScanSession::new(
-            &source,
-            format,
-            ScanSessionConfig::new(
-                INDEX_CAPACITY,
-                INITIAL_ROW_STRIDE,
-                READ_BUFFER_BYTES,
-                CANCELLATION_CHECK_BYTES,
-            ),
-        )?;
+        let content = match kind {
+            DocumentKind::Text(format) => DocumentContent::Text {
+                format,
+                scan: ScanSession::new(
+                    &source,
+                    format,
+                    ScanSessionConfig::new(
+                        INDEX_CAPACITY,
+                        INITIAL_ROW_STRIDE,
+                        READ_BUFFER_BYTES,
+                        CANCELLATION_CHECK_BYTES,
+                    ),
+                )?,
+            },
+            DocumentKind::Xlsx => {
+                DocumentContent::Xlsx(Box::new(open_xlsx(&source, sheet, token, generation)?))
+            }
+        };
         let viewport_limits = viewport_limits()?;
         let projection_limits = FieldProjectionLimits::new(
             MAX_PROJECTED_FIELDS,
@@ -328,13 +381,12 @@ impl DocumentEngine {
             MAX_DECODED_BYTES_PER_ROW,
         )?;
         let engine = Self {
-            format,
             path,
             source,
             source_snapshot,
             #[cfg(windows)]
             windows_snapshot,
-            scan,
+            content,
             viewport_limits,
             projection_limits,
             integrity_failed: Cell::new(false),
@@ -349,8 +401,20 @@ impl DocumentEngine {
 
     #[cfg(test)]
     #[must_use]
-    pub(crate) const fn format(&self) -> DocumentFormat {
-        self.format
+    pub(crate) const fn format(&self) -> DocumentKind {
+        match &self.content {
+            DocumentContent::Text { format, .. } => DocumentKind::Text(*format),
+            DocumentContent::Xlsx(_) => DocumentKind::Xlsx,
+        }
+    }
+
+    /// The visible worksheets of a workbook and the one shown, if any.
+    #[must_use]
+    pub(crate) fn sheets(&self) -> Option<(&[SheetChoice], usize)> {
+        match &self.content {
+            DocumentContent::Text { .. } => None,
+            DocumentContent::Xlsx(xlsx) => Some((&xlsx.sheets, xlsx.scan.sheet())),
+        }
     }
 
     /// Performs at most one fixed 64 KiB scan quantum.
@@ -368,48 +432,90 @@ impl DocumentEngine {
             });
         }
         self.verify_source(false)?;
-        let step = match self
-            .scan
-            .step(&self.source, MAX_SCAN_STEP_BYTES, token, generation)
-        {
-            Ok(step) => step,
-            Err(error) => {
-                if error.is_source_integrity_failure() {
-                    self.integrity_failed.set(true);
-                }
-                return Err(DocumentEngineError::Scan(error));
+        let (processed_bytes, discovered_rows, status) = match &mut self.content {
+            DocumentContent::Text { scan, .. } => {
+                let step = match scan.step(&self.source, MAX_SCAN_STEP_BYTES, token, generation) {
+                    Ok(step) => step,
+                    Err(error) => {
+                        if error.is_source_integrity_failure() {
+                            self.integrity_failed.set(true);
+                        }
+                        return Err(DocumentEngineError::Scan(error));
+                    }
+                };
+                (
+                    step.processed_bytes(),
+                    step.discovered_records(),
+                    match step.status() {
+                        ScanStepStatus::Progress => DocumentScanStatus::Progress,
+                        ScanStepStatus::Complete => DocumentScanStatus::Complete,
+                        ScanStepStatus::Cancelled => DocumentScanStatus::Cancelled,
+                    },
+                )
+            }
+            DocumentContent::Xlsx(xlsx) => {
+                let step = xlsx
+                    .scan
+                    .step(&self.source, MAX_SCAN_STEP_BYTES, token, generation)
+                    .map_err(map_xlsx_error)?;
+                (
+                    step.consumed_bytes(),
+                    step.discovered_rows(),
+                    match step.status() {
+                        XlsxScanStatus::Progress => DocumentScanStatus::Progress,
+                        XlsxScanStatus::Complete => DocumentScanStatus::Complete,
+                        XlsxScanStatus::Cancelled => DocumentScanStatus::Cancelled,
+                    },
+                )
             }
         };
         self.bytes_since_strong_path_check = self
             .bytes_since_strong_path_check
-            .saturating_add(u64::try_from(step.processed_bytes()).unwrap_or(u64::MAX));
+            .saturating_add(u64::try_from(processed_bytes).unwrap_or(u64::MAX));
         let strong_path_check = self.bytes_since_strong_path_check >= STRONG_PATH_CHECK_BYTES
-            || step.status() == ScanStepStatus::Complete;
+            || status == DocumentScanStatus::Complete;
         self.verify_source(strong_path_check)?;
         if strong_path_check {
             self.bytes_since_strong_path_check = 0;
         }
         Ok(DocumentScanStep {
-            processed_bytes: step.processed_bytes(),
-            discovered_rows: step.discovered_records(),
-            status: match step.status() {
-                ScanStepStatus::Progress => DocumentScanStatus::Progress,
-                ScanStepStatus::Complete => DocumentScanStatus::Complete,
-                ScanStepStatus::Cancelled => DocumentScanStatus::Cancelled,
-            },
+            processed_bytes,
+            discovered_rows,
+            status,
             progress: self.progress(),
         })
     }
 
     #[must_use]
     pub(crate) fn progress(&self) -> DocumentProgress {
-        let progress = self.scan.progress();
-        DocumentProgress {
-            scanned_bytes: progress.scanned_bytes(),
-            source_bytes: progress.source_bytes(),
-            row_count: progress.record_count(),
-            complete: progress.is_complete(),
-            diagnostic: self.scan.diagnostic(),
+        match &self.content {
+            DocumentContent::Text { scan, .. } => {
+                let progress = scan.progress();
+                DocumentProgress {
+                    scanned_bytes: progress.scanned_bytes(),
+                    source_bytes: progress.source_bytes(),
+                    row_count: progress.record_count(),
+                    complete: progress.is_complete(),
+                    diagnostic: scan.diagnostic(),
+                }
+            }
+            DocumentContent::Xlsx(xlsx) => {
+                // Progress is the compressed sheet bytes read, out of the
+                // file size; a complete scan reports the whole file.
+                let progress = xlsx.scan.progress();
+                let source_bytes = self.source_snapshot.size();
+                DocumentProgress {
+                    scanned_bytes: if progress.is_complete() {
+                        source_bytes
+                    } else {
+                        progress.compressed_read().min(source_bytes)
+                    },
+                    source_bytes,
+                    row_count: progress.rows(),
+                    complete: progress.is_complete(),
+                    diagnostic: None,
+                }
+            }
         }
     }
 
@@ -424,10 +530,18 @@ impl DocumentEngine {
             return Err(DocumentEngineError::Cancelled);
         }
         self.verify_source(true)?;
+        let (format, scan) = match &self.content {
+            DocumentContent::Text { format, scan } => (*format, scan),
+            DocumentContent::Xlsx(xlsx) => {
+                let snapshot = self.xlsx_snapshot(xlsx, first_row, token, generation)?;
+                self.verify_source(true)?;
+                return Ok(snapshot);
+            }
+        };
         let viewport = match read_viewport(
             &self.source,
-            self.format.viewport_format(),
-            self.scan.index(),
+            format.viewport_format(),
+            scan.index(),
             first_row,
             self.viewport_limits,
             token,
@@ -448,7 +562,7 @@ impl DocumentEngine {
         let mut rows = Vec::new();
         rows.try_reserve_exact(viewport.records().len())
             .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
-        let column_kind = if self.format.delimited_dialect().is_some() {
+        let column_kind = if format.delimited_dialect().is_some() {
             UiColumnKind::Fields
         } else {
             UiColumnKind::Preview
@@ -458,7 +572,7 @@ impl DocumentEngine {
             if token.is_cancelled(generation) {
                 return Err(DocumentEngineError::Cancelled);
             }
-            let row = build_cached_row(record, self.format, self.projection_limits)?;
+            let row = build_cached_row(record, format, self.projection_limits)?;
             data_columns = data_columns.max(row.data_columns());
             rows.push(row);
         }
@@ -477,6 +591,10 @@ impl DocumentEngine {
     /// returned, and the returned source continues performing strong path and
     /// handle checks for the lifetime of the query.
     pub(crate) fn query_plan(&self) -> Result<DocumentQueryPlan, DocumentEngineError> {
+        let format = match &self.content {
+            DocumentContent::Text { format, .. } => *format,
+            DocumentContent::Xlsx(_) => return Err(DocumentEngineError::FindUnavailable),
+        };
         self.verify_source(true)?;
         let file = self
             .source
@@ -508,7 +626,52 @@ impl DocumentEngine {
         self.verify_source(true)?;
         Ok(DocumentQueryPlan {
             source: query_source,
-            format: self.format.viewport_format(),
+            format: format.viewport_format(),
+        })
+    }
+
+    fn xlsx_snapshot(
+        &self,
+        xlsx: &XlsxContent,
+        first_row: u64,
+        token: &CancellationToken,
+        generation: CancellationGeneration,
+    ) -> Result<UiRowSnapshot, DocumentEngineError> {
+        let viewport = xlsx
+            .scan
+            .read_rows(
+                &self.source,
+                &xlsx.workbook,
+                first_row,
+                MAX_VIEWPORT_ROWS,
+                XlsxRowLimits {
+                    max_columns: MAX_PROJECTED_FIELDS,
+                    max_cell_bytes: MAX_DECODED_BYTES_PER_FIELD,
+                    max_row_bytes: MAX_DECODED_BYTES_PER_ROW,
+                },
+                token,
+                generation,
+            )
+            .map_err(map_xlsx_error)?;
+        let reached_eof = viewport.reached_end();
+        let mut rows = Vec::new();
+        rows.try_reserve_exact(viewport.rows().len())
+            .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
+        let mut data_columns = 0;
+        for row in viewport.into_rows() {
+            if token.is_cancelled(generation) {
+                return Err(DocumentEngineError::Cancelled);
+            }
+            let row = build_xlsx_row(&row)?;
+            data_columns = data_columns.max(row.data_columns());
+            rows.push(row);
+        }
+        Ok(UiRowSnapshot {
+            first_row,
+            rows,
+            columns: UiColumnLayout::new(UiColumnKind::Cells, data_columns)?,
+            reached_eof,
+            diagnostic: None,
         })
     }
 
@@ -745,6 +908,8 @@ pub(crate) struct UiRowSnapshot {
 pub(crate) enum UiColumnKind {
     Preview,
     Fields,
+    /// Workbook cells, titled with the sheet's column letters.
+    Cells,
 }
 
 /// Bounded column metadata transferred alongside every immutable viewport.
@@ -791,7 +956,8 @@ impl UiColumnLayout {
     #[must_use]
     pub(crate) const fn is_valid(self) -> bool {
         self.data_columns as usize <= MAX_PROJECTED_FIELDS
-            && (matches!(self.kind, UiColumnKind::Fields) || self.data_columns == 1)
+            && (matches!(self.kind, UiColumnKind::Fields | UiColumnKind::Cells)
+                || self.data_columns == 1)
     }
 
     #[must_use]
@@ -1167,6 +1333,74 @@ fn build_cached_row(
     })
 }
 
+fn build_xlsx_row(row: &XlsxRow) -> Result<UiCachedRow, DocumentEngineError> {
+    let mut source_truncated = row.is_truncated();
+    let mut display_truncated = false;
+    let mut escaped_non_utf8 = false;
+    let mut cells = Vec::new();
+    cells
+        .try_reserve_exact(row.cells().len().saturating_add(1))
+        .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
+    cells.push(Utf16Cell::decimal(row.index().saturating_add(1))?);
+    for cell in row.cells() {
+        let mut value = PreviewBuilder::new(MAX_PREVIEW_UTF16_UNITS, cell.bytes().len())?;
+        value.push_bytes(cell.bytes());
+        source_truncated |= cell.is_truncated();
+        display_truncated |= value.truncated;
+        escaped_non_utf8 |= value.escaped_non_utf8;
+        cells.push(value.finish(cell.is_truncated()));
+    }
+    Ok(UiCachedRow {
+        absolute_row: row.index(),
+        cells,
+        source_truncated,
+        display_truncated,
+        escaped_non_utf8,
+    })
+}
+
+fn open_xlsx(
+    source: &FileSource,
+    sheet: Option<usize>,
+    token: &CancellationToken,
+    generation: CancellationGeneration,
+) -> Result<XlsxContent, DocumentEngineError> {
+    let workbook = XlsxWorkbook::open(source, XlsxLimits::standard(), token, generation)
+        .map_err(map_xlsx_error)?;
+    let mut sheets = Vec::new();
+    for (index, candidate) in workbook.sheets().iter().enumerate() {
+        if candidate.is_offered() {
+            sheets
+                .try_reserve(1)
+                .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
+            sheets.push(SheetChoice {
+                index,
+                name: candidate.name().to_owned(),
+            });
+        }
+    }
+    let index = match sheet {
+        Some(index) if sheets.iter().any(|choice| choice.index == index) => index,
+        Some(_) => return Err(DocumentEngineError::Xlsx(XlsxError::SheetOutOfRange)),
+        None => workbook
+            .default_sheet()
+            .ok_or(DocumentEngineError::Xlsx(XlsxError::NoWorksheet))?,
+    };
+    let scan = XlsxSheetScan::new(source, &workbook, index).map_err(map_xlsx_error)?;
+    Ok(XlsxContent {
+        workbook,
+        scan,
+        sheets,
+    })
+}
+
+fn map_xlsx_error(error: XlsxError) -> DocumentEngineError {
+    match error {
+        XlsxError::Cancelled => DocumentEngineError::Cancelled,
+        other => DocumentEngineError::Xlsx(other),
+    }
+}
+
 fn viewport_limits() -> Result<EngineLimits, DocumentEngineError> {
     let budget = ManagedMemoryBudget::new(
         CORE_OPERATION_BUDGET_BYTES,
@@ -1185,19 +1419,21 @@ fn viewport_limits() -> Result<EngineLimits, DocumentEngineError> {
     )?)
 }
 
-pub(crate) fn infer_format(path: &Path) -> Result<DocumentFormat, DocumentEngineError> {
+pub(crate) fn infer_format(path: &Path) -> Result<DocumentKind, DocumentEngineError> {
     let extension = path
         .extension()
         .and_then(std::ffi::OsStr::to_str)
         .ok_or(DocumentEngineError::UnsupportedFormat)?;
     if extension.eq_ignore_ascii_case("csv") {
-        Ok(DocumentFormat::Csv)
+        Ok(DocumentKind::Text(DocumentFormat::Csv))
     } else if extension.eq_ignore_ascii_case("tsv") {
-        Ok(DocumentFormat::Tsv)
+        Ok(DocumentKind::Text(DocumentFormat::Tsv))
     } else if extension.eq_ignore_ascii_case("jsonl") || extension.eq_ignore_ascii_case("ndjson") {
-        Ok(DocumentFormat::Jsonl)
+        Ok(DocumentKind::Text(DocumentFormat::Jsonl))
     } else if extension.eq_ignore_ascii_case("log") || extension.eq_ignore_ascii_case("txt") {
-        Ok(DocumentFormat::Log)
+        Ok(DocumentKind::Text(DocumentFormat::Log))
+    } else if extension.eq_ignore_ascii_case("xlsx") {
+        Ok(DocumentKind::Xlsx)
     } else {
         Err(DocumentEngineError::UnsupportedFormat)
     }
@@ -1487,6 +1723,8 @@ pub(crate) enum DocumentEngineError {
     Scan(ScanSessionError),
     Viewport(ViewportError),
     Projection(FieldProjectionError),
+    Xlsx(XlsxError),
+    FindUnavailable,
 }
 
 impl From<BudgetError> for DocumentEngineError {
@@ -1523,7 +1761,7 @@ impl fmt::Display for DocumentEngineError {
                 formatter.write_str("the file volume could not be validated as local")
             }
             Self::UnsupportedFormat => formatter
-                .write_str("unsupported file type; use CSV, TSV, JSONL, NDJSON, LOG, or TXT"),
+                .write_str("unsupported file type; use CSV, TSV, JSONL, NDJSON, LOG, TXT, or XLSX"),
             Self::NotRegularFile => formatter.write_str("the selected path is not a regular file"),
             Self::ReparsePointUnsupported => {
                 formatter.write_str("reparse-point and symbolic-link files are not supported")
@@ -1552,6 +1790,10 @@ impl fmt::Display for DocumentEngineError {
             Self::Scan(error) => write!(formatter, "document scan failed: {error}"),
             Self::Viewport(error) => write!(formatter, "document viewport failed: {error}"),
             Self::Projection(error) => write!(formatter, "row projection failed: {error}"),
+            Self::Xlsx(error) => write!(formatter, "workbook: {error}"),
+            Self::FindUnavailable => {
+                formatter.write_str("Find is not available for .xlsx workbooks yet")
+            }
         }
     }
 }
@@ -1564,6 +1806,7 @@ impl std::error::Error for DocumentEngineError {
             Self::Scan(error) => Some(error),
             Self::Viewport(error) => Some(error),
             Self::Projection(error) => Some(error),
+            Self::Xlsx(error) => Some(error),
             _ => None,
         }
     }
@@ -1579,9 +1822,9 @@ mod tests {
     use leanrows_core::{CancellationToken, DocumentFormat};
 
     use super::{
-        DocumentEngine, DocumentEngineError, DocumentScanStatus, MAX_PREVIEW_UTF16_UNITS,
-        UiColumnKind, UiRowSnapshot, infer_format, validate_local_regular_path,
-        validate_path_syntax,
+        DocumentEngine, DocumentEngineError, DocumentKind, DocumentScanStatus,
+        MAX_PREVIEW_UTF16_UNITS, UiColumnKind, UiRowSnapshot, infer_format,
+        validate_local_regular_path, validate_path_syntax,
     };
 
     static FIXTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1672,7 +1915,20 @@ mod tests {
             ("rows.TXT", DocumentFormat::Log),
         ];
         for (path, expected) in cases {
-            assert_eq!(infer_format(Path::new(path)).ok(), Some(expected));
+            assert_eq!(
+                infer_format(Path::new(path)).ok(),
+                Some(DocumentKind::Text(expected))
+            );
+        }
+        assert_eq!(
+            infer_format(Path::new("book.XLSX")).ok(),
+            Some(DocumentKind::Xlsx)
+        );
+        for unsupported in ["book.xlsm", "book.xlsb", "book.xls"] {
+            assert!(matches!(
+                infer_format(Path::new(unsupported)),
+                Err(DocumentEngineError::UnsupportedFormat)
+            ));
         }
         assert!(matches!(
             infer_format(Path::new("rows.parquet")),
@@ -1692,7 +1948,7 @@ mod tests {
             b"name,notes\nalpha,\"line1\nline2\"\nbeta,\"say \"\"hi\"\"\"\n",
         )?;
         let (engine, first) = open(&fixture)?;
-        assert_eq!(engine.format(), DocumentFormat::Csv);
+        assert_eq!(engine.format(), DocumentKind::Text(DocumentFormat::Csv));
         assert_eq!(engine.progress().scanned_bytes(), 0);
         assert_eq!(engine.progress().row_count(), 0);
         assert_eq!(first.len(), 3);
@@ -1714,7 +1970,7 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let tsv = TempFixture::file("tsv", b"a\tb\n")?;
         let (engine, first) = open(&tsv)?;
-        assert_eq!(engine.format(), DocumentFormat::Tsv);
+        assert_eq!(engine.format(), DocumentKind::Text(DocumentFormat::Tsv));
         assert_eq!(first.columns().kind(), UiColumnKind::Fields);
         assert_eq!(first.columns().data_columns(), 2);
         assert_eq!(cell_text(&first, 0, 1)?, "a");
@@ -1729,7 +1985,7 @@ mod tests {
         for (extension, bytes, expected_format, expected_preview) in cases {
             let fixture = TempFixture::file(extension, bytes)?;
             let (engine, first) = open(&fixture)?;
-            assert_eq!(engine.format(), expected_format);
+            assert_eq!(engine.format(), DocumentKind::Text(expected_format));
             assert_eq!(first.columns().kind(), UiColumnKind::Preview);
             assert_eq!(first.columns().data_columns(), 1);
             assert_eq!(cell_text(&first, 0, 1)?, expected_preview);
@@ -1922,6 +2178,100 @@ mod tests {
         assert!(matches!(
             DocumentEngine::open(unsupported.path(), &token, token.snapshot()),
             Err(DocumentEngineError::UnsupportedFormat)
+        ));
+        Ok(())
+    }
+
+    fn xlsx_fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/xlsx")
+            .join(name)
+    }
+
+    fn open_xlsx(
+        name: &str,
+        sheet: Option<usize>,
+    ) -> Result<(DocumentEngine, UiRowSnapshot), DocumentEngineError> {
+        let token = CancellationToken::new();
+        DocumentEngine::open_sheet(&xlsx_fixture(name), sheet, &token, token.snapshot())
+            .map(super::OpenedDocument::into_parts)
+    }
+
+    #[test]
+    fn xlsx_opens_the_first_visible_sheet_as_lettered_cells()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (mut engine, first) = open_xlsx("openpyxl-features.xlsx", None)?;
+        assert_eq!(engine.format(), DocumentKind::Xlsx);
+        let (choices, current) = engine.sheets().ok_or("no sheet list")?;
+        let names: Vec<&str> = choices.iter().map(|choice| choice.name.as_str()).collect();
+        assert_eq!(names, ["Types", "Sparse", "Second visible"]);
+        assert_eq!(current, 1);
+        assert_eq!(first.columns().kind(), UiColumnKind::Cells);
+        assert_eq!(first.columns().data_columns(), 2);
+        assert_eq!(first.len(), 26);
+        assert!(first.reached_eof());
+        assert_eq!(cell_text(&first, 0, 0)?, "1");
+        assert_eq!(cell_text(&first, 0, 1)?, "kind");
+        assert_eq!(cell_text(&first, 7, 2)?, "2024-02-29");
+        assert_eq!(cell_text(&first, 16, 2)?, r"line1\nline2\ttab  two spaces ");
+
+        let token = CancellationToken::new();
+        loop {
+            let step = engine.scan_step(&token, token.snapshot())?;
+            assert!(step.processed_bytes() <= super::MAX_SCAN_STEP_BYTES + 16 * 1_024);
+            if step.status() == DocumentScanStatus::Complete {
+                break;
+            }
+        }
+        let progress = engine.progress();
+        assert_eq!(progress.row_count(), 26);
+        assert!(progress.is_complete());
+        assert_eq!(progress.scanned_bytes(), progress.source_bytes());
+        Ok(())
+    }
+
+    #[test]
+    fn xlsx_sheets_are_chosen_by_workbook_index_and_hidden_ones_are_refused()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (engine, first) = open_xlsx("openpyxl-features.xlsx", Some(3))?;
+        assert_eq!(engine.sheets().map(|(_, current)| current), Some(3));
+        assert_eq!(cell_text(&first, 0, 1)?, "second visible sheet");
+        for hidden in [0, 4, 9] {
+            assert!(matches!(
+                open_xlsx("openpyxl-features.xlsx", Some(hidden)),
+                Err(DocumentEngineError::Xlsx(
+                    leanrows_core::XlsxError::SheetOutOfRange
+                ))
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn xlsx_find_is_refused_and_hostile_workbooks_fail_closed()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (engine, _) = open_xlsx("libreoffice-document-smoke.xlsx", None)?;
+        assert!(matches!(
+            engine.query_plan(),
+            Err(DocumentEngineError::FindUnavailable)
+        ));
+        assert!(matches!(
+            open_xlsx("hostile-bomb-ratio.xlsx", None),
+            Err(DocumentEngineError::Xlsx(
+                leanrows_core::XlsxError::CompressionRatio { .. }
+            ))
+        ));
+        assert!(matches!(
+            open_xlsx("hostile-truncated.xlsx", None),
+            Err(DocumentEngineError::Xlsx(
+                leanrows_core::XlsxError::Truncated
+            ))
+        ));
+        assert!(matches!(
+            open_xlsx("hostile-doctype-xxe.xlsx", None),
+            Err(DocumentEngineError::Xlsx(
+                leanrows_core::XlsxError::Doctype { .. }
+            ))
         ));
         Ok(())
     }

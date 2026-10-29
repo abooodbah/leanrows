@@ -76,11 +76,22 @@ Format selection is based on the extension:
 | `.tsv` | Tab-delimited CSV state machine | Bounded projected fields |
 | `.jsonl`, `.ndjson` | Physical-line scanner | Inert line preview |
 | `.log`, `.txt` | Physical-line scanner | Inert line preview |
+| `.xlsx` | ZIP entry inflater and XML row reader | Stored cell values under column letters |
 
 The delimited scanner recognizes a quote only at field start, treats `""` as
 an escaped quote, and permits CR, LF, or CRLF inside a quoted field. Scanner
 state crosses read-block boundaries, so an embedded newline does not become a
 new row merely because it occurs in another block.
+
+An `.xlsx` workbook is read through its ZIP central directory. The shown
+worksheet is decompressed through a fixed 32 KiB window and tokenized as it
+streams; the worksheet XML is never held in memory. The scan keeps at most 32
+resume checkpoints, and a viewport resumes from the nearest one. The
+shared-string table is kept in memory within a 256 MiB text limit. Formulas
+are not evaluated and external relationships are not followed. The cell-text
+rules and limits are in [XLSX cell text](XLSX.md), and the decision is
+[ADR 0004](adr/0004-read-only-xlsx-workbooks.md). Find is not available for
+workbooks.
 
 JSONL and NDJSON are deliberately line-oriented in 0.2. The viewer does not
 validate every line as JSON, infer a schema, or build a JSON tree. Log and text
@@ -220,6 +231,8 @@ Editing and saving, export, type coercion, global sort, filtering, regular
 expressions, SQL, joins, charts, statistics, arbitrary JSON documents, remote
 sources, tail/follow, archives, compression, multiple-file merge, plug-ins,
 scripts, AI features, and non-Windows releases are outside the 0.2 boundary.
+The `.xlsx` reader opens one kind of ZIP package with stated limits; it does
+not make LeanRows a general archive viewer.
 
 See [Acceptance and assurance](ACCEPTANCE.md) for release qualification and
 [architecture decisions](adr/README.md) for the rationale behind the main
