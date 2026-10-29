@@ -18,6 +18,7 @@ mod snapshot;
 mod source;
 mod types;
 mod viewport;
+mod xlsx;
 
 pub use budget::{BudgetError, EngineLimits, ManagedMemoryBudget};
 pub use cancel::{CancellationGeneration, CancellationToken};
@@ -45,3 +46,8 @@ pub use snapshot::{SourceChange, SourceFingerprint, SourceIdentity, SourceRevisi
 pub use source::{FileSource, PositionedRead};
 pub use types::{Checkpoint, RecordSpan, SpanError};
 pub use viewport::{RecordPreview, Viewport, ViewportError, ViewportFormat, read_viewport};
+pub use xlsx::{
+    XLSX_MAX_COLUMNS, XLSX_MAX_ROWS, XlsxCell, XlsxError, XlsxLimits, XlsxRow, XlsxRowLimits,
+    XlsxRows, XlsxScanProgress, XlsxScanStatus, XlsxScanStep, XlsxSheet, XlsxSheetScan,
+    XlsxSheetVisibility, XlsxWorkbook,
+};
