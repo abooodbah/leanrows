@@ -7,7 +7,7 @@ Paste each field into Partner Center > your app > Submission > Store listings > 
 - Product name (reserve this exact name): LeanRows
 - Publisher display name: Lean Apps Studio
 - Short title (50 characters or fewer): LeanRows: large CSV viewer
-- Version in this pack: 0.3.0 (package version 0.3.0.0)
+- Version in this pack: 0.2.0 (package version 0.2.0.0)
 - File types it opens: CSV, TSV, JSON Lines, NDJSON, and log files (.csv, .tsv, .jsonl, .ndjson, .log)
 
 ## Short description

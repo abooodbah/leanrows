@@ -46,13 +46,13 @@ What is here:
 ## 4. Build the package
 
 1. Open https://github.com/abooodbah/leanrows/actions/workflows/store-msix.yml and select **Run workflow**.
-   Leave the tag empty to package the current release (v0.3.0), or
-   enter another release tag such as `v0.3.0`.
+   Leave the tag empty to package the current release (v0.2.0), or
+   enter another release tag such as `v0.2.0`.
 2. When the run finishes, check that its summary has no warning about
    placeholder identity values. If it has one, the variables in step 3 are
    missing or misspelled.
-3. Download the artifact `LeanRows-v0.3.0-store-msix` and unzip it.
-   Upload `LeanRows-v0.3.0-x64.msix`. Do not upload anything from a
+3. Download the artifact `LeanRows-v0.2.0-store-msix` and unzip it.
+   Upload `LeanRows-v0.2.0-x64.msix`. Do not upload anything from a
    `test-signing` folder; the workflow does not publish those.
 
 Later releases: pushing a `v*` tag runs the same workflow, which waits for the
