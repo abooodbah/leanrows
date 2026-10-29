@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LeanRows social preview</title>
+<!-- Rendered to site/assets/social-preview.png (1280x640). See README.md in
+     this folder. The product image is the real 20 million row capture in
+     docs/images/leanrows-20m-rows.png. -->
+<style>
+  @font-face { font-family: "IBM Plex Sans"; src: url("fonts/ibm-plex-sans-latin-500-normal.woff2"); font-weight: 500; }
+  @font-face { font-family: "IBM Plex Sans"; src: url("fonts/ibm-plex-sans-latin-600-normal.woff2"); font-weight: 600; }
+  @font-face { font-family: "IBM Plex Serif"; src: url("fonts/ibm-plex-serif-latin-600-normal.woff2"); font-weight: 600; }
+  html, body { margin: 0; }
+  body { width: 1280px; height: 640px; overflow: hidden; background: #faf9f7; color: #1a1917;
+         font-family: "IBM Plex Sans", "Segoe UI", sans-serif; position: relative; }
+  .brand { position: absolute; left: 72px; top: 64px; display: flex; align-items: center; gap: 14px;
+           font-size: 22px; font-weight: 600; }
+  .brand img { width: 48px; height: 48px; }
+  .eyebrow { position: absolute; left: 72px; top: 166px; color: #1d4ed8; font-size: 15px; font-weight: 600;
+             letter-spacing: 0.06em; text-transform: uppercase; }
+  h1 { position: absolute; left: 72px; top: 196px; width: 430px; margin: 0; font-family: "IBM Plex Serif", Georgia, serif;
+       font-weight: 600; font-size: 52px; line-height: 1.06; letter-spacing: -0.02em; }
+  .lead { position: absolute; left: 72px; top: 410px; width: 390px; margin: 0; color: #5a554c; font-size: 20px;
+          line-height: 1.45; font-weight: 500; }
+  .meta { position: absolute; left: 72px; top: 544px; color: #403d37; font-size: 15px; font-weight: 500; }
+  .rule { position: absolute; left: 72px; right: 72px; top: 595px; border-top: 1px solid #e8e4dc; }
+  .url { position: absolute; right: 72px; top: 606px; color: #403d37; font-size: 15px; font-weight: 500; }
+  .frame { position: absolute; left: 540px; top: 136px; width: 700px; height: 420px; border: 1px solid #e8e4dc; }
+  .shot { position: absolute; left: 500px; top: 104px; width: 708px; border: 1px solid #403d37; border-radius: 8px;
+          box-shadow: 0 24px 56px rgba(14, 13, 11, 0.18); background: #0e0d0b; }
+</style>
+</head>
+<body>
+  <div class="brand"><img src="../../../site/assets/leanrows-icon.svg" alt=""><span>LeanRows</span></div>
+  <div class="eyebrow">Large CSV viewer · Windows x64</div>
+  <h1>Open huge CSV files without loading them.</h1>
+  <p class="lead">20 million rows and 1.5 GB, fully indexed with an 18.4 MB peak working set.</p>
+  <div class="meta">One 618 KB exe · Read only · MIT licensed</div>
+  <div class="frame"></div>
+  <img class="shot" src="../leanrows-20m-rows.png" alt="">
+  <div class="rule"></div>
+  <div class="url">github.com/abooodbah/leanrows</div>
+</body>
+</html>

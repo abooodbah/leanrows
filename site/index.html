@@ -8,29 +8,33 @@
     <meta name="theme-color" content="#0e0d0b" media="(prefers-color-scheme: dark)">
     <meta
       name="description"
-      content="LeanRows is a native, read-only Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files."
+      content="Open CSV files too big for Excel. LeanRows indexed a 1.5 GB CSV with 20 million rows using 18.4 MB of RAM. Also TSV, JSONL, NDJSON and logs. Read-only, MIT."
     >
     <meta property="og:type" content="website">
-    <meta property="og:title" content="LeanRows — large row files, kept lean">
+    <meta property="og:title" content="LeanRows: free large CSV and log file viewer for Windows">
     <meta
       property="og:description"
-      content="A bounded, offline, native Windows viewer for row-oriented files."
+      content="Open CSV files too big for Excel. LeanRows indexed a 1.5 GB CSV with 20 million rows using 18.4 MB of RAM. Also TSV, JSONL, NDJSON and logs. Read-only, MIT."
     >
     <meta property="og:url" content="https://abooodbah.github.io/leanrows/">
-    <meta property="og:image" content="https://abooodbah.github.io/leanrows/assets/leanrows-icon.png">
+    <meta property="og:image" content="https://abooodbah.github.io/leanrows/assets/social-preview.png">
     <meta property="og:image:type" content="image/png">
-    <meta property="og:image:width" content="512">
-    <meta property="og:image:height" content="512">
-    <meta property="og:image:alt" content="The LeanRows app icon">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
+    <meta property="og:image:alt" content="LeanRows, a large CSV viewer for Windows, with a 20 million row CSV open. 1.5 GB, 18.4 MB peak working set.">
+    <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="https://abooodbah.github.io/leanrows/">
     <link rel="icon" href="assets/leanrows-icon.svg" type="image/svg+xml">
+    <link rel="icon" href="assets/leanrows-icon.png" type="image/png">
     <link rel="stylesheet" href="styles.css">
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "LeanRows",
-        "description": "A bounded, offline, native Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files.",
+        "description": "A free, read-only Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files, including CSV files too big for Excel.",
+        "url": "https://abooodbah.github.io/leanrows/",
+        "codeRepository": "https://github.com/abooodbah/leanrows",
         "applicationCategory": "UtilitiesApplication",
         "operatingSystem": "Windows 10 and Windows 11 (x64)",
         "softwareVersion": "0.2.0",
@@ -47,7 +51,7 @@
         }
       }
     </script>
-    <title>LeanRows — large row files, kept lean</title>
+    <title>LeanRows: free large CSV and log file viewer for Windows</title>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
@@ -59,9 +63,11 @@
           <span>LeanRows</span>
         </a>
         <nav aria-label="Primary navigation">
+          <a class="nav-section" href="#measured">Measured</a>
           <a class="nav-section" href="#how-it-works">How it works</a>
           <a class="nav-section" href="#boundaries">Boundaries</a>
           <a class="nav-section" href="#evidence">Evidence</a>
+          <a class="nav-section" href="#faq">FAQ</a>
           <a href="https://github.com/abooodbah/leanrows">Source</a>
         </nav>
       </div>
@@ -71,15 +77,16 @@
       <section class="hero" id="top" aria-labelledby="hero-title">
         <div class="shell hero-grid">
           <div class="hero-copy">
-            <p class="eyebrow">Native Windows x64 · Read only</p>
+            <p class="eyebrow">Large CSV viewer · Windows x64 · Read only</p>
             <h1 id="hero-title">
-              <span class="hero-line">Large row files,</span>
-              <em class="hero-line">kept lean.</em>
+              <span class="hero-line">Open huge CSV files on Windows</span>
+              <em class="hero-line">without loading them into memory.</em>
             </h1>
+            <p class="hero-slogan">Large row files, kept lean.</p>
             <p class="hero-lead">
-              LeanRows opens the rows you need without turning the entire file into an
-              in-memory workbook. It is a focused desktop viewer for CSV, TSV, JSONL,
-              NDJSON, log, and text files.
+              LeanRows opens CSV files too big for Excel and shows the rows you need
+              without turning the entire file into an in-memory workbook. It is a
+              focused desktop viewer for CSV, TSV, JSONL, NDJSON, log, and text files.
             </p>
             <p class="hero-detail">
               Search literal values inline, jump to an absolute row, and copy bounded
@@ -130,6 +137,47 @@
             <figcaption id="row-window-title">
               Only a bounded row window is decoded for display. This is an explanatory
               diagram, not an application screenshot.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section capture-section" id="measured" aria-labelledby="measured-title">
+        <div class="shell">
+          <div class="capture-heading">
+            <div>
+              <p class="eyebrow">Measured on a real file</p>
+              <h2 id="measured-title">20 million rows in 18.4 MB of memory.</h2>
+            </div>
+            <p>
+              LeanRows opened a generated CSV of 20,000,001 rows and 1,532,454,643
+              bytes (1.5 GB), indexed all of it, and reached a peak working set of
+              18.4 MB. Excel shows at most 1,048,576 rows. The
+              <a href="https://github.com/abooodbah/leanrows/blob/main/docs/releases/v0.2.0.md">0.2.0 release notes</a>
+              record two more runs on a 20,000,001-row, 1,586,666,734-byte CSV
+              indexed to completion: peak working set 18.15 to 18.18 MiB. These are
+              observations on the developer's Windows PC; its hardware is not
+              recorded.
+            </p>
+          </div>
+
+          <figure class="app-capture">
+            <a
+              class="app-capture-link"
+              href="assets/leanrows-20m-rows.webp"
+              aria-label="Open the full-size capture of LeanRows with the 20 million row CSV"
+            >
+              <img
+                src="assets/leanrows-20m-rows.webp"
+                width="1400"
+                height="792"
+                decoding="async"
+                alt="LeanRows in Dark appearance with demo_events_20M.csv open, showing the first rows of an event log, with the status bar reading Ready, 20000001 rows, 1532454643 of 1532454643 bytes, 100 percent"
+              >
+            </a>
+            <figcaption>
+              <strong>Real application capture.</strong>
+              <span>20,000,001 rows &middot; 1,532,454,643 bytes &middot; fully indexed &middot; generated demo data</span>
             </figcaption>
           </figure>
         </div>
@@ -291,7 +339,9 @@
             </div>
           </dl>
           <p class="limits-note">
-            These are code-level capacities, not benchmark claims. Fields, previews,
+            These four values are code-level capacities, not measurements; the
+            measured 20 million row run is at the
+            <a href="#measured">top of this page</a>. Fields, previews,
             queues, and operation scratch space are also bounded so a large source does
             not authorize a proportional allocation.
           </p>
@@ -375,6 +425,69 @@
         </div>
       </section>
 
+      <section class="section faq-section" id="faq" aria-labelledby="faq-title">
+        <div class="shell">
+          <p class="eyebrow">Questions</p>
+          <h2 id="faq-title">Opening large CSV files on Windows</h2>
+          <div class="faq-list">
+            <div class="faq-item">
+              <h3>How do I open a CSV file that is too large for Excel?</h3>
+              <p>Excel shows at most 1,048,576 rows. LeanRows reads the file in blocks and keeps only the visible rows in memory, so the row count is not limited by RAM. On the developer's PC it fully indexed a 1.5 GB, 20 million row CSV with an 18.4 MB peak working set.</p>
+            </div>
+            <div class="faq-item">
+              <h3>Is LeanRows free?</h3>
+              <p>Yes. It is MIT licensed and free on GitHub, the <a href="https://apps.microsoft.com/detail/9NMV8GKJXSN0">Microsoft Store</a>, and Scoop.</p>
+            </div>
+            <div class="faq-item">
+              <h3>Can it change my file?</h3>
+              <p>No. LeanRows opens the source with a read-only handle and has no write path: no editing, saving, or transformation.</p>
+            </div>
+            <div class="faq-item">
+              <h3>Which formats does it open?</h3>
+              <p>CSV, TSV, JSON Lines (<code>.jsonl</code> and <code>.ndjson</code>), log, and plain text files. CSV and TSV records are quote-aware, including quoted fields that contain newlines.</p>
+            </div>
+            <div class="faq-item">
+              <h3>Do I need to install anything?</h3>
+              <p>No. Extract the portable ZIP and run its single 618 KB executable; it needs no administrator rights, and an optional per-user installer is included. Outside its folder it writes only its appearance setting under <code>HKCU\Software\LeanRows</code> and a search scratch folder under <code>%LOCALAPPDATA%\LeanRows</code>.</p>
+            </div>
+            <div class="faq-item">
+              <h3>Can I search and jump to a row?</h3>
+              <p>Yes. Find text forward and backward, with an optional match case, and go to an absolute row number.</p>
+            </div>
+            <div class="faq-item">
+              <h3>Does it send data anywhere?</h3>
+              <p>No. LeanRows has no telemetry, account, or cloud service, and it makes no network connections.</p>
+            </div>
+            <div class="faq-item">
+              <h3>Is there a Mac or Linux version?</h3>
+              <p>Not today. LeanRows runs on Windows 10 and Windows 11, x64.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section evidence-section" id="family" aria-labelledby="family-title">
+        <div class="shell evidence-grid">
+          <div>
+            <p class="eyebrow">The Lean family</p>
+            <h2 id="family-title">Small viewers for local files.</h2>
+          </div>
+          <div class="evidence-copy">
+            <p>
+              <a href="https://abooodbah.github.io/leanmark/">LeanMark, a Markdown viewer</a>,
+              reads <code>.md</code> files and Mermaid diagrams offline on Windows, Linux,
+              and macOS.
+              <a href="https://abooodbah.github.io/leandoc/">LeanDoc, a Word document viewer</a>,
+              reads <code>.docx</code> files without an office suite on Windows, Linux, and
+              macOS. Like LeanRows, both are read-only and MIT licensed.
+            </p>
+            <a class="text-link" href="https://abooodbah.github.io/">
+              See all Lean apps <span aria-hidden="true">&rarr;</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
       <section class="section evidence-section" id="privacy" aria-labelledby="privacy-title">
         <div class="shell evidence-grid">
           <div>
@@ -417,6 +530,7 @@
           <a href="https://abooodbah.github.io/leandoc/">LeanDoc</a>
           <a href="https://github.com/abooodbah/leanrows/security">Security</a>
           <a href="https://github.com/abooodbah/leanrows/blob/main/LICENSE">MIT License</a>
+          <a href="https://abooodbah.github.io/">All Lean apps</a>
         </nav>
         <p class="footer-meta">
           LeanRows is for viewing large row-based data files without loading

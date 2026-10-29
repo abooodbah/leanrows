@@ -34,9 +34,18 @@ or accessibility testing.
   the workspace version changes.
 - The structured-data version and visible release copy must name the same
   tagged workspace version.
-- The four numeric values on the page are implementation capacity constants,
-  not performance results. Reconcile them with `document_engine.rs` if those
-  limits change.
+- The four numeric values in the limits strip are implementation capacity
+  constants, not performance results. Reconcile them with `document_engine.rs`
+  if those limits change.
+- The measured section near the top quotes the README's 20 million row run
+  (20,000,001 rows, 1,532,454,643 bytes, 18.4 MB peak working set, captured in
+  `docs/images/leanrows-20m-rows.png`, shown as `assets/leanrows-20m-rows.webp`)
+  and the 0.2.0 release notes' two runs (18.15 to 18.18 MiB). Re-measure and
+  update both if memory behavior changes. The test machine's hardware is not
+  recorded; say so rather than guess.
+- `assets/social-preview.png` (1280x640) is rendered from
+  `docs/images/social-preview-source/social-preview.html`; its README gives
+  the command.
 - Runtime measurements must identify the exact executable and stable QA
   receipt. The current local evidence is tied to executable SHA-256
   `D0D24FCA9730BE6C7A0E1385AAB5CB6F08C8D495A595FC32E4066F583BC88A8D`

@@ -1,7 +1,9 @@
-# LeanRows
+# LeanRows: a free large CSV viewer for Windows
 
 **Open a 1.5 GB CSV with 20 million rows using 18 MB of RAM. No installer, no
 runtime, no admin rights.**
+
+[Website](https://abooodbah.github.io/leanrows/) · [Microsoft Store](https://apps.microsoft.com/detail/9NMV8GKJXSN0) · [All Lean apps](https://abooodbah.github.io/)
 
 ![LeanRows with a 20 million row CSV open](docs/images/leanrows-20m-rows.png)
 
@@ -56,10 +58,10 @@ size rather than file size, which is why the figure above stays flat whether the
 source is 15 MB or 1.5 GB.
 
 LeanRows is for viewing large row-based data files without loading everything
-into memory. [LeanMark](https://github.com/abooodbah/leanmark) is for reading
-Markdown documents in a clean, focused interface, and
-[LeanDoc](https://github.com/abooodbah/leandoc) is for reading Word documents
-without opening an office suite. All three are read-only tools designed to make
+into memory. [LeanMark](https://github.com/abooodbah/leanmark), a Markdown
+viewer, is for reading Markdown documents and Mermaid diagrams in a clean,
+focused interface, and [LeanDoc](https://github.com/abooodbah/leandoc), a Word
+document viewer, is for reading `.docx` files without opening an office suite. All three are read-only tools designed to make
 local files easier to inspect without changing them.
 
 ## Why LeanRows
