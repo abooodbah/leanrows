@@ -60,7 +60,14 @@ or accessibility testing.
   It records `Ready | 120 rows | 7600 / 7600 bytes | 100%`; the binary and
   fixtures remained unchanged, the saved Dark preference was restored, and
   the application closed cleanly. Never substitute a fabricated screenshot.
-- Current interface copy must retain the v0.2.0 boundaries: tabs in one window, a responsive top
+- The application capture is still the v0.2.0 capture above, and its copy and
+  alternative text say so. It was taken before `.xlsx` support; replace it only
+  with a new real capture of a released executable.
+- The v0.3.0 working-set figures in the evidence section (21 to 22 MiB peak
+  with `tests/fixtures/xlsx/xlsxwriter-large.xlsx`, about 17 MiB with a small
+  CSV) were measured by the maintainer with the v0.3.0 release executable
+  (755,200 bytes). No QA receipt was recorded for them.
+- Current interface copy must retain the v0.3.0 boundaries: tabs in one window, a responsive top
   bar, inline search, the owner-data grid, System/Light/Dark appearance, System
   resolution from the active Windows app theme, a flat two-DIP progress rule,
   and the Windows high-contrast system-color fallback.
