@@ -297,7 +297,10 @@ for (const host of externalHosts) {
     // A plain link to the Microsoft Store listing. The page loads nothing from it.
     host !== "https://apps.microsoft.com" &&
     host !== "https://github.com" &&
-    host !== "https://abooodbah.github.io"
+    host !== "https://abooodbah.github.io" &&
+    // Plain links for the Android closed test: the testers group and the Play opt-in page.
+    host !== "https://groups.google.com" &&
+    host !== "https://play.google.com"
   ) {
     failures.push(`unexpected external host: ${host}`);
   }

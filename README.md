@@ -44,6 +44,21 @@ scoop bucket add lean https://github.com/abooodbah/scoop-bucket
 scoop install lean/leanrows
 ```
 
+### Android (closed test)
+
+LeanRows for Android is in a closed test on Google Play before its public release.
+To try it:
+
+1. Join the [Lean Apps testers group](https://groups.google.com/g/lean-apps-testers) with the Google account you use
+   on your phone.
+2. On your phone, open the [LeanRows tester page](https://play.google.com/apps/testing/io.github.abooodbah.leanrows), tap
+   **Become a tester**, then install LeanRows from Google Play.
+
+If the tester page says the app is not available yet, Google is still reviewing
+the test; try again a day later. Google asks testers to keep the app installed
+for 14 days. The APK is also attached to each
+[Android release](https://github.com/abooodbah/leanrows-android/releases).
+
 ## Supported formats
 
 CSV, TSV, JSONL, NDJSON, log, plain text, and `.xlsx` workbooks (stored cell
