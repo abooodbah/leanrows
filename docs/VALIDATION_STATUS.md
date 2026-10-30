@@ -1,10 +1,41 @@
 # Validation status
 
-**Status date:** 2026-09-24<br>
-**Scope:** LeanRows 0.2.0 published release, Windows x64;<br>
-local, post-commit, tagged-CI, public-package, installed-binary, and Pages
-verification complete<br>
-**Current public release:** LeanRows 0.2.0
+**Status date:** 2026-10-30<br>
+**Scope:** LeanRows 0.3.0 published release, Windows x64; tagged-CI,
+public-package and maintainer working-set checks. The full local QA receipt
+recorded for 0.2.0 was not repeated for 0.3.0.<br>
+**Current public release:** LeanRows 0.3.0
+
+## Published v0.3.0 verification
+
+LeanRows 0.3.0 adds read-only `.xlsx` workbooks (ADR 0004). It is published on
+[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.3.0).
+
+The release is anchored to commit `eebaca7ab545eb54ab18730364edf9853022bcc2`
+and annotated tag `v0.3.0`. Tagged workflow
+[run 40987263766](https://github.com/abooodbah/leanrows/actions/runs/40987263766)
+passed its quality gates and Windows x64 package job, published the release,
+and deployed the product page. The Store package workflow
+([run 40987263829](https://github.com/abooodbah/leanrows/actions/runs/40987263829))
+built the MSIX from the published ZIP.
+
+| Published evidence field | v0.3.0 result |
+| --- | --- |
+| Release | [LeanRows v0.3.0](https://github.com/abooodbah/leanrows/releases/tag/v0.3.0) contains exactly the unsigned Windows x64 ZIP and its checksum sidecar. |
+| Public package | The sidecar records ZIP SHA-256 `F60BE25952095FA85AEE45ACD0A9F725A23A84A7DE93A675F7C1505E1CF44E53`, and the downloaded 385,800-byte ZIP matched it. |
+| Public executable | The extracted `leanrows.exe` is 755,200 bytes, reports file version `0.3.0.0`, and has SHA-256 `742844F3051CE50FDD160E2FBA5E68A9184DE5C3B4D28DD6478B486DF2553C1A`. |
+| Working set, maintainer's PC | With the release executable, the peak working set was 21 to 22 MiB with `tests/fixtures/xlsx/xlsxwriter-large.xlsx` (120,001 rows) open and about 17 MiB with a small CSV. These were measured by hand; no QA receipt was recorded, and the hardware is not recorded. |
+| Distribution | Scoop and winget were updated by the maintainer. The Store package was in certification on 2026-10-30. |
+
+Not repeated for 0.3.0: the aggregate local QA receipt, the live installer
+cycle, and the installed-association checks. The `.xlsx` reader's own tests,
+mutation results and Linux timings are recorded in pull request #19 and the
+[0.3.0 release notes](releases/v0.3.0.md).
+
+This status update is a post-release documentation change on `main`; it is
+not part of the `v0.3.0` tag.
+
+## Earlier release: v0.2.0
 
 LeanRows 0.2.0 opens every file in one window, each in its own tab, cuts memory
 when several files are open, and fixes white file name, file details, and
@@ -15,7 +46,7 @@ installer checks. That local executable is 618,496 bytes with SHA-256
 The release commit, post-commit rerun, tagged CI rebuild, public package,
 installed executable, and product site have now been verified separately.
 
-LeanRows 0.2.0 is published on
+LeanRows 0.2.0 was published on
 [GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.2.0).
 
 ## v0.2.0 repository state
@@ -228,7 +259,7 @@ endpoints and left no residual process.
 
 ## Explicitly unclaimed extended evidence
 
-The 0.2.0 repository does not claim completion of:
+The 0.3.0 repository does not claim completion of:
 
 - a 24 CPU-hour fuzzing campaign;
 - 100,000 oracle-backed random seeks;
@@ -247,8 +278,9 @@ Current descriptions may state the implemented mechanisms and verified results
 above: progressive viewports, fixed-capacity indexing, bounded previews,
 snapshot integrity, tabs in one window, the responsive native shell, inline
 literal search, the owner-data grid, System/Light/Dark appearance, System
-resolution from the active Windows app theme, high-contrast system colors, and
-the flat native progress rule. Numeric performance, whole-process memory, package identity,
+resolution from the active Windows app theme, high-contrast system colors,
+the flat native progress rule, and read-only `.xlsx` workbooks shown one
+worksheet at a time. Numeric performance, whole-process memory, package identity,
 installer outcomes, network observations, and binary outcomes must remain tied
 to their recorded receipts and exact artifact identities. In particular, the
 local frozen hashes and tagged public hashes describe different artifacts and

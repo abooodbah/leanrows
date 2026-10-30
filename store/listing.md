@@ -1,14 +1,14 @@
 # LeanRows Microsoft Store listing
 
-Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24.
+Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes.
 
 ## Product
 
 - Product name (reserve this exact name): LeanRows
 - Publisher display name: Lean Apps Studio
 - Short title (50 characters or fewer): LeanRows: large CSV viewer
-- Version in this pack: 0.2.0 (package version 0.2.0.0)
-- File types it opens: CSV, TSV, JSON Lines, NDJSON, and log files (.csv, .tsv, .jsonl, .ndjson, .log)
+- Version in this pack: 0.3.0 (package version 0.3.0.0)
+- File types it opens: CSV, TSV, JSON Lines, NDJSON, and log files (.csv, .tsv, .jsonl, .ndjson, .log). Excel workbooks (.xlsx) open from inside the app; the package does not register .xlsx.
 
 ## Short description
 
@@ -21,6 +21,8 @@ Open very large CSV, TSV, JSON Lines, and log files without loading them into me
 LeanRows is a read-only viewer for large row-based files: CSV, TSV, JSON Lines, NDJSON, and log files.
 
 It reads the file in blocks as you move through it and keeps only the visible rows in memory, so memory use depends on the window, not the file size. On the test machine, a 1.5 GB CSV with 20 million rows was fully indexed with a peak working set of 18.4 MB. The first rows appear before indexing reaches the end of the file.
+
+Excel workbooks (.xlsx) open read-only, one worksheet at a time. LeanRows shows the values the workbook stores, with columns titled A, B, C. Formulas are not calculated, and macros and external links are never run or followed.
 
 You can search for literal text, jump to a row number, and copy selected rows. Each file opens in its own tab in one window. CSV and TSV records are read correctly even when quoted fields contain line breaks. Bytes that are not valid text are shown escaped, and very long values are marked as shortened instead of being changed silently.
 
@@ -35,6 +37,7 @@ LeanRows is free and open source under the MIT License.
 - First rows appear while the rest of the file is still being indexed
 - Quote-aware CSV and TSV, including line breaks inside quoted fields
 - JSON Lines, NDJSON, log, and text files shown one line per row
+- Excel .xlsx workbooks: the stored values, one worksheet at a time
 - Find text, forward and backward, with an optional case-insensitive mode
 - Go to any row number
 - Copy selected rows as tab-separated text
@@ -61,7 +64,7 @@ LeanRows is free and open source under the MIT License.
 
 ## What's new in this version
 
-Files now open as tabs in one window, several open files use much less memory, and white blocks in the dark top bar are fixed.
+LeanRows now opens Excel .xlsx workbooks, read-only, one worksheet at a time. Find does not work in workbooks yet.
 
 ## Copyright and trademark info
 
