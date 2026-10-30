@@ -1,7 +1,8 @@
 # ADR 0004: Read-only XLSX workbooks
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-29
+- **Accepted:** 2026-10-30, with release 0.3.0
 
 ## Context
 

@@ -8,13 +8,13 @@
     <meta name="theme-color" content="#0e0d0b" media="(prefers-color-scheme: dark)">
     <meta
       name="description"
-      content="Open CSV files too big for Excel. LeanRows indexed a 1.5 GB CSV with 20 million rows using 18.4 MB of RAM. Also TSV, JSONL, NDJSON and logs. Read-only, MIT."
+      content="Open CSV files too big for Excel. LeanRows indexed a 1.5 GB CSV with 20 million rows using 18.4 MB of RAM. Also TSV, JSONL, NDJSON, logs and Excel .xlsx. Read-only, MIT."
     >
     <meta property="og:type" content="website">
     <meta property="og:title" content="LeanRows: free large CSV and log file viewer for Windows">
     <meta
       property="og:description"
-      content="Open CSV files too big for Excel. LeanRows indexed a 1.5 GB CSV with 20 million rows using 18.4 MB of RAM. Also TSV, JSONL, NDJSON and logs. Read-only, MIT."
+      content="Open CSV files too big for Excel. LeanRows indexed a 1.5 GB CSV with 20 million rows using 18.4 MB of RAM. Also TSV, JSONL, NDJSON, logs and Excel .xlsx. Read-only, MIT."
     >
     <meta property="og:url" content="https://abooodbah.github.io/leanrows/">
     <meta property="og:image" content="https://abooodbah.github.io/leanrows/assets/social-preview.png">
@@ -32,12 +32,12 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "LeanRows",
-        "description": "A free, read-only Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files, including CSV files too big for Excel.",
+        "description": "A free, read-only Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files and Excel .xlsx workbooks, including CSV files too big for Excel.",
         "url": "https://abooodbah.github.io/leanrows/",
         "codeRepository": "https://github.com/abooodbah/leanrows",
         "applicationCategory": "UtilitiesApplication",
         "operatingSystem": "Windows 10 and Windows 11 (x64)",
-        "softwareVersion": "0.2.0",
+        "softwareVersion": "0.3.0",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -86,7 +86,9 @@
             <p class="hero-lead">
               LeanRows opens CSV files too big for Excel and shows the rows you need
               without turning the entire file into an in-memory workbook. It is a
-              focused desktop viewer for CSV, TSV, JSONL, NDJSON, log, and text files.
+              focused desktop viewer for CSV, TSV, JSONL, NDJSON, log, and text files,
+              and it shows the stored values of Excel <code>.xlsx</code> workbooks, one
+              worksheet at a time.
             </p>
             <p class="hero-detail">
               Search literal values inline, jump to an absolute row, and copy bounded
@@ -102,7 +104,7 @@
                 <span aria-hidden="true">→</span>
               </a>
               <p id="release-note">
-                v0.2.0 is an unsigned Windows x64 ZIP. Verify the accompanying
+                v0.3.0 is an unsigned Windows x64 ZIP. Verify the accompanying
                 <code>.sha256</code> file before running it.
                 LeanRows is also in the
                 <a href="https://apps.microsoft.com/detail/9NMV8GKJXSN0">Microsoft Store</a>, signed by Microsoft.
@@ -200,13 +202,16 @@
               <h2 id="capture-title">Full rows. A calmer frame.</h2>
             </div>
             <p>
-              LeanRows v0.2.0 keeps the virtual owner-data grid below a responsive
+              LeanRows v0.3.0 keeps the virtual owner-data grid below a responsive
               top bar with file context, inline search, and direct actions. Files open
               as tabs in one window, and a later launch hands its file to the window
               that is already running. System follows the active Windows app theme,
               while the appearance button cycles through System, Light, and Dark.
               Indexing progress uses a flat two-DIP accent rule, and
-              Windows high contrast uses system colors. The image below is an exact
+              Windows high contrast uses system colors. An <code>.xlsx</code> workbook
+              opens its first visible worksheet, with columns titled A, B, C; Next sheet
+              and Previous sheet in the overflow menu switch between worksheets. The
+              image below, taken before workbooks were added, is an exact
               1180&times;720 capture of the frozen v0.2.0 release
               executable in Light appearance. It uses only synthetic data from
               <code>operations-sample.csv</code>, with a second synthetic file open in
@@ -363,7 +368,7 @@
             <li><span>02</span><p><strong>Local regular files only.</strong> UNC, remote, device, and reparse-point sources are rejected.</p></li>
             <li><span>03</span><p><strong>Snapshot integrity.</strong> Source identity and revision evidence are checked while work proceeds.</p></li>
             <li><span>04</span><p><strong>Visible damage.</strong> Invalid bytes are escaped and oversized display values are marked as truncated.</p></li>
-            <li><span>05</span><p><strong>No write path.</strong> Editing, saving, transformation, macros, plug-ins, and scripts are outside v0.2.</p></li>
+            <li><span>05</span><p><strong>No write path.</strong> Editing, saving, transformation, formula evaluation, macros, plug-ins, and scripts are outside v0.3.</p></li>
           </ul>
         </div>
       </section>
@@ -389,6 +394,13 @@
               and published assets; the local receipt is not a substitute for that
               tagged proof.
             </p>
+            <p>
+              v0.3.0 passed the same tagged workflow; the full local QA run was not
+              repeated for it. On the developer's PC, whose hardware is not recorded,
+              the v0.3.0 release executable reached a peak working set of 21 to 22 MiB
+              with a 120,001-row <code>.xlsx</code> workbook open, and about 17 MiB with
+              a small CSV file.
+            </p>
             <a class="text-link" href="https://github.com/abooodbah/leanrows/tree/main/tests/qa">
               Inspect the QA harnesses <span aria-hidden="true">↗</span>
             </a>
@@ -399,7 +411,7 @@
       <section class="release-note-section" aria-labelledby="release-warning-title">
         <div class="shell release-note-grid">
           <div>
-            <p class="eyebrow">Before installing v0.2.0</p>
+            <p class="eyebrow">Before installing v0.3.0</p>
             <h2 id="release-warning-title">The Windows build is intentionally unsigned.</h2>
           </div>
           <div>
@@ -408,7 +420,7 @@
               matching SHA-256 sidecar from the same GitHub Release, then compare the
               published value before running or installing LeanRows.
             </p>
-            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.2.0-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
+            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.3.0-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
             <p>
               To avoid the warning, install LeanRows from the
               <a href="https://apps.microsoft.com/detail/9NMV8GKJXSN0">Microsoft Store</a>
@@ -444,7 +456,7 @@
             </div>
             <div class="faq-item">
               <h3>Which formats does it open?</h3>
-              <p>CSV, TSV, JSON Lines (<code>.jsonl</code> and <code>.ndjson</code>), log, and plain text files. CSV and TSV records are quote-aware, including quoted fields that contain newlines.</p>
+              <p>CSV, TSV, JSON Lines (<code>.jsonl</code> and <code>.ndjson</code>), log, and plain text files, and Excel <code>.xlsx</code> workbooks. CSV and TSV records are quote-aware, including quoted fields that contain newlines. For a workbook it shows the values the file stores, one worksheet at a time; formulas are not calculated, and <code>.xls</code>, <code>.xlsm</code> and <code>.xlsb</code> are not opened.</p>
             </div>
             <div class="faq-item">
               <h3>Do I need to install anything?</h3>

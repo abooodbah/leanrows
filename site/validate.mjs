@@ -53,13 +53,23 @@ requireMatch(html, /src="assets\/leanrows-20m-rows\.webp"/, "the 20 million row 
 requireMatch(html, /<section class="section faq-section" id="faq"/, "the visible FAQ section is required");
 requireMatch(html, /href="https:\/\/abooodbah\.github\.io\/leandoc\/"/i, "the page must link the LeanDoc site");
 requireMatch(html, /href="https:\/\/abooodbah\.github\.io\/"/, "the page must link the Lean Apps hub");
+requireMatch(
+  html,
+  /<meta\s+name="description"[^>]*Excel \.xlsx/i,
+  "the page description must say that LeanRows opens Excel .xlsx workbooks",
+);
+requireMatch(
+  html,
+  /Which formats does it open\?<\/h3>\s*<p>[^<]*(?:<code>[^<]*<\/code>[^<]*)*Excel <code>\.xlsx<\/code> workbooks/i,
+  "the formats answer must list Excel .xlsx workbooks",
+);
 requireMatch(html, /<figure\s+class="app-capture">/i, "a real application-capture figure is required");
 requireMatch(html, /src="assets\/leanrows-app\.png"/i, "the real application capture must be rendered");
 requireMatch(html, /synthetic data/i, "the application capture must be identified as synthetic data");
 requireMatch(
   html,
-  /LeanRows v0\.2\.0 keeps the virtual owner-data grid/i,
-  "the current interface description must identify v0.2.0 and its owner-data grid",
+  /LeanRows v0\.3\.0 keeps the virtual owner-data grid/i,
+  "the current interface description must identify v0.3.0 and its owner-data grid",
 );
 requireMatch(
   html,
@@ -184,7 +194,7 @@ if (structuredDataMatch) {
     if (structuredData["@type"] !== "SoftwareApplication") {
       failures.push("JSON-LD must describe a SoftwareApplication");
     }
-    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.2.0") {
+    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.3.0") {
       failures.push("JSON-LD name and release version must match the product");
     }
     if (structuredData.downloadUrl !== "https://github.com/abooodbah/leanrows/releases/latest") {
