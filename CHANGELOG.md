@@ -6,6 +6,8 @@ All notable changes to LeanRows are recorded in this file. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-29
+
 ### Added
 
 - Read-only `.xlsx` workbooks. LeanRows shows the stored cell values of one
@@ -159,6 +161,7 @@ All notable changes to LeanRows are recorded in this file. The format follows
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.3.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.3.0
 [0.2.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.2.0
 [0.1.3]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.3
 [0.1.2]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.2

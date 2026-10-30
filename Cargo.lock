@@ -10,28 +10,28 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "leanrows-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "leanrows-win32",
 ]
 
 [[package]]
 name = "leanrows-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "miniz_oxide",
 ]
 
 [[package]]
 name = "leanrows-spike"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "leanrows-core",
 ]
 
 [[package]]
 name = "leanrows-win32"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "leanrows-core",
  "windows",
