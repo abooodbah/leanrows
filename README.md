@@ -44,6 +44,26 @@ scoop bucket add lean https://github.com/abooodbah/scoop-bucket
 scoop install lean/leanrows
 ```
 
+### Chocolatey
+
+From an administrator PowerShell:
+
+```powershell
+choco install leanrows -y
+```
+
+The [LeanRows package](https://community.chocolatey.org/packages/leanrows) installs
+the portable Windows ZIP from the GitHub release, checks its SHA-256, and adds a
+Start menu shortcut and a command-line shim. To move an existing Chocolatey
+installation to the newest release:
+
+```powershell
+choco upgrade leanrows -y
+```
+
+A new version reaches Chocolatey once its moderators have approved the package,
+which can take a few days after the GitHub release.
+
 ### Android (closed test)
 
 LeanRows for Android is in a closed test on Google Play before its public release.
@@ -301,6 +321,10 @@ as well:
 Remove-Item -Path 'HKCU:\Software\LeanRows' -Recurse
 Remove-Item -LiteralPath "$env:LOCALAPPDATA\LeanRows" -Recurse
 ```
+
+If you installed LeanRows with Chocolatey, remove it with
+`choco uninstall leanrows` from an administrator shell instead of deleting the
+folder. The two items above stay until you delete them.
 
 If you ran the optional `install.ps1`, uninstall it first, either from
 Installed apps in Windows Settings or with
