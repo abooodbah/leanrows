@@ -297,6 +297,8 @@ for (const host of externalHosts) {
     // A plain link to the Microsoft Store listing. The page loads nothing from it.
     host !== "https://apps.microsoft.com" &&
     host !== "https://github.com" &&
+    // A plain link to the Chocolatey package page. The page loads nothing from it.
+    host !== "https://community.chocolatey.org" &&
     host !== "https://abooodbah.github.io" &&
     // Plain links for the Android closed test: the testers group and the Play opt-in page.
     host !== "https://groups.google.com" &&
