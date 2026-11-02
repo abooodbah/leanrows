@@ -10,7 +10,7 @@ runtime, no admin rights.**
 *20,000,001 rows, 1,532,454,643 bytes, fully indexed. Peak working set: 18.4 MB.*
 
 Excel stops at about 1.05 million rows. Most tools that go further are paid, need
-an installer, or live in a terminal. LeanRows is a single 618 KB executable you
+an installer, or live in a terminal. LeanRows is a single 919 KB executable you
 can copy onto a locked-down work machine and run.
 
 It is strictly read-only, so it cannot alter the file it is inspecting. There is
@@ -124,15 +124,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.3.0-windows-x64-unsigned.zip
-LeanRows-v0.3.0-windows-x64-unsigned.sha256
+LeanRows-v0.4.0-windows-x64-unsigned.zip
+LeanRows-v0.4.0-windows-x64-unsigned.sha256
 ```
 
-LeanRows 0.3 is not Authenticode-signed. Windows may therefore show a security
+LeanRows 0.4 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.3.0-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.4.0-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
@@ -184,11 +184,11 @@ registry behavior.
 | Logs and text | `.log`, `.txt` | One physical line per displayed record |
 | Excel workbooks | `.xlsx` | One worksheet at a time, stored values as text; see [XLSX cell text](docs/XLSX.md). Opened from LeanRows or the command line; the installer does not register `.xlsx`. |
 
-Format selection is extension-based in 0.3. Input is treated as bytes and
+Format selection is extension-based in 0.4. Input is treated as bytes and
 decoded for display as UTF-8; invalid bytes are shown as `\xNN`. Long records,
 fields, and display strings use bounded previews and are marked when truncated.
 
-LeanRows 0.3 deliberately excludes editing, saving, export, filtering,
+LeanRows 0.4 deliberately excludes editing, saving, export, filtering,
 regular expressions, SQL, charts, archives, remote or UNC paths, reparse points,
 tail/follow mode, plug-ins, scripts, and arbitrary JSON documents remain excluded.
 
@@ -274,7 +274,7 @@ qualification records full process-tree memory independently; see
 
 Find compares raw UTF-8 bytes. Its optional case-insensitive mode folds ASCII
 letters only; non-ASCII bytes remain exact. Regular expressions are not
-supported in 0.3.
+supported in 0.4.
 
 The interface provides System, Light, and Dark appearance modes. System follows
 the active Windows app theme. The application also provides per-monitor DPI
@@ -309,6 +309,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
+- [LeanRows 0.4.0 release notes](docs/releases/v0.4.0.md)
 - [LeanRows 0.3.0 release notes](docs/releases/v0.3.0.md)
 - [LeanRows 0.2.0 release notes](docs/releases/v0.2.0.md)
 - [LeanRows 0.1.3 release notes](docs/releases/v0.1.3.md)
