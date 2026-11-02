@@ -754,7 +754,7 @@ function Test-WorkflowContract {
         'Checksum upload' = 'artifacts/\*\.sha256'
         'Unsigned artifact disclosure' = 'Upload the unsigned portable package'
         'Pages waits for release' = '(?s)deploy-pages:.*needs: github-release'
-        'Pages deployment' = 'actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128'
+        'Pages deployment' = 'actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346'
     }
     foreach ($requirement in $requirements.GetEnumerator()) {
         Assert-Matches -Text $workflow -Pattern $requirement.Value `
@@ -827,7 +827,7 @@ function Test-WorkflowContract {
         -Message 'Reduced CI QA evidence must use its own upload step.'
     foreach ($qaUploadContract in @(
         'if: ${{ always() && hashFiles(''artifacts/ci-qa/**'') != '''' }}',
-        'uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        'uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
         'name: leanrows-ci-qa-evidence',
         'path: artifacts/ci-qa/',
         'if-no-files-found: error',
@@ -864,7 +864,7 @@ function Test-WorkflowContract {
     foreach ($contract in @(
         'id: upload-unsigned-exe',
         $signingGuard,
-        'uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        'uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
         'path: target/release/leanrows.exe'
     )) {
         Assert-True -Condition $exeUploadStep.Value.Contains($contract) `
