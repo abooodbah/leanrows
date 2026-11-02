@@ -2322,6 +2322,18 @@ mod tests {
     }
 
     #[test]
+    fn xlsx_sort_is_refused_with_its_own_message() -> Result<(), Box<dyn std::error::Error>> {
+        let (engine, _) = open_xlsx("libreoffice-document-smoke.xlsx", None)?;
+        let refused = engine.sort_plan();
+        assert!(matches!(refused, Err(DocumentEngineError::SortUnavailable)));
+        assert_eq!(
+            DocumentEngineError::SortUnavailable.to_string(),
+            "Sorting is not available for .xlsx workbooks yet"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn xlsx_find_is_refused_and_hostile_workbooks_fail_closed()
     -> Result<(), Box<dyn std::error::Error>> {
         let (engine, _) = open_xlsx("libreoffice-document-smoke.xlsx", None)?;
