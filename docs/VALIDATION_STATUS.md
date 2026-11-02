@@ -1,12 +1,42 @@
 # Validation status
 
-**Status date:** 2026-10-30<br>
-**Scope:** LeanRows 0.3.0 published release, Windows x64; tagged-CI,
+**Status date:** 2026-11-02<br>
+**Scope:** LeanRows 0.4.0 published release, Windows x64; tagged-CI,
 public-package and maintainer working-set checks. The full local QA receipt
-recorded for 0.2.0 was not repeated for 0.3.0.<br>
-**Current public release:** LeanRows 0.3.0
+recorded for 0.2.0 was not repeated for 0.4.0.<br>
+**Current public release:** LeanRows 0.4.0
 
-## Published v0.3.0 verification
+## Published v0.4.0 verification
+
+LeanRows 0.4.0 adds whole-file column sorting, contributed in pull request #9
+with follow-ups in #24. It is published on
+[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.4.0).
+
+The release is anchored to commit `f62a7d6fd0b1d380f07e4b55335a614ed084ad5d`
+and annotated tag `v0.4.0`. Tagged workflow
+[run 41521170792](https://github.com/abooodbah/leanrows/actions/runs/41521170792)
+passed its quality gates and Windows x64 package job, published the release,
+and deployed the product page. The Store package workflow
+([run 41521170884](https://github.com/abooodbah/leanrows/actions/runs/41521170884))
+built the MSIX from the published ZIP.
+
+| Published evidence field | v0.4.0 result |
+| --- | --- |
+| Release | [LeanRows v0.4.0](https://github.com/abooodbah/leanrows/releases/tag/v0.4.0) contains exactly the unsigned Windows x64 ZIP and its checksum sidecar. |
+| Public package | The sidecar records ZIP SHA-256 `3797CABB6129261DD3835B2E69CCEFED0E94499A9D29F078705CF2DDA39D8A52`, and the downloaded 454,649-byte ZIP matched it. |
+| Public executable | The extracted `leanrows.exe` is 918,528 bytes, reports file version `0.4.0.0`, and has SHA-256 `3C391F029A6132BD87B96BE1E53E38907CF2AEE4F56468E0CCB15300DF509AF3`. |
+| Working set, maintainer's laptop | With a local release build of the 0.4.0 code and a 1,000,000-row, 52.5 MB CSV, three runs: 18.0 to 18.9 MiB peak after opening, 20.6 MiB peak while sorting by the first column in text order, 27.5 to 27.8 s per sort. No QA receipt was recorded. |
+| Distribution | Scoop and the winget submission were moved to 0.4.0, the Chocolatey package was pushed and is in moderation, and the Store update was in certification on 2026-11-02. The release ZIP's installer was run on the maintainer's PC and reports 0.4.0. |
+
+Not repeated for 0.4.0: the aggregate local QA receipt, the live installer
+cycle, and the installed-association checks. The sorting tests and mutation
+results are recorded in pull requests #9 and #24 and the
+[0.4.0 release notes](releases/v0.4.0.md).
+
+This status update is a post-release documentation change on `main`; it is
+not part of the `v0.4.0` tag.
+
+## Earlier release: v0.3.0
 
 LeanRows 0.3.0 adds read-only `.xlsx` workbooks (ADR 0004). It is published on
 [GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.3.0).

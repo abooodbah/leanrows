@@ -1,13 +1,13 @@
 # LeanRows Microsoft Store listing
 
-Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes.
+Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes. The version and "What's new" were updated for 0.4.0 on 2026-11-02.
 
 ## Product
 
 - Product name (reserve this exact name): LeanRows
 - Publisher display name: Lean Apps Studio
 - Short title (50 characters or fewer): LeanRows: large CSV viewer
-- Version in this pack: 0.3.0 (package version 0.3.0.0)
+- Version in this pack: 0.4.0 (package version 0.4.0.0)
 - File types it opens: CSV, TSV, JSON Lines, NDJSON, and log files (.csv, .tsv, .jsonl, .ndjson, .log). Excel workbooks (.xlsx) open from inside the app; the package does not register .xlsx.
 
 ## Short description
@@ -64,7 +64,7 @@ LeanRows is free and open source under the MIT License.
 
 ## What's new in this version
 
-LeanRows now opens Excel .xlsx workbooks, read-only, one worksheet at a time. Find does not work in workbooks yet.
+Sort a whole file by any column: click a column header, and click it again to reverse the order. Sorting stays at about 21 MB of memory, even on files with millions of rows, and row numbers stay those of the original file. Excel .xlsx workbooks also open, read-only.
 
 ## Copyright and trademark info
 
