@@ -382,3 +382,33 @@ fn nonnumeric_suffix_does_not_trigger_numeric_exponent_overflow() -> Result<(), 
     );
     Ok(())
 }
+
+// A crash can leave a stale sort folder that another program still holds
+// open. Recovery must skip it and keep cleaning, not fail: the window opens
+// files only after this recovery has run.
+#[cfg(windows)]
+#[test]
+fn stale_recovery_skips_a_folder_it_cannot_delete() -> Result<(), Box<dyn Error>> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let scratch = Scratch::new()?;
+    let held = scratch.0.join("leanrows-sort-v1-1-0");
+    let free = scratch.0.join("leanrows-sort-v1-2-0");
+    for dir in [&held, &free] {
+        fs::create_dir(dir)?;
+        fs::write(dir.join("owner.lock"), b"")?;
+        fs::write(dir.join("runs-0.bin"), b"run")?;
+    }
+    // No sharing at all, as a scanner or backup tool might hold it.
+    let handle = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(held.join("runs-0.bin"))?;
+    let removed = leanrows_core::recover_stale_sort_files(&scratch.0)?;
+    assert_eq!(removed, 1);
+    assert!(held.exists(), "the held folder stays for a later recovery");
+    assert!(!free.exists(), "recovery continued past the held folder");
+    drop(handle);
+    assert_eq!(leanrows_core::recover_stale_sort_files(&scratch.0)?, 1);
+    assert!(!held.exists());
+    Ok(())
+}
