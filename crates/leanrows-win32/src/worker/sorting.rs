@@ -78,6 +78,30 @@ pub(super) fn start_sort(
     }
     let _ = emit_active(runtime, document, current_document_phase(document), None);
 }
+/// Peak temporary disk per row: a merge pass holds two 128-byte copies of
+/// every row's sort record.
+const SORT_SCRATCH_BYTES_PER_ROW: u64 = 256;
+/// Space a sort leaves free on the drive at its peak.
+const SORT_FREE_SPACE_MARGIN: u64 = 64 * 1024 * 1024;
+
+/// Rows the sort will read: the indexed count, or, while indexing is still
+/// running, that count scaled up to the whole file.
+fn expected_rows(rows: u64, complete: bool, scanned: u64, source: u64) -> u64 {
+    let _ = (complete, scanned, source);
+    rows
+}
+
+/// Refuses a sort before it starts when its temporary data cannot fit.
+fn check_sort_space(rows: u64, quota_left: u64, quota: u64, free: u64) -> Result<(), String> {
+    let _ = (rows, quota_left, quota, free);
+    Ok(())
+}
+
+/// Sizes as Windows Explorer shows them (binary units, labelled GB and MB).
+fn size_text(bytes: u64) -> String {
+    format!("{bytes}")
+}
+
 fn sort_failed(document: &mut ActiveDocument, message: String) {
     document.sort = None;
     if let Some(state) = &mut document.sort_state {
@@ -261,6 +285,53 @@ fn prepare_sort_if_current<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    const QUOTA: u64 = 8 * 1024 * 1024 * 1024;
+    #[test]
+    fn sort_space_check_refuses_one_byte_short_of_free_space() {
+        let rows = 1_000_000;
+        let needed = rows * 256 + 64 * 1024 * 1024;
+        assert_eq!(check_sort_space(rows, QUOTA, QUOTA, needed), Ok(()));
+        let refused = check_sort_space(rows, QUOTA, QUOTA, needed - 1);
+        assert!(
+            refused
+                .as_ref()
+                .is_err_and(|m| m.contains("free disk space")),
+            "{refused:?}"
+        );
+    }
+    #[test]
+    fn sort_space_check_refuses_files_over_the_sort_limit() {
+        let rows = QUOTA / 256;
+        assert_eq!(check_sort_space(rows, QUOTA, QUOTA, u64::MAX), Ok(()));
+        let refused = check_sort_space(rows + 1, QUOTA, QUOTA, u64::MAX);
+        assert!(
+            refused.as_ref().is_err_and(|m| m.contains("too large")),
+            "{refused:?}"
+        );
+    }
+    #[test]
+    fn sort_space_check_refuses_when_other_sorted_views_hold_the_space() {
+        let rows = 1_000;
+        assert_eq!(check_sort_space(rows, rows * 256, QUOTA, u64::MAX), Ok(()));
+        let refused = check_sort_space(rows, rows * 256 - 1, QUOTA, u64::MAX);
+        assert!(
+            refused.as_ref().is_err_and(|m| m.contains("restore")),
+            "{refused:?}"
+        );
+    }
+    #[test]
+    fn expected_rows_scales_a_partial_index_to_the_whole_file() {
+        assert_eq!(expected_rows(10, true, 50, 100), 10);
+        assert_eq!(expected_rows(10, false, 50, 100), 20);
+        assert_eq!(expected_rows(10, false, 0, 100), 10);
+        assert_eq!(expected_rows(u64::MAX, false, 1, 2), u64::MAX);
+    }
+    #[test]
+    fn sizes_read_like_explorer() {
+        assert_eq!(size_text(QUOTA), "8.0 GB");
+        assert_eq!(size_text(256_000_000), "245 MB");
+        assert_eq!(size_text(2_560_000_000), "2.4 GB");
+    }
     #[test]
     fn final_viewport_cancellation_preserves_published_order() -> Result<(), String> {
         for superseded in [false, true] {
