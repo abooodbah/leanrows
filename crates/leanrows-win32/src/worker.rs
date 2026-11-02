@@ -1,5 +1,8 @@
 //! One bounded document worker with coalesced document, query, and event slots.
 
+mod sorting;
+use sorting::{advance_sort, default_sort_directory, start_sort};
+
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io;
@@ -18,9 +21,11 @@ use crate::document_engine::{
     DocumentEngine, DocumentEngineError, DocumentProgress, DocumentQuerySource, DocumentScanStatus,
     SheetChoice, UiColumnKind, UiColumnLayout, UiRowSnapshot,
 };
+use crate::sort_coordinator::{SortCoordinator, SortPermit};
 use crate::{
     AccessibleName, CachedRow, CoalescingMailbox, DisplayCell, ImmutableRowCache, SendOutcome,
 };
+use leanrows_core::{SortConfig, SortPhase, SortRequest, SortSession, SortedOrder};
 
 const PROGRESS_EVENT_BYTES: u64 = 4 * 1_024 * 1_024;
 const QUERY_READ_BYTES: usize = 64 * 1_024;
@@ -82,6 +87,26 @@ struct ViewportCommand {
     serial: u64,
     first_row: u64,
     generation: CancellationGeneration,
+    source_row: bool,
+}
+
+#[derive(Clone, Copy)]
+struct SortCommand {
+    document_serial: u64,
+    serial: u64,
+    request: Option<SortRequest>,
+    generation: CancellationGeneration,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct WorkerSortState {
+    pub(crate) serial: u64,
+    pub(crate) request: Option<SortRequest>,
+    pub(crate) committed: Option<SortRequest>,
+    pub(crate) phase: SortPhase,
+    pub(crate) scanned_bytes: u64,
+    pub(crate) source_bytes: u64,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug)]
@@ -183,6 +208,9 @@ pub(crate) struct WorkerEvent {
     pub(crate) escaped_non_utf8_rows: u32,
     pub(crate) query: Option<WorkerQueryState>,
     pub(crate) sheets: Option<Arc<WorkerSheets>>,
+    pub(crate) sort: Option<WorkerSortState>,
+    pub(crate) reveal_rank: Option<u64>,
+    pub(crate) query_rank: Option<u64>,
 }
 
 impl WorkerEvent {
@@ -234,6 +262,10 @@ pub(crate) enum WorkerResult {
 }
 
 pub(crate) struct Worker {
+    sorts: Arc<CoalescingMailbox<SortCommand>>,
+    sort_cancellation: Arc<CancellationToken>,
+    coordinator: SortCoordinator,
+    latest_sort_serial: Arc<AtomicU64>,
     opens: Arc<CoalescingMailbox<OpenCommand>>,
     viewports: Arc<CoalescingMailbox<ViewportCommand>>,
     queries: Arc<CoalescingMailbox<QueryCommand>>,
@@ -284,7 +316,15 @@ impl Worker {
         let latest_serial = Arc::new(AtomicU64::new(0));
         let active_serial = Arc::new(AtomicU64::new(0));
         let latest_query_serial = Arc::new(AtomicU64::new(0));
+        let sorts = Arc::new(CoalescingMailbox::new());
+        let sort_cancellation = Arc::new(CancellationToken::new());
+        let coordinator = SortCoordinator::shared();
+        let latest_sort_serial = Arc::new(AtomicU64::new(0));
         let runtime = WorkerRuntime {
+            sorts: sorts.clone(),
+            sort_cancellation: sort_cancellation.clone(),
+            coordinator: coordinator.clone(),
+            latest_sort_serial: latest_sort_serial.clone(),
             opens: Arc::clone(&opens),
             viewports: Arc::clone(&viewports),
             queries: Arc::clone(&queries),
@@ -303,6 +343,10 @@ impl Worker {
             .name(String::from("leanrows-document"))
             .spawn(move || run_worker(&runtime))?;
         Ok(Self {
+            sorts,
+            sort_cancellation,
+            coordinator,
+            latest_sort_serial,
             opens,
             viewports,
             queries,
@@ -327,6 +371,9 @@ impl Worker {
 
     /// Like `submit_path`, but for a workbook opens the given sheet.
     pub(crate) fn submit_path_sheet(&self, path: PathBuf, sheet: Option<usize>) -> u64 {
+        self.sort_cancellation.cancel();
+        self.latest_sort_serial.store(0, Ordering::Release);
+        let _ = self.sorts.try_take();
         let previous = self.latest_serial.fetch_add(1, Ordering::AcqRel);
         let serial = previous.wrapping_add(1);
         let generation = self.cancellation.cancel();
@@ -366,6 +413,7 @@ impl Worker {
                 serial,
                 first_row,
                 generation,
+                source_row: false,
             })
             .is_err()
         {
@@ -373,6 +421,43 @@ impl Worker {
         }
         let _ = self.signals.send(());
         true
+    }
+
+    pub(crate) fn request_sort(&self, request: Option<SortRequest>) -> u64 {
+        let serial = self.coordinator.request();
+        let generation = self.sort_cancellation.cancel();
+        self.latest_sort_serial.store(serial, Ordering::Release);
+        let _ = self.sorts.send(SortCommand {
+            document_serial: self.latest_serial.load(Ordering::Acquire),
+            serial,
+            request,
+            generation,
+        });
+        let _ = self.signals.send(());
+        serial
+    }
+
+    pub(crate) fn cancel_sort(&self) {
+        self.sort_cancellation.cancel();
+        let _ = self.signals.send(());
+    }
+
+    pub(crate) fn request_source_row(&self, serial: u64, row: u64) -> bool {
+        if self.latest_serial.load(Ordering::Acquire) != serial {
+            return false;
+        }
+        let generation = self.cancellation.cancel();
+        let sent = self
+            .viewports
+            .send(ViewportCommand {
+                serial,
+                first_row: row,
+                generation,
+                source_row: true,
+            })
+            .is_ok();
+        let _ = self.signals.send(());
+        sent
     }
 
     /// Starts a bounded literal query for the current document snapshot.
@@ -456,6 +541,13 @@ impl Worker {
                 _ => false,
             };
             if event.serial == self.latest_serial.load(Ordering::Acquire) && query_is_current {
+                if event
+                    .sort
+                    .as_ref()
+                    .is_some_and(|s| s.serial != self.latest_sort_serial.load(Ordering::Acquire))
+                {
+                    continue;
+                }
                 debug_assert!(event.is_internally_consistent());
                 return Some(event);
             }
@@ -465,6 +557,8 @@ impl Worker {
 
 impl Drop for Worker {
     fn drop(&mut self) {
+        self.sort_cancellation.cancel();
+        self.sorts.close();
         self.cancellation.cancel();
         self.query_cancellation.cancel();
         self.opens.close();
@@ -480,6 +574,10 @@ impl Drop for Worker {
 }
 
 struct ActiveDocument {
+    order: Option<SortedOrder>,
+    sort: Option<ActiveSort>,
+    sort_state: Option<WorkerSortState>,
+    reveal_rank: Option<u64>,
     path: PathBuf,
     serial: u64,
     engine: DocumentEngine,
@@ -497,6 +595,16 @@ struct ActiveQuery {
     demand_hit: Option<u64>,
     unreported_bytes: u64,
     state: WorkerQueryState,
+}
+
+struct ActiveSort {
+    serial: u64,
+    request: SortRequest,
+    generation: CancellationGeneration,
+    session: Option<SortSession<DocumentQuerySource>>,
+    source_memory: Option<leanrows_core::SortMemoryReservation>,
+    permit: Option<SortPermit>,
+    last_emit: std::time::Instant,
 }
 
 struct CacheState {
@@ -526,6 +634,10 @@ impl fmt::Display for CacheConversionError {
 impl std::error::Error for CacheConversionError {}
 
 struct WorkerRuntime {
+    sorts: Arc<CoalescingMailbox<SortCommand>>,
+    sort_cancellation: Arc<CancellationToken>,
+    coordinator: SortCoordinator,
+    latest_sort_serial: Arc<AtomicU64>,
     opens: Arc<CoalescingMailbox<OpenCommand>>,
     viewports: Arc<CoalescingMailbox<ViewportCommand>>,
     queries: Arc<CoalescingMailbox<QueryCommand>>,
@@ -542,6 +654,9 @@ struct WorkerRuntime {
 }
 
 fn run_worker(runtime: &WorkerRuntime) {
+    // Clear sort data left by a crash here, off the UI thread. A failure only
+    // affects sorting, which retries when asked.
+    let _ = default_sort_directory();
     let mut active = None;
     while runtime.signals.wait_take().is_some() {
         loop {
@@ -564,9 +679,18 @@ fn run_worker(runtime: &WorkerRuntime) {
                 }
                 continue;
             }
+            if let Some(command) = runtime.sorts.try_take() {
+                if let Some(document) = active.as_mut() {
+                    start_sort(runtime, document, command);
+                }
+                continue;
+            }
             let Some(document) = active.as_mut() else {
                 break;
             };
+            if document.sort.is_some() {
+                advance_sort(runtime, document);
+            }
             if document
                 .query
                 .as_ref()
@@ -578,6 +702,9 @@ fn run_worker(runtime: &WorkerRuntime) {
                 continue;
             }
             if document.scan_complete {
+                if document.sort.is_some() {
+                    continue;
+                }
                 break;
             }
             if !scan_once(runtime, document) {
@@ -619,6 +746,10 @@ fn replace_document(
         })
     });
     let mut document = ActiveDocument {
+        order: None,
+        sort: None,
+        sort_state: None,
+        reveal_rank: None,
         path: command.path,
         serial: command.serial,
         engine,
@@ -640,7 +771,7 @@ fn replace_document(
 fn apply_viewport_request(
     runtime: &WorkerRuntime,
     active: Option<&mut ActiveDocument>,
-    request: ViewportCommand,
+    mut request: ViewportCommand,
 ) -> bool {
     let Some(document) = active else {
         return true;
@@ -650,23 +781,49 @@ fn apply_viewport_request(
     {
         return true;
     }
-    let snapshot =
-        match document
-            .engine
-            .snapshot(request.first_row, &runtime.cancellation, request.generation)
-        {
-            Ok(snapshot) => snapshot,
-            Err(DocumentEngineError::Cancelled) => return true,
-            Err(error) => {
-                invalidate_query(runtime, document);
-                return emit_active(
-                    runtime,
-                    document,
-                    WorkerPhase::Failed,
-                    Some(error.to_string()),
-                );
+    document.reveal_rank = None;
+    if request.source_row {
+        if let Some(order) = &document.order {
+            match order.rank_of(request.first_row) {
+                Ok(rank) => request.first_row = rank,
+                Err(e) => {
+                    return emit_active(
+                        runtime,
+                        document,
+                        WorkerPhase::Failed,
+                        Some(e.to_string()),
+                    );
+                }
             }
-        };
+        }
+        document.reveal_rank = Some(request.first_row);
+    }
+    let snapshot = match &document.order {
+        Some(order) => document.engine.snapshot_ordered(
+            order,
+            request.first_row,
+            &runtime.cancellation,
+            request.generation,
+        ),
+        None => {
+            document
+                .engine
+                .snapshot(request.first_row, &runtime.cancellation, request.generation)
+        }
+    };
+    let snapshot = match snapshot {
+        Ok(snapshot) => snapshot,
+        Err(DocumentEngineError::Cancelled) => return true,
+        Err(error) => {
+            invalidate_query(runtime, document);
+            return emit_active(
+                runtime,
+                document,
+                WorkerPhase::Failed,
+                Some(error.to_string()),
+            );
+        }
+    };
     document.cache = match convert_cache(snapshot) {
         Ok(mut cache) => {
             let Some(columns) = document.cache.columns.grow(cache.columns) else {
@@ -691,7 +848,10 @@ fn apply_viewport_request(
             );
         }
     };
-    emit_active(runtime, document, WorkerPhase::ViewportReady, None)
+    let sent = emit_active(runtime, document, WorkerPhase::ViewportReady, None);
+    // The reveal goes out once, with the rows that contain it.
+    document.reveal_rank = None;
+    sent
 }
 
 fn apply_query_command(
@@ -1133,6 +1293,9 @@ fn emit_failed_open(runtime: &WorkerRuntime, path: PathBuf, serial: u64, message
         escaped_non_utf8_rows: 0,
         query: None,
         sheets: None,
+        sort: None,
+        reveal_rank: None,
+        query_rank: None,
     };
     emit_event(runtime, event)
 }
@@ -1143,13 +1306,36 @@ fn emit_active(
     phase: WorkerPhase,
     failure: Option<String>,
 ) -> bool {
-    let progress = worker_progress(document.engine.progress(), &document.cache);
-    let result = failure.map_or(
+    let mut progress = worker_progress(document.engine.progress(), &document.cache);
+    if let Some(order) = &document.order {
+        progress.available_rows = order.len();
+    }
+    let mut result = failure.map_or(
         WorkerResult::Ready {
             size: progress.source_bytes,
         },
         |message| WorkerResult::Failed { message },
     );
+    let query_rank = match document.query.as_ref().and_then(|q| q.state.active_row) {
+        Some(row) => match &document.order {
+            Some(order) => match order.rank_of(row) {
+                Ok(rank) => Some(rank),
+                Err(e) => {
+                    result = WorkerResult::Failed {
+                        message: e.to_string(),
+                    };
+                    None
+                }
+            },
+            None => Some(row),
+        },
+        None => None,
+    };
+    let phase = if matches!(result, WorkerResult::Failed { .. }) {
+        WorkerPhase::Failed
+    } else {
+        phase
+    };
     let event = WorkerEvent {
         path: document.path.clone(),
         result,
@@ -1165,6 +1351,9 @@ fn emit_active(
         escaped_non_utf8_rows: document.cache.escaped_non_utf8_rows,
         query: document.query.as_ref().map(|query| query.state.clone()),
         sheets: document.sheets.clone(),
+        sort: document.sort_state.clone(),
+        reveal_rank: document.reveal_rank,
+        query_rank,
     };
     emit_event(runtime, event)
 }
@@ -1239,7 +1428,8 @@ fn convert_cache(snapshot: UiRowSnapshot) -> Result<CacheState, CacheConversionE
                 cells.iter().skip(1).map(DisplayCell::as_utf16),
             ),
         };
-        rows.push(CachedRow::new_with_accessible_name(
+        rows.push(CachedRow::with_rank_and_name(
+            parts.display_rank,
             parts.absolute_row,
             cells,
             accessible_name,
@@ -1581,6 +1771,55 @@ fn next_nonzero_serial(sequence: &AtomicU64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sorted_worker_preserves_source_numbers_and_search_reveal()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = TempFixture::file(
+            "csv",
+            b"z,10\na,2\nm,9007199254740993\nb,9007199254740992\n",
+        )?;
+        let worker = Worker::start(Arc::new(|| {}))?;
+        let serial = worker.submit_path(fixture.path().to_path_buf());
+        wait_complete(&worker, Duration::from_secs(5))?;
+        let request = leanrows_core::SortRequest {
+            column: 1,
+            mode: leanrows_core::SortMode::Numeric,
+            direction: leanrows_core::SortDirection::Ascending,
+        };
+        let sort_serial = worker.request_sort(Some(request));
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let sorted = loop {
+            if let Some(event) = worker.poll()
+                && event.sort.as_ref().is_some_and(|s| {
+                    s.serial == sort_serial && s.phase == leanrows_core::SortPhase::Complete
+                })
+            {
+                break event;
+            }
+            if std::time::Instant::now() > deadline {
+                return Err(io::Error::other("sort timed out").into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        assert_eq!(cell_text(&sorted, 0, 0)?, "2");
+        assert_eq!(cell_text(&sorted, 1, 0)?, "1");
+        assert_eq!(cell_text(&sorted, 2, 0)?, "4");
+        assert_eq!(cell_text(&sorted, 3, 0)?, "3");
+        assert!(worker.request_source_row(serial, 2));
+        let revealed = loop {
+            let event = wait_event(&worker, Duration::from_secs(5))?;
+            if event.reveal_rank == Some(3) {
+                break event;
+            }
+        };
+        assert_eq!(cell_text(&revealed, 3, 0)?, "3");
+        // The reveal goes out once. A later event, such as a Find update, must
+        // not pull the view and selection back to that row.
+        assert!(worker.start_query(serial, b"1".to_vec(), true).is_some());
+        let later = wait_event(&worker, Duration::from_secs(5))?;
+        assert_eq!(later.reveal_rank, None);
+        Ok(())
+    }
     use std::fs::{self, OpenOptions};
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};

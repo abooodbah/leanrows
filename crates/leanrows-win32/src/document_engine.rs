@@ -585,6 +585,15 @@ impl DocumentEngine {
         })
     }
 
+    /// Clones the retained read-only handle for a column sort, as `query_plan`
+    /// does for Find. Workbooks cannot be sorted yet.
+    pub(crate) fn sort_plan(&self) -> Result<DocumentQueryPlan, DocumentEngineError> {
+        if matches!(self.content, DocumentContent::Xlsx(_)) {
+            return Err(DocumentEngineError::SortUnavailable);
+        }
+        self.query_plan()
+    }
+
     /// Clones the retained read-only handle for a literal-query session.
     ///
     /// The clone is proven against the current document snapshot before it is
@@ -672,6 +681,62 @@ impl DocumentEngine {
             columns: UiColumnLayout::new(UiColumnKind::Cells, data_columns)?,
             reached_eof,
             diagnostic: None,
+        })
+    }
+
+    /// Revalidates the retained handle and selected path after one query work
+    pub(crate) fn snapshot_ordered(
+        &self,
+        order: &leanrows_core::SortedOrder,
+        first_row: u64,
+        token: &CancellationToken,
+        generation: CancellationGeneration,
+    ) -> Result<UiRowSnapshot, DocumentEngineError> {
+        let (format, scan) = match &self.content {
+            DocumentContent::Text { format, scan } => (*format, scan),
+            DocumentContent::Xlsx(_) => return Err(DocumentEngineError::SortUnavailable),
+        };
+        self.verify_source(true)?;
+        let count = usize::try_from(order.len().saturating_sub(first_row))
+            .unwrap_or(usize::MAX)
+            .min(MAX_VIEWPORT_ROWS);
+        let mut rows = Vec::new();
+        rows.try_reserve_exact(count)
+            .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
+        let column_kind = if format.delimited_dialect().is_some() {
+            UiColumnKind::Fields
+        } else {
+            UiColumnKind::Preview
+        };
+        let mut data_columns = usize::from(column_kind == UiColumnKind::Preview);
+        for index in 0..count {
+            let rank = first_row
+                + u64::try_from(index).map_err(|_| DocumentEngineError::ArithmeticOverflow)?;
+            let descriptor = order.record_at(rank).map_err(|e| DocumentEngineError::Io {
+                operation: "read sorted order",
+                source: io::Error::other(e),
+            })?;
+            let record = leanrows_core::RecordPreview::read_at(
+                &self.source,
+                descriptor.source_row,
+                descriptor.span,
+                MAX_RECORD_PREVIEW_BYTES,
+                token,
+                generation,
+            )
+            .map_err(map_viewport_error)?;
+            let mut row = build_cached_row(&record, format, self.projection_limits)?;
+            row.display_rank = rank;
+            data_columns = data_columns.max(row.data_columns());
+            rows.push(row);
+        }
+        self.verify_source(true)?;
+        Ok(UiRowSnapshot {
+            first_row,
+            rows,
+            columns: UiColumnLayout::new(column_kind, data_columns)?,
+            reached_eof: first_row.saturating_add(count as u64) >= order.len(),
+            diagnostic: scan.diagnostic(),
         })
     }
 
@@ -1026,7 +1091,7 @@ impl UiRowSnapshot {
     pub(crate) fn cell(&self, absolute_row: u64, subitem: usize) -> Option<&[u16]> {
         let index = self
             .rows
-            .binary_search_by_key(&absolute_row, |row| row.absolute_row)
+            .binary_search_by_key(&absolute_row, |row| row.display_rank)
             .ok()?;
         self.rows.get(index)?.cell(subitem)
     }
@@ -1036,7 +1101,7 @@ impl UiRowSnapshot {
     pub(crate) fn row(&self, absolute_row: u64) -> Option<&UiCachedRow> {
         let index = self
             .rows
-            .binary_search_by_key(&absolute_row, |row| row.absolute_row)
+            .binary_search_by_key(&absolute_row, |row| row.display_rank)
             .ok()?;
         self.rows.get(index)
     }
@@ -1051,6 +1116,7 @@ impl UiRowSnapshot {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct UiCachedRow {
     absolute_row: u64,
+    display_rank: u64,
     cells: Vec<Utf16Cell>,
     source_truncated: bool,
     display_truncated: bool,
@@ -1059,6 +1125,7 @@ pub(crate) struct UiCachedRow {
 
 pub(crate) struct UiCachedRowParts {
     pub(crate) absolute_row: u64,
+    pub(crate) display_rank: u64,
     pub(crate) cells: Vec<Utf16Cell>,
     pub(crate) source_truncated: bool,
     pub(crate) display_truncated: bool,
@@ -1104,6 +1171,7 @@ impl UiCachedRow {
     pub(crate) fn into_parts(self) -> UiCachedRowParts {
         UiCachedRowParts {
             absolute_row: self.absolute_row,
+            display_rank: self.display_rank,
             cells: self.cells,
             source_truncated: self.source_truncated,
             display_truncated: self.display_truncated,
@@ -1326,6 +1394,7 @@ fn build_cached_row(
     }
     Ok(UiCachedRow {
         absolute_row: record.row(),
+        display_rank: record.row(),
         cells,
         source_truncated,
         display_truncated,
@@ -1352,6 +1421,7 @@ fn build_xlsx_row(row: &XlsxRow) -> Result<UiCachedRow, DocumentEngineError> {
     }
     Ok(UiCachedRow {
         absolute_row: row.index(),
+        display_rank: row.index(),
         cells,
         source_truncated,
         display_truncated,
@@ -1725,6 +1795,7 @@ pub(crate) enum DocumentEngineError {
     Projection(FieldProjectionError),
     Xlsx(XlsxError),
     FindUnavailable,
+    SortUnavailable,
 }
 
 impl From<BudgetError> for DocumentEngineError {
@@ -1793,6 +1864,9 @@ impl fmt::Display for DocumentEngineError {
             Self::Xlsx(error) => write!(formatter, "workbook: {error}"),
             Self::FindUnavailable => {
                 formatter.write_str("Find is not available for .xlsx workbooks yet")
+            }
+            Self::SortUnavailable => {
+                formatter.write_str("Sorting is not available for .xlsx workbooks yet")
             }
         }
     }
@@ -2244,6 +2318,18 @@ mod tests {
                 ))
             ));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn xlsx_sort_is_refused_with_its_own_message() -> Result<(), Box<dyn std::error::Error>> {
+        let (engine, _) = open_xlsx("libreoffice-document-smoke.xlsx", None)?;
+        let refused = engine.sort_plan();
+        assert!(matches!(refused, Err(DocumentEngineError::SortUnavailable)));
+        assert_eq!(
+            DocumentEngineError::SortUnavailable.to_string(),
+            "Sorting is not available for .xlsx workbooks yet"
+        );
         Ok(())
     }
 

@@ -35,6 +35,40 @@ mutation results and Linux timings are recorded in pull request #19 and the
 This status update is a post-release documentation change on `main`; it is
 not part of the `v0.3.0` tag.
 
+## Development column sorting: 2026-10-07
+
+This section was recorded on the `codex/column-sort` branch, built on 0.2.0,
+before it was rebased onto 0.3.0. It does not describe a published release. The native sort smoke passed
+real header clicks, text/numeric ordering in both directions, exact large
+integers, source-row navigation and invalid-row rejection, Find reveal, copy,
+tab restoration and background selection reset, source-order
+reset, pending cancellation, unchanged source hashes and scratch cleanup.
+Receipt: `artifacts/qa/sort-smoke.json`. The aggregate release harness passed
+25/25 checks including its 1 GiB/10 GiB sparse fixtures and package validation;
+receipt: `artifacts/qa/20261007T185843Z/qa-receipt.json`.
+After the final review correction pass, 177 workspace tests and strict Clippy
+passed. Regressions cover blocked Windows deletion retaining disk quota,
+cancellation/supersession during final viewport preparation, changed-source
+publication and numeric exponent overflow followed by invalid grammar.
+
+The following are actual nonsparse **core probe** observations on this local
+Windows machine; they are not complete GUI memory measurements. Files contain
+deterministically shuffled, zero-padded integers and a second text field.
+Receipt: `artifacts/qa/sort-benchmark.json`.
+
+| Rows | Mode | Time | Managed peak | Private peak | Scratch peak |
+| --- | --- | --- | --- | --- | --- |
+| 100,000 | Text | 973 ms | 2,752,512 B | 3,121,152 B | 25,600,000 B |
+| 100,000 | Numeric | 921 ms | 2,752,512 B | 3,112,960 B | 25,600,000 B |
+| 1,000,000 | Text | 15,094 ms | 2,752,512 B | 3,117,056 B | 256,000,000 B |
+| 1,000,000 | Numeric | 14,132 ms | 2,752,512 B | 3,108,864 B | 256,000,000 B |
+
+Managed storage stayed constant as row count grew tenfold. Times include full
+ordering and inverse-map construction. Long common prefixes can require more
+source reads than these fixtures. A 20-million-row nonsparse sort, a giant-key
+performance campaign, and GUI resource sampling throughout a million-row sort
+have not been run; do not infer their timing from these small-key observations.
+
 ## Earlier release: v0.2.0
 
 LeanRows 0.2.0 opens every file in one window, each in its own tab, cuts memory

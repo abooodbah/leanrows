@@ -1,5 +1,15 @@
 # LeanRows local release QA
 
+Column sorting in development builds has a separate native workflow gate:
+
+    rtk proxy pwsh -NoProfile -File tests/qa/Invoke-LeanRowsSortSmoke.ps1
+
+It creates owned CSV/log fixtures, drives actual header clicks/menu commands,
+checks numeric precision, Find/go-to/copy/tab/reset/cancel behavior, compares
+source hashes, and requires owned scratch cleanup. Its `--sort-smoke` fixture
+contract includes a sibling `.sort-tab.log` file for real tab restoration.
+Small-window memory samples are observations, not a large-file GUI guarantee.
+
 This directory contains dependency-free Windows PowerShell evidence tooling for
 the LeanRows v0.1 application. The aggregate harness uses only disposable,
 synthetic local files and invokes executables directly without a command shell.

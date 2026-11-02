@@ -13,8 +13,8 @@ use windows::Win32::Graphics::Gdi::{
     SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::UI::Controls::{
-    HDF_CENTER, HDF_JUSTIFYMASK, HDF_RIGHT, HDI_FORMAT, HDI_TEXT, HDITEMW, HDM_GETITEMCOUNT,
-    HDM_GETITEMRECT, HDM_GETITEMW, HEADER_CONTROL_FORMAT_FLAGS,
+    HDF_CENTER, HDF_JUSTIFYMASK, HDF_RIGHT, HDF_SORTDOWN, HDF_SORTUP, HDI_FORMAT, HDI_TEXT,
+    HDITEMW, HDM_GETITEMCOUNT, HDM_GETITEMRECT, HDM_GETITEMW, HEADER_CONTROL_FORMAT_FLAGS,
 };
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -75,6 +75,12 @@ unsafe extern "system" fn header_subclass_proc(
         reference_data,
     ));
     match message {
+        windows::Win32::UI::WindowsAndMessaging::WM_CONTEXTMENU => {
+            if let Err(e) = super::sorting::header_menu(parent, header, lparam) {
+                super::set_status(parent, &e.to_string());
+            }
+            LRESULT(0)
+        }
         WM_PAINT if paint_window(header, parent) => LRESULT(0),
         WM_PRINTCLIENT => {
             let device = HDC(std::ptr::with_exposed_provenance_mut::<c_void>(wparam.0));
@@ -235,6 +241,25 @@ fn paint_item(
         return;
     }
     let format = draw_text_format(item.fmt);
+    if item.fmt.0 & (HDF_SORTUP.0 | HDF_SORTDOWN.0) != 0 {
+        let mut arrow_bounds = text_bounds;
+        arrow_bounds.left = arrow_bounds.right - theme.metrics.space_3 * 2;
+        text_bounds.right = arrow_bounds.left;
+        let mut arrow = [if item.fmt.0 & HDF_SORTUP.0 != 0 {
+            0x25b4
+        } else {
+            0x25be
+        }];
+        // SAFETY: The glyph and bounded rectangle live for this synchronous draw.
+        let _ = unsafe {
+            DrawTextW(
+                device,
+                &mut arrow,
+                &raw mut arrow_bounds,
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+            )
+        };
+    }
     // SAFETY: The mutable slice is bounded to initialized stack storage and the
     // target rectangle lives through this synchronous call.
     let _ = unsafe {

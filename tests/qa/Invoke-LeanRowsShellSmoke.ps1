@@ -8,7 +8,7 @@ param(
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$usage = 'usage: leanrows [--smoke-test | --document-smoke-test] [--] [FILE...]'
+$usage = 'usage: leanrows [--smoke-test | --document-smoke-test | --sort-smoke] [--] [FILE...]'
 
 function Assert-True {
     param(
