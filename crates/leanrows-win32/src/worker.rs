@@ -1820,6 +1820,63 @@ mod tests {
         assert_eq!(later.reveal_rank, None);
         Ok(())
     }
+
+    /// A sort or restore in one tab must not cancel a sort waiting or running in
+    /// another tab. The other tab's sort waits its turn instead.
+    #[test]
+    fn sort_in_another_tab_does_not_cancel_this_tab() -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = TempFixture::file("csv", b"c,3\na,1\nb,2\n")?;
+        let first = Worker::start(Arc::new(|| {}))?;
+        let second = Worker::start(Arc::new(|| {}))?;
+        first.submit_path(fixture.path().to_path_buf());
+        wait_complete(&first, Duration::from_secs(5))?;
+        second.submit_path(fixture.path().to_path_buf());
+        wait_complete(&second, Duration::from_secs(5))?;
+        // Hold the process-wide permit so the first tab's sort is still waiting
+        // when the second tab asks for its own sort and a restore.
+        let coordinator = crate::sort_coordinator::SortCoordinator::shared();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let gate = loop {
+            if let Some(gate) = coordinator.try_acquire(coordinator.request()) {
+                break gate;
+            }
+            if Instant::now() > deadline {
+                return Err(io::Error::other("sort permit stayed busy").into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        let request = leanrows_core::SortRequest {
+            column: 0,
+            mode: leanrows_core::SortMode::Text,
+            direction: leanrows_core::SortDirection::Ascending,
+        };
+        let first_serial = first.request_sort(Some(request));
+        second.request_sort(Some(request));
+        second.request_sort(None);
+        drop(gate);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(event) = first.poll()
+                && let Some(sort) = event.sort.as_ref().filter(|s| s.serial == first_serial)
+            {
+                assert_ne!(
+                    sort.phase,
+                    leanrows_core::SortPhase::Cancelled,
+                    "another tab cancelled this sort"
+                );
+                if sort.phase == leanrows_core::SortPhase::Complete {
+                    // Source row 2 ("a") sorts first.
+                    assert_eq!(cell_text(&event, 0, 0)?, "2");
+                    break;
+                }
+            }
+            if Instant::now() > deadline {
+                return Err(io::Error::other("sort timed out").into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        Ok(())
+    }
     use std::fs::{self, OpenOptions};
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};

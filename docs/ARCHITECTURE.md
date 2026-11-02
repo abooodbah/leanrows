@@ -213,7 +213,13 @@ The worker reads only the bounded current viewport by exact source spans. Cache
 and accessibility lookup use display ranks; Row cells keep source numbers.
 Find remains in source order and uses the inverse map to reveal its result.
 
-A process-wide coordinator admits one active sort and charges run arrays,
+A process-wide coordinator admits one active sort; each tab cancels only its
+own older sort requests, and a sort from another tab waits for the permit.
+Before a sort starts, the worker estimates its peak scratch at 256 bytes per row
+(two 128-byte run records per row during a merge pass) and refuses it when that
+exceeds the 8 GiB ledger, the ledger space other sorted views leave, or the
+drive's free space less a 64 MiB margin. The ledger then
+charges run arrays,
 comparison/merge buffers, source cache, result-map ownership and disk growth
 before allocation/write. Managed sorting memory is capped at 16 MiB and total
 live sort disk data at 8 GiB. Completed tab maps share this ledger; source order

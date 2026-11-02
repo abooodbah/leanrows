@@ -6,6 +6,10 @@ pub(crate) fn run(_options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     ))
 }
 
+pub(crate) fn free_disk_bytes(_path: &std::path::Path) -> std::io::Result<u64> {
+    Ok(u64::MAX)
+}
+
 pub(crate) fn show_startup_error(message: &str) {
     eprintln!("{message}");
 }
