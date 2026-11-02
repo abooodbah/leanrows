@@ -4,7 +4,9 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-02
+
+Column sorting, contributed by @w3bgr3p in #9.
 
 ### Added
 
@@ -182,6 +184,7 @@ All notable changes to LeanRows are recorded in this file. The format follows
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.4.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.4.0
 [0.3.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.3.0
 [0.2.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.2.0
 [0.1.3]: https://github.com/abooodbah/leanrows/releases/tag/v0.1.3
