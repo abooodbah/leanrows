@@ -15,6 +15,11 @@ All notable changes to LeanRows are recorded in this file. The format follows
 - Native sort-workflow QA and nonsparse resource benchmarks through the existing
   Rust engine.
 
+### Known gaps
+
+- Sorting does not work on `.xlsx` workbooks yet. It reports that instead of
+  sorting, as Find does.
+
 ## [0.3.0] - 2026-10-29
 
 ### Added

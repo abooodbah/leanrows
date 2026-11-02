@@ -585,6 +585,15 @@ impl DocumentEngine {
         })
     }
 
+    /// Clones the retained read-only handle for a column sort, as `query_plan`
+    /// does for Find. Workbooks cannot be sorted yet.
+    pub(crate) fn sort_plan(&self) -> Result<DocumentQueryPlan, DocumentEngineError> {
+        if matches!(self.content, DocumentContent::Xlsx(_)) {
+            return Err(DocumentEngineError::SortUnavailable);
+        }
+        self.query_plan()
+    }
+
     /// Clones the retained read-only handle for a literal-query session.
     ///
     /// The clone is proven against the current document snapshot before it is
@@ -683,6 +692,10 @@ impl DocumentEngine {
         token: &CancellationToken,
         generation: CancellationGeneration,
     ) -> Result<UiRowSnapshot, DocumentEngineError> {
+        let (format, scan) = match &self.content {
+            DocumentContent::Text { format, scan } => (*format, scan),
+            DocumentContent::Xlsx(_) => return Err(DocumentEngineError::SortUnavailable),
+        };
         self.verify_source(true)?;
         let count = usize::try_from(order.len().saturating_sub(first_row))
             .unwrap_or(usize::MAX)
@@ -690,7 +703,7 @@ impl DocumentEngine {
         let mut rows = Vec::new();
         rows.try_reserve_exact(count)
             .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
-        let column_kind = if self.format.delimited_dialect().is_some() {
+        let column_kind = if format.delimited_dialect().is_some() {
             UiColumnKind::Fields
         } else {
             UiColumnKind::Preview
@@ -712,7 +725,7 @@ impl DocumentEngine {
                 generation,
             )
             .map_err(map_viewport_error)?;
-            let mut row = build_cached_row(&record, self.format, self.projection_limits)?;
+            let mut row = build_cached_row(&record, format, self.projection_limits)?;
             row.display_rank = rank;
             data_columns = data_columns.max(row.data_columns());
             rows.push(row);
@@ -723,7 +736,7 @@ impl DocumentEngine {
             rows,
             columns: UiColumnLayout::new(column_kind, data_columns)?,
             reached_eof: first_row.saturating_add(count as u64) >= order.len(),
-            diagnostic: self.scan.diagnostic(),
+            diagnostic: scan.diagnostic(),
         })
     }
 
@@ -1408,6 +1421,7 @@ fn build_xlsx_row(row: &XlsxRow) -> Result<UiCachedRow, DocumentEngineError> {
     }
     Ok(UiCachedRow {
         absolute_row: row.index(),
+        display_rank: row.index(),
         cells,
         source_truncated,
         display_truncated,
@@ -1781,6 +1795,7 @@ pub(crate) enum DocumentEngineError {
     Projection(FieldProjectionError),
     Xlsx(XlsxError),
     FindUnavailable,
+    SortUnavailable,
 }
 
 impl From<BudgetError> for DocumentEngineError {
@@ -1849,6 +1864,9 @@ impl fmt::Display for DocumentEngineError {
             Self::Xlsx(error) => write!(formatter, "workbook: {error}"),
             Self::FindUnavailable => {
                 formatter.write_str("Find is not available for .xlsx workbooks yet")
+            }
+            Self::SortUnavailable => {
+                formatter.write_str("Sorting is not available for .xlsx workbooks yet")
             }
         }
     }

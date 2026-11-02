@@ -211,6 +211,7 @@ compares decimal integers, fractions and scientific notation exactly, without
 floating-point rounding. Numbers precede text and empty/missing values in both
 directions. Equal keys retain original row order. CSV/TSV's first record remains
 data. Row numbers, Find results and Go to row identify the original source rows.
+Sorting is not available for `.xlsx` workbooks yet; it reports that instead.
 
 ## Snapshot behavior
 

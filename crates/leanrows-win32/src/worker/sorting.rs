@@ -116,7 +116,7 @@ pub(super) fn advance_sort(runtime: &WorkerRuntime, document: &mut ActiveDocumen
             );
             let (source, format) = document
                 .engine
-                .query_plan()
+                .sort_plan()
                 .map_err(|e| e.to_string())?
                 .into_parts();
             SortSession::new(
