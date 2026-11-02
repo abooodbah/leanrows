@@ -3,20 +3,21 @@
     reason = "private worker extension shares the worker's document and mailbox types"
 )]
 use super::*;
+/// Prepares the sort folder and removes stale sort data once per process.
+///
+/// A failure is not cached: it fails only the sort that asked, and the next
+/// sort tries again. Opening and viewing files never depend on this folder.
 pub(super) fn default_sort_directory() -> io::Result<PathBuf> {
     use std::sync::OnceLock;
-    static DIRECTORY: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    DIRECTORY
-        .get_or_init(|| {
-            let base =
-                std::env::var_os("LOCALAPPDATA").map_or_else(std::env::temp_dir, PathBuf::from);
-            let directory = base.join("LeanRows").join("sort-cache");
-            fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-            leanrows_core::recover_stale_sort_files(&directory).map_err(|e| e.to_string())?;
-            Ok(directory)
-        })
-        .clone()
-        .map_err(io::Error::other)
+    static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
+    if let Some(directory) = DIRECTORY.get() {
+        return Ok(directory.clone());
+    }
+    let base = std::env::var_os("LOCALAPPDATA").map_or_else(std::env::temp_dir, PathBuf::from);
+    let directory = base.join("LeanRows").join("sort-cache");
+    fs::create_dir_all(&directory)?;
+    leanrows_core::recover_stale_sort_files(&directory).map_err(io::Error::other)?;
+    Ok(DIRECTORY.get_or_init(|| directory).clone())
 }
 pub(super) fn start_sort(
     runtime: &WorkerRuntime,
@@ -119,6 +120,7 @@ pub(super) fn advance_sort(runtime: &WorkerRuntime, document: &mut ActiveDocumen
                 .sort_plan()
                 .map_err(|e| e.to_string())?
                 .into_parts();
+            let directory = default_sort_directory().map_err(|e| e.to_string())?;
             SortSession::new(
                 source,
                 SortConfig {
@@ -129,7 +131,7 @@ pub(super) fn advance_sort(runtime: &WorkerRuntime, document: &mut ActiveDocumen
                     step_bytes: 64 * 1024,
                 },
                 runtime.coordinator.resources(),
-                &runtime.sort_directory,
+                &directory,
             )
             .map_err(|e| e.to_string())
         })();

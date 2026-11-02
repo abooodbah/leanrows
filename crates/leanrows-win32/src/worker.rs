@@ -320,13 +320,11 @@ impl Worker {
         let sort_cancellation = Arc::new(CancellationToken::new());
         let coordinator = SortCoordinator::shared();
         let latest_sort_serial = Arc::new(AtomicU64::new(0));
-        let sort_directory = default_sort_directory()?;
         let runtime = WorkerRuntime {
             sorts: sorts.clone(),
             sort_cancellation: sort_cancellation.clone(),
             coordinator: coordinator.clone(),
             latest_sort_serial: latest_sort_serial.clone(),
-            sort_directory,
             opens: Arc::clone(&opens),
             viewports: Arc::clone(&viewports),
             queries: Arc::clone(&queries),
@@ -640,7 +638,6 @@ struct WorkerRuntime {
     sort_cancellation: Arc<CancellationToken>,
     coordinator: SortCoordinator,
     latest_sort_serial: Arc<AtomicU64>,
-    sort_directory: PathBuf,
     opens: Arc<CoalescingMailbox<OpenCommand>>,
     viewports: Arc<CoalescingMailbox<ViewportCommand>>,
     queries: Arc<CoalescingMailbox<QueryCommand>>,
@@ -657,6 +654,9 @@ struct WorkerRuntime {
 }
 
 fn run_worker(runtime: &WorkerRuntime) {
+    // Clear sort data left by a crash here, off the UI thread. A failure only
+    // affects sorting, which retries when asked.
+    let _ = default_sort_directory();
     let mut active = None;
     while runtime.signals.wait_take().is_some() {
         loop {

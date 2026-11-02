@@ -273,11 +273,33 @@ pub fn recover_stale_sort_files(directory: &Path) -> Result<u64, SortError> {
         #[cfg(windows)]
         {
             drop(lock);
-            fs::remove_dir_all(path)?;
-            removed += 1;
+            // Another program may still hold a file in it; a later recovery
+            // retries it.
+            if remove_stale_owner(&path).is_ok() {
+                removed += 1;
+            }
         }
     }
     Ok(removed)
+}
+/// Removes a stale owner folder, keeping its lock file until everything else
+/// is gone, so a folder that cannot be fully removed is still recognised and
+/// retried by the next recovery.
+#[cfg(windows)]
+fn remove_stale_owner(path: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        if entry.file_name() == "owner.lock" {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            fs::remove_dir_all(entry.path())?;
+        } else {
+            fs::remove_file(entry.path())?;
+        }
+    }
+    fs::remove_file(path.join("owner.lock"))?;
+    fs::remove_dir(path)
 }
 pub(super) struct DiskFile {
     pub file: File,
