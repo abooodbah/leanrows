@@ -89,7 +89,7 @@ pub(super) fn advance_sort(runtime: &WorkerRuntime, document: &mut ActiveDocumen
     let Some(active) = &mut document.sort else {
         return;
     };
-    if !runtime.coordinator.is_current(active.serial)
+    if !is_latest(&runtime.latest_sort_serial, active.serial)
         || runtime.sort_cancellation.is_cancelled(active.generation)
     {
         document.sort = None;
@@ -179,7 +179,7 @@ fn complete_sort(runtime: &WorkerRuntime, document: &mut ActiveDocument) {
     let Some(mut active) = document.sort.take() else {
         return;
     };
-    if !runtime.coordinator.is_current(active.serial)
+    if !is_latest(&runtime.latest_sort_serial, active.serial)
         || runtime.sort_cancellation.is_cancelled(active.generation)
     {
         sort_failed(document, "sorting was cancelled".to_owned());
@@ -190,7 +190,7 @@ fn complete_sort(runtime: &WorkerRuntime, document: &mut ActiveDocument) {
         return;
     };
     let result = prepare_sort_if_current(
-        &runtime.coordinator,
+        &runtime.latest_sort_serial,
         &runtime.sort_cancellation,
         active.serial,
         active.generation,
@@ -237,18 +237,23 @@ fn complete_sort(runtime: &WorkerRuntime, document: &mut ActiveDocument) {
     }
     let _ = emit_active(runtime, document, current_document_phase(document), None);
 }
+/// Whether `serial` is still this tab's newest sort request. Sorts in other
+/// tabs never supersede it.
+fn is_latest(latest: &AtomicU64, serial: u64) -> bool {
+    latest.load(Ordering::Acquire) == serial
+}
 fn prepare_sort_if_current<T>(
-    coordinator: &SortCoordinator,
+    latest: &AtomicU64,
     cancellation: &CancellationToken,
     serial: u64,
     generation: CancellationGeneration,
     prepare: impl FnOnce() -> Result<T, String>,
 ) -> Result<Option<T>, String> {
-    if !coordinator.is_current(serial) || cancellation.is_cancelled(generation) {
+    if !is_latest(latest, serial) || cancellation.is_cancelled(generation) {
         return Ok(None);
     }
     let prepared = prepare()?;
-    if !coordinator.is_current(serial) || cancellation.is_cancelled(generation) {
+    if !is_latest(latest, serial) || cancellation.is_cancelled(generation) {
         return Ok(None);
     }
     Ok(Some(prepared))
@@ -259,22 +264,21 @@ mod tests {
     #[test]
     fn final_viewport_cancellation_preserves_published_order() -> Result<(), String> {
         for superseded in [false, true] {
-            let coordinator = SortCoordinator::new();
-            let serial = coordinator.request();
+            let latest = AtomicU64::new(7);
+            let serial = 7;
             let token = CancellationToken::new();
             let generation = token.snapshot();
             let mut displayed = vec![2, 0, 1];
-            let prepared =
-                prepare_sort_if_current(&coordinator, &token, serial, generation, || {
-                    // Cancellation arrives while the final viewport is being prepared.
-                    let next = vec![1, 0, 2];
-                    if superseded {
-                        coordinator.request();
-                    } else {
-                        token.cancel();
-                    }
-                    Ok(next)
-                })?;
+            let prepared = prepare_sort_if_current(&latest, &token, serial, generation, || {
+                // Cancellation arrives while the final viewport is being prepared.
+                let next = vec![1, 0, 2];
+                if superseded {
+                    latest.store(8, Ordering::Release);
+                } else {
+                    token.cancel();
+                }
+                Ok(next)
+            })?;
             if let Some(next) = prepared {
                 displayed = next;
             }
