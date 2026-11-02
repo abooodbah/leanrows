@@ -201,9 +201,13 @@ The More menu exposes the same commands for the last selected sort column
 More > Cancel sort stops pending work while keeping the last completed view.
 
 Sorting runs in the document worker, with a process-wide 16 MiB managed-memory
-limit and 8 GiB temporary-disk quota. Only one sort runs at a time. Large files
-require sequential merge passes and temporary disk space. No database is created
-and the source is never rewritten. Closing/reloading releases the sort data.
+limit and 8 GiB temporary-disk quota. Only one sort runs at a time; a sort in
+another tab waits for it rather than cancelling it. A sort needs about 256 bytes
+of temporary disk space per row at its peak (about 2.4 GB for 10 million rows),
+so files above roughly 33 million rows cannot be sorted. LeanRows checks the
+free space before it starts and says so if the drive is too full. No database is
+created and the source is never rewritten. Closing/reloading releases the sort
+data.
 
 Text order compares complete decoded bytes, case sensitively and without locale
 collation; displayed truncation does not truncate the sort key. Numeric mode

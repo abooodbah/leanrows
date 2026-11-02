@@ -14,6 +14,13 @@ All notable changes to LeanRows are recorded in this file. The format follows
   and 8 GiB scratch quotas; original Row, Find and Go to row semantics retained.
 - Native sort-workflow QA and nonsparse resource benchmarks through the existing
   Rust engine.
+- A sort that would not fit on the drive, or in the 8 GiB sort limit, is refused
+  before it starts with a message that says how much space it needs.
+
+### Fixed
+
+- Sorting, or restoring source order, in one tab no longer cancels a sort
+  running or waiting in another tab; the second sort waits its turn.
 
 ### Known gaps
 
