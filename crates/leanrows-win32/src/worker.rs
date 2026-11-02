@@ -848,7 +848,10 @@ fn apply_viewport_request(
             );
         }
     };
-    emit_active(runtime, document, WorkerPhase::ViewportReady, None)
+    let sent = emit_active(runtime, document, WorkerPhase::ViewportReady, None);
+    // The reveal goes out once, with the rows that contain it.
+    document.reveal_rank = None;
+    sent
 }
 
 fn apply_query_command(
