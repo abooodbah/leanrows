@@ -434,6 +434,24 @@ impl WindowState {
     }
 }
 
+/// Bytes free for this user on the drive that holds `path`.
+pub(crate) fn free_disk_bytes(path: &Path) -> std::io::Result<u64> {
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut available = 0_u64;
+    // SAFETY: `wide` is a NUL-terminated path that outlives the call, and
+    // `available` is a valid out pointer for its duration.
+    unsafe {
+        windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            PCWSTR(wide.as_ptr()),
+            Some(&raw mut available),
+            None,
+            None,
+        )
+    }
+    .map_err(std::io::Error::other)?;
+    Ok(available)
+}
+
 pub(crate) fn show_startup_error(message: &str) {
     let text = startup_error_text(message);
     // SAFETY: Both strings are NUL-terminated, the text allocation remains

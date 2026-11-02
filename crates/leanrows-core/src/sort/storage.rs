@@ -93,6 +93,11 @@ impl SortResources {
     pub fn memory_bytes(&self) -> u64 {
         self.memory.load(Ordering::Acquire)
     }
+    /// Total temporary disk the sort ledger allows.
+    #[must_use]
+    pub const fn disk_limit(&self) -> u64 {
+        self.disk_limit
+    }
     #[must_use]
     pub fn disk_bytes(&self) -> u64 {
         self.disk.load(Ordering::Acquire)

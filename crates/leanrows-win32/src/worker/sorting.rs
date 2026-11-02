@@ -3,6 +3,10 @@
     reason = "private worker extension shares the worker's document and mailbox types"
 )]
 use super::*;
+#[cfg(windows)]
+use crate::native::free_disk_bytes;
+#[cfg(not(windows))]
+use crate::native_stub::free_disk_bytes;
 /// Prepares the sort folder and removes stale sort data once per process.
 ///
 /// A failure is not cached: it fails only the sort that asked, and the next
@@ -87,19 +91,76 @@ const SORT_FREE_SPACE_MARGIN: u64 = 64 * 1024 * 1024;
 /// Rows the sort will read: the indexed count, or, while indexing is still
 /// running, that count scaled up to the whole file.
 fn expected_rows(rows: u64, complete: bool, scanned: u64, source: u64) -> u64 {
-    let _ = (complete, scanned, source);
-    rows
+    if complete || scanned == 0 || scanned >= source {
+        return rows;
+    }
+    let scaled = u128::from(rows) * u128::from(source) / u128::from(scanned);
+    u64::try_from(scaled).unwrap_or(u64::MAX)
 }
 
 /// Refuses a sort before it starts when its temporary data cannot fit.
 fn check_sort_space(rows: u64, quota_left: u64, quota: u64, free: u64) -> Result<(), String> {
-    let _ = (rows, quota_left, quota, free);
+    let needed = rows.saturating_mul(SORT_SCRATCH_BYTES_PER_ROW);
+    if needed > quota {
+        return Err(format!(
+            "This file is too large to sort: it needs about {} of temporary disk space, more than the {} sort limit",
+            size_text(needed),
+            size_text(quota)
+        ));
+    }
+    if needed > quota_left {
+        return Err(
+            "Other sorted views are using the sort space; restore source order in one of them and try again"
+                .to_owned(),
+        );
+    }
+    let wanted = needed.saturating_add(SORT_FREE_SPACE_MARGIN);
+    if wanted > free {
+        return Err(format!(
+            "Not enough free disk space to sort: it needs about {} and the drive has {} free",
+            size_text(wanted),
+            size_text(free)
+        ));
+    }
     Ok(())
 }
 
 /// Sizes as Windows Explorer shows them (binary units, labelled GB and MB).
 fn size_text(bytes: u64) -> String {
-    format!("{bytes}")
+    const MB: u128 = 1 << 20;
+    const GB: u128 = 1 << 30;
+    let bytes = u128::from(bytes);
+    if bytes >= GB {
+        let tenths = (bytes * 10).div_ceil(GB);
+        format!("{}.{} GB", tenths / 10, tenths % 10)
+    } else {
+        format!("{} MB", bytes.div_ceil(MB))
+    }
+}
+
+/// Applies `check_sort_space` to this document, the shared sort ledger and
+/// the drive that holds the sort folder.
+fn check_space_for(
+    runtime: &WorkerRuntime,
+    progress: DocumentProgress,
+    directory: &Path,
+) -> Result<(), String> {
+    let resources = runtime.coordinator.resources();
+    check_sort_space(
+        expected_rows(
+            progress.row_count(),
+            progress.is_complete(),
+            progress.scanned_bytes(),
+            progress.source_bytes(),
+        ),
+        resources
+            .disk_limit()
+            .saturating_sub(resources.disk_bytes()),
+        resources.disk_limit(),
+        // If Windows cannot report free space, the sort still runs and fails
+        // cleanly should the drive fill.
+        free_disk_bytes(directory).unwrap_or(u64::MAX),
+    )
 }
 
 fn sort_failed(document: &mut ActiveDocument, message: String) {
@@ -145,6 +206,7 @@ pub(super) fn advance_sort(runtime: &WorkerRuntime, document: &mut ActiveDocumen
                 .map_err(|e| e.to_string())?
                 .into_parts();
             let directory = default_sort_directory().map_err(|e| e.to_string())?;
+            check_space_for(runtime, document.engine.progress(), &directory)?;
             SortSession::new(
                 source,
                 SortConfig {
