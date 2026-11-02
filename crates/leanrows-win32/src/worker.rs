@@ -1810,6 +1810,11 @@ mod tests {
             }
         };
         assert_eq!(cell_text(&revealed, 3, 0)?, "3");
+        // The reveal goes out once. A later event, such as a Find update, must
+        // not pull the view and selection back to that row.
+        assert!(worker.start_query(serial, b"1".to_vec(), true).is_some());
+        let later = wait_event(&worker, Duration::from_secs(5))?;
+        assert_eq!(later.reveal_rank, None);
         Ok(())
     }
     use std::fs::{self, OpenOptions};
