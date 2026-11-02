@@ -68,8 +68,8 @@ requireMatch(html, /src="assets\/leanrows-app\.png"/i, "the real application cap
 requireMatch(html, /synthetic data/i, "the application capture must be identified as synthetic data");
 requireMatch(
   html,
-  /LeanRows v0\.3\.0 keeps the virtual owner-data grid/i,
-  "the current interface description must identify v0.3.0 and its owner-data grid",
+  /LeanRows v0\.4\.0 keeps the virtual owner-data grid/i,
+  "the current interface description must identify v0.4.0 and its owner-data grid",
 );
 requireMatch(
   html,
@@ -194,7 +194,7 @@ if (structuredDataMatch) {
     if (structuredData["@type"] !== "SoftwareApplication") {
       failures.push("JSON-LD must describe a SoftwareApplication");
     }
-    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.3.0") {
+    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.4.0") {
       failures.push("JSON-LD name and release version must match the product");
     }
     if (structuredData.downloadUrl !== "https://github.com/abooodbah/leanrows/releases/latest") {
