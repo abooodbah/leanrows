@@ -1,5 +1,16 @@
 # LeanRows engine-spike tooling
 
+## Main and branch on one runner
+
+`.github/workflows/benchmark.yml` builds main and the branch of a pull request
+on the same `windows-2022` runner and runs `tools/Compare-LeanRowsBuilds.ps1`.
+It reports executable size, start time to input idle with and without a file,
+and peak working set with a 10,000,000-row, 250,000,000-byte CSV open. When the
+pull request changes sorting code, or a manual run asks for it, it also sorts
+that file through the core engine (`leanrows-spike --sort`) and through the
+app's worker (the ignored test `sort_benchmark_from_environment`). The table
+is in the job log and the run summary.
+
 ## External sort measurements
 
 `rtk proxy pwsh -NoProfile -File tools/Measure-LeanRowsSort.ps1` writes nonsparse

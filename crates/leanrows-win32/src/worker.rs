@@ -1771,6 +1771,55 @@ fn next_nonzero_serial(sequence: &AtomicU64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    /// Times a whole-file sort through the worker, the path the app uses,
+    /// including its source checks between work steps. It runs only when
+    /// asked, in a release build, on the file named by
+    /// `LEANROWS_SORT_BENCHMARK_FILE`; the benchmark workflow uses it.
+    #[test]
+    #[ignore = "benchmark: set LEANROWS_SORT_BENCHMARK_FILE and run with --ignored"]
+    fn sort_benchmark_from_environment() -> Result<(), Box<dyn std::error::Error>> {
+        let Some(path) = std::env::var_os("LEANROWS_SORT_BENCHMARK_FILE") else {
+            return Ok(());
+        };
+        let worker = Worker::start(Arc::new(|| {}))?;
+        worker.submit_path(PathBuf::from(path));
+        let indexed = wait_complete(&worker, Duration::from_mins(30))?;
+        let request = leanrows_core::SortRequest {
+            column: 0,
+            mode: leanrows_core::SortMode::Text,
+            direction: leanrows_core::SortDirection::Ascending,
+        };
+        let started = Instant::now();
+        let serial = worker.request_sort(Some(request));
+        let deadline = started + Duration::from_hours(1);
+        loop {
+            if let Some(event) = worker.poll()
+                && let Some(sort) = event.sort.as_ref().filter(|s| s.serial == serial)
+            {
+                if sort.phase == leanrows_core::SortPhase::Complete {
+                    break;
+                }
+                if let Some(error) = &sort.error {
+                    return Err(io::Error::other(error.clone()).into());
+                }
+            }
+            if Instant::now() > deadline {
+                return Err(io::Error::other("benchmark sort timed out").into());
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let elapsed = started.elapsed();
+        let resources = crate::sort_coordinator::SortCoordinator::shared().resources();
+        println!(
+            "{{\"schema\":\"leanrows.worker-sort-benchmark\",\"version\":1,\"rows\":{},\"elapsed_ms\":{},\"managed_peak_bytes\":{},\"scratch_peak_bytes\":{}}}",
+            indexed.progress.indexed_rows,
+            elapsed.as_millis(),
+            resources.memory_peak(),
+            resources.disk_peak()
+        );
+        Ok(())
+    }
+
     #[test]
     fn sorted_worker_preserves_source_numbers_and_search_reveal()
     -> Result<(), Box<dyn std::error::Error>> {
