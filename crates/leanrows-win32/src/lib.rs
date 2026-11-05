@@ -17,6 +17,8 @@ mod native;
 mod native_stub;
 mod sort_coordinator;
 mod worker;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod zoom;
 
 use std::fmt;
 use std::path::PathBuf;
