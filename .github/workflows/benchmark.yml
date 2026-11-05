@@ -1,0 +1,122 @@
+name: Windows benchmark
+
+# Builds main and the branch on the same runner and measures both the same
+# way: executable size, start time, working set with a large file open and,
+# when sorting code changes or a run asks for it, a 10M-row whole-file sort.
+# The results are in the job log and the run summary.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      sort:
+        description: "Also sort the 10M-row fixture"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: Main and branch on one runner
+    runs-on: windows-2022
+    timeout-minutes: 150
+
+    steps:
+      - name: Check out the branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: head
+          fetch-depth: 0
+
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: base
+
+      - name: Install the pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustc +1.97.1 --version
+
+      - name: Decide whether to sort
+        id: scope
+        shell: pwsh
+        env:
+          EVENT: ${{ github.event_name }}
+          SORT_INPUT: ${{ inputs.sort }}
+        run: |
+          $sort = $false
+          if ($env:EVENT -eq 'workflow_dispatch') {
+            $sort = $env:SORT_INPUT -eq 'true'
+          }
+          else {
+            $changed = @(git -C head diff --name-only origin/main...HEAD)
+            $changed | ForEach-Object { Write-Host "changed: $_" }
+            $patterns = @(
+              '^crates/leanrows-core/src/sort',
+              '^crates/leanrows-win32/src/worker',
+              '^crates/leanrows-win32/src/sort_coordinator',
+              '^crates/leanrows-spike/',
+              '^Cargo\.(toml|lock)$',
+              '^\.github/workflows/benchmark\.yml$',
+              '^tools/Compare-LeanRowsBuilds\.ps1$'
+            )
+            $sort = @($changed | Where-Object { $path = $_; @($patterns | Where-Object { $path -match $_ }).Count -gt 0 }).Count -gt 0
+          }
+          "sort=$($sort.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Sort benchmark: $sort"
+
+      - name: Build main
+        working-directory: base
+        run: cargo +1.97.1 build --release --locked -p leanrows-app -p leanrows-spike
+
+      - name: Build the branch
+        working-directory: head
+        run: cargo +1.97.1 build --release --locked -p leanrows-app -p leanrows-spike
+
+      - name: Write the 10M-row fixture
+        shell: pwsh
+        run: |
+          # The rows tools/Measure-LeanRowsSort.ps1 writes:
+          # D9((row*97+13)%N),row-D9(row) with CRLF, 250,000,000 bytes.
+          $script = @'
+          import sys
+          n = int(sys.argv[1])
+          with open(sys.argv[2], "wb", buffering=1 << 20) as out:
+              rows = []
+              for row in range(n):
+                  rows.append(b"%09d,row-%09d\r\n" % ((row * 97 + 13) % n, row))
+                  if len(rows) == 100000:
+                      out.write(b"".join(rows))
+                      rows = []
+              out.write(b"".join(rows))
+          '@
+          $generator = Join-Path $env:RUNNER_TEMP 'write_fixture.py'
+          [System.IO.File]::WriteAllText($generator, $script)
+          $fixture = Join-Path $env:RUNNER_TEMP 'shuffled-10000000.csv'
+          python $generator 10000000 $fixture
+          if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed.' }
+          Get-Item $fixture | Format-Table Name, Length
+          (Get-FileHash $fixture -Algorithm SHA256).Hash
+
+      - name: Measure main and the branch
+        shell: pwsh
+        run: |
+          $arguments = @{
+            BaseDirectory = './base'
+            HeadDirectory = './head'
+            FixturePath = (Join-Path $env:RUNNER_TEMP 'shuffled-10000000.csv')
+            StartRuns = 5
+            OutputPath = (Join-Path $env:RUNNER_TEMP 'comparison.json')
+          }
+          if ('${{ steps.scope.outputs.sort }}' -eq 'true') { $arguments.Sort = $true }
+          ./head/tools/Compare-LeanRowsBuilds.ps1 @arguments
