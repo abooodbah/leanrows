@@ -3588,6 +3588,7 @@ fn draw_shell_button(window: HWND, lparam: LPARAM) -> bool {
         state.chrome.goto,
         state.chrome.theme,
         state.chrome.settings_button,
+        state.chrome.open,
         state.chrome.more,
     ]
     .contains(&item.hwndItem)
