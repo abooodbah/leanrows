@@ -1107,26 +1107,43 @@ fn verify_theme_dot(state: &WindowState) -> Result<(), ShellError> {
         return Err(ShellError::new("theme dot check could not acquire a DC"));
     }
     let dot = theme_dot_rect(state, device, client);
-    let centre_y = i32::midpoint(dot.top, dot.bottom);
-    let quarter = (dot.right - dot.left) / 4;
-    let samples: Vec<(i32, theme::UiColor)> = match state.theme.preference.swatch() {
-        theme::Swatch::Solid(color) => vec![(i32::midpoint(dot.left, dot.right), color)],
-        theme::Swatch::Split { left, right } => vec![
-            (dot.left + quarter + 1, left),
-            (dot.right - quarter - 1, right),
-        ],
+    // The dot must show its ring and its fill: for System, white left of
+    // black. Searching the dot's box keeps the check free of off-by-one
+    // pixel positions in GDI's elliptic regions.
+    let ring = state.theme.brushes.swatch_ring_color().colorref().0;
+    let (fill_left, fill_right) = match state.theme.preference.swatch() {
+        theme::Swatch::Solid(color) => (color.colorref().0, color.colorref().0),
+        theme::Swatch::Split { left, right } => (left.colorref().0, right.colorref().0),
     };
-    let mut result = Ok(());
-    for (x, expected) in samples {
-        // SAFETY: The DC is live and the point lies inside the button.
-        let actual = unsafe { GetPixel(device, x, centre_y) }.0;
-        if actual != expected.colorref().0 {
-            result = Err(ShellError::new(format!(
-                "theme dot for {:?} painted {actual:06x}",
-                state.theme.preference
-            )));
+    let mut seen_ring = false;
+    let mut first_left = None;
+    let mut last_right = None;
+    let mut found = Vec::new();
+    for y in dot.top..dot.bottom {
+        for x in dot.left..dot.right {
+            // SAFETY: The DC is live and the point lies inside the button.
+            let pixel = unsafe { GetPixel(device, x, y) }.0;
+            if !found.contains(&pixel) && found.len() < 8 {
+                found.push(pixel);
+            }
+            seen_ring |= pixel == ring;
+            if pixel == fill_left && first_left.is_none() {
+                first_left = Some(x);
+            }
+            if pixel == fill_right {
+                last_right = Some(last_right.map_or(x, |last: i32| last.max(x)));
+            }
         }
     }
+    let ordered = matches!((first_left, last_right), (Some(left), Some(right)) if left <= right);
+    let result = if seen_ring && ordered {
+        Ok(())
+    } else {
+        Err(ShellError::new(format!(
+            "theme dot for {:?} at ({}, {})-({}, {}) shows {found:06x?}",
+            state.theme.preference, dot.left, dot.top, dot.right, dot.bottom
+        )))
+    };
     // SAFETY: Releases the exact HWND/DC pair acquired above.
     let _ = unsafe { ReleaseDC(Some(button), device) };
     result

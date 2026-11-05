@@ -387,6 +387,7 @@ pub(super) struct ThemeBrushes {
     border: OwnedBrush,
     accent: OwnedBrush,
     swatch_ring: OwnedBrush,
+    swatch_ring_color: UiColor,
 }
 
 impl ThemeBrushes {
@@ -404,12 +405,19 @@ impl ThemeBrushes {
             border: OwnedBrush::new(palette.border)?,
             accent: OwnedBrush::new(palette.accent)?,
             swatch_ring: OwnedBrush::new(ring)?,
+            swatch_ring_color: ring,
         })
     }
 
     #[must_use]
     pub(super) const fn swatch_ring(&self) -> HBRUSH {
         self.swatch_ring.0
+    }
+
+    /// The ring's colour, for the shell smoke's pixel checks.
+    #[must_use]
+    pub(super) const fn swatch_ring_color(&self) -> UiColor {
+        self.swatch_ring_color
     }
 
     #[must_use]
