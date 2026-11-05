@@ -21,7 +21,7 @@ no telemetry and no network access of any kind.
 Download the portable ZIP from the
 [latest release](https://github.com/abooodbah/leanrows/releases/latest), extract
 it, and run `leanrows.exe`. Outside that folder, LeanRows writes only its
-appearance setting, under `HKCU\Software\LeanRows`, and a scratch folder for
+theme and zoom settings, under `HKCU\Software\LeanRows`, and a scratch folder for
 search results, under `%LOCALAPPDATA%\LeanRows`. Column sorting also keeps
 temporary sort data there.
 
@@ -266,6 +266,10 @@ qualification records full process-tree memory independently; see
 - `Ctrl+C` copies selected cached rows as tab-delimited Unicode text. One
   operation is limited to 4,096 rows and 1 MiB, including the terminator.
 - `F5` reloads the active path as a new snapshot.
+- `Ctrl+Plus`, `Ctrl+Minus` and `Ctrl+0` zoom the rows in, out and back to
+  actual size, as does `Ctrl` with the mouse wheel over the rows. The steps
+  are LeanMark's, from 50% to 300%. Only the rows and their column titles
+  zoom; the toolbar and tabs keep their size. The zoom is remembered.
 - `Ctrl+Shift+T` changes the theme, as the theme button does. The button shows
   a coloured dot for the current theme, and its tooltip names the theme.
 - `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+PgDn` and `Ctrl+PgUp`) move between
@@ -344,7 +348,7 @@ LeanRows is portable. To remove it, close it and delete the folder you
 extracted it to. Outside that folder it keeps two things, which you can delete
 as well:
 
-- the appearance setting, under `HKCU\Software\LeanRows`
+- the theme and zoom settings, under `HKCU\Software\LeanRows`
 - a scratch folder for search results, under `%LOCALAPPDATA%\LeanRows`
 
 ```powershell
@@ -360,5 +364,5 @@ If you ran the optional `install.ps1`, uninstall it first, either from
 Installed apps in Windows Settings or with
 `& "$env:LOCALAPPDATA\Programs\LeanRows\uninstall.ps1"`. That removes the
 installed files, the Start menu shortcut, the file associations, and the
-Installed apps entry. It leaves the appearance setting and the scratch folder,
+Installed apps entry. It leaves the theme and zoom settings and the scratch folder,
 which you can then delete with the two commands above.

@@ -30,7 +30,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::{FindResourceW, GetModuleHandleW};
 use windows::Win32::System::SystemServices::{
-    SS_CENTER, SS_CENTERIMAGE, SS_ICON, SS_OWNERDRAW, SS_TYPEMASK,
+    MK_CONTROL, SS_CENTER, SS_CENTERIMAGE, SS_ICON, SS_OWNERDRAW, SS_TYPEMASK,
 };
 use windows::Win32::UI::Controls::Dialogs::{
     CommDlgExtendedError, FNERR_BUFFERTOOSMALL, GetOpenFileNameW, OFN_ALLOWMULTISELECT,
@@ -77,10 +77,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND,
     WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY,
     WM_DPICHANGED, WM_DRAWITEM, WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETMINMAXINFO,
-    WM_INITDIALOG, WM_KEYDOWN, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT, WM_SETFONT,
-    WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW,
-    WS_BORDER, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW,
-    WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_TABSTOP,
+    WM_INITDIALOG, WM_KEYDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT,
+    WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER,
+    WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES,
+    WS_EX_APPWINDOW, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -123,6 +123,9 @@ const ID_EDIT_GOTO: u16 = 114;
 const ID_VIEW_THEME: u16 = 120;
 const ID_SEARCH_MATCH_CASE: u16 = 121;
 const ID_APP_MORE: u16 = 122;
+const ID_VIEW_ZOOM_IN: u16 = 123;
+const ID_VIEW_ZOOM_OUT: u16 = 124;
+const ID_VIEW_ZOOM_RESET: u16 = 125;
 const ID_TAB_CLOSE: u16 = 130;
 const ID_TAB_NEXT: u16 = 131;
 const ID_TAB_PREVIOUS: u16 = 132;
@@ -250,6 +253,8 @@ struct WindowState {
     background_tabs: Vec<BackgroundTab>,
     tab_labels: Vec<String>,
     tab_hover: TabHover,
+    /// Ctrl+wheel movement not yet a whole notch.
+    zoom_wheel: i32,
     /// Files handed over by another launch, opened once the sender returns.
     pending_opens: Vec<PathBuf>,
     /// Set once the window starts closing, so forwarded files go elsewhere.
@@ -504,7 +509,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let accessibility = AccessibilityBridge::new()?;
     // SAFETY: This reads the system DPI before any top-level HWND is created.
     let initial_dpi = unsafe { GetDpiForSystem() }.max(96);
-    let theme = ThemeResources::new(ThemeMode::load(), initial_dpi)?;
+    let theme = ThemeResources::new(ThemeMode::load(), initial_dpi, theme::load_zoom_percent())?;
 
     // SAFETY: Passing `None` requests the current executable module.
     let module = unsafe { GetModuleHandleW(None) }
@@ -548,6 +553,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         background_tabs: Vec::new(),
         tab_labels: Vec::new(),
         tab_hover: TabHover::default(),
+        zoom_wheel: 0,
         pending_opens: Vec::new(),
         closing: false,
         document_smoke: options.document_smoke_test,
@@ -885,6 +891,7 @@ fn verify_shell_smoke(
         if verified {
             verify_modern_shell_chrome(state)?;
             verify_theme_button_cycle(window)?;
+            verify_grid_zoom(window)?;
             verify_progress_indicator(state)?;
             verify_tab_strip(window)?;
             verify_native_presentation(window, state)?;
@@ -1021,12 +1028,88 @@ fn verify_theme_button_cycle(window: HWND) -> Result<(), ShellError> {
     verification
 }
 
+/// Zoom follows `LeanMark`'s levels, changes only the rows' fonts, and is
+/// saved. The original level is restored afterwards.
+fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let original = unsafe { pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("zoom smoke state is unavailable"))?
+        .theme
+        .zoom;
+    let verification = (|| {
+        set_grid_zoom(window, crate::zoom::DEFAULT_ZOOM)?;
+        for (command, expected) in [
+            (ID_VIEW_ZOOM_IN, 110),
+            (ID_VIEW_ZOOM_IN, 125),
+            (ID_VIEW_ZOOM_OUT, 110),
+            (ID_VIEW_ZOOM_RESET, 100),
+        ] {
+            // SAFETY: The command is routed synchronously through the window.
+            unsafe {
+                SendMessageW(
+                    window,
+                    WM_COMMAND,
+                    Some(WPARAM(usize::from(command))),
+                    Some(LPARAM(0)),
+                );
+            }
+            // SAFETY: The state stays attached during the synchronous smoke.
+            let state = unsafe { pointer.as_ref() }
+                .ok_or_else(|| ShellError::new("zoom smoke state was detached"))?;
+            if state.theme.zoom != expected || theme::load_zoom_percent() != expected {
+                return Err(ShellError::new(format!(
+                    "zoom command did not apply and save {expected}%"
+                )));
+            }
+            // SAFETY: WM_GETFONT carries no pointers.
+            let grid = unsafe { SendMessageW(state.list, WM_GETFONT, None, None) }.0;
+            let grid = windows::Win32::Graphics::Gdi::HFONT(grid as *mut c_void);
+            let body_height = font_height(state.theme.fonts.body());
+            if font_height(grid) != body_height.map(|h| crate::zoom::scale_by_zoom(h, expected)) {
+                return Err(ShellError::new(format!(
+                    "the rows' font is not {expected}% of the body font"
+                )));
+            }
+            // SAFETY: WM_GETFONT carries no pointers.
+            let search =
+                unsafe { SendMessageW(state.chrome.search_edit, WM_GETFONT, None, None) }.0;
+            if search != state.theme.fonts.body().0 as isize {
+                return Err(ShellError::new("zoom changed the toolbar's font"));
+            }
+        }
+        Ok(())
+    })();
+    let restoration = set_grid_zoom(window, original);
+    if let Err(error) = restoration {
+        return Err(ShellError::new(format!(
+            "zoom smoke could not restore the original level: {error}"
+        )));
+    }
+    verification
+}
+
+fn font_height(font: windows::Win32::Graphics::Gdi::HFONT) -> Option<i32> {
+    let mut definition = windows::Win32::Graphics::Gdi::LOGFONTW::default();
+    let size = i32::try_from(size_of::<windows::Win32::Graphics::Gdi::LOGFONTW>()).ok()?;
+    // SAFETY: The font is a live GDI object and the LOGFONTW is writable.
+    let copied = unsafe {
+        windows::Win32::Graphics::Gdi::GetObjectW(
+            HGDIOBJ(font.0),
+            size,
+            Some((&raw mut definition).cast()),
+        )
+    };
+    (copied == size).then_some(definition.lfHeight)
+}
+
 fn verify_theme_runtime_state(window: HWND, expected: ThemeMode) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: The state remains attached throughout synchronous smoke execution.
     let state = unsafe { pointer.as_ref() }
         .ok_or_else(|| ShellError::new("theme runtime state is unavailable"))?;
-    let expected_effective = ThemeResources::new(expected, state.theme.metrics.dpi)?.effective;
+    let expected_effective =
+        ThemeResources::new(expected, state.theme.metrics.dpi, state.theme.zoom)?.effective;
     if state.theme.preference != expected || state.theme.effective != expected_effective {
         return Err(ShellError::new(format!(
             "theme button did not apply the expected {expected:?} runtime state"
@@ -1539,6 +1622,13 @@ fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
     }
     .map_err(menu_error)?;
     unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
+    append_menu_text(menu.handle(), ID_VIEW_ZOOM_IN, w!("Zoom &in\tCtrl++"))?;
+    append_menu_text(menu.handle(), ID_VIEW_ZOOM_OUT, w!("Zoom o&ut\tCtrl+-"))?;
+    append_menu_text(
+        menu.handle(),
+        ID_VIEW_ZOOM_RESET,
+        w!("&Actual size\tCtrl+0"),
+    )?;
     let theme_label = format!("Theme: {}", state.theme.preference.label());
     append_menu_owned(menu.handle(), ID_VIEW_THEME, &theme_label)?;
     append_menu_text(menu.handle(), ID_HELP_ABOUT, w!("&About LeanRows"))?;
@@ -1661,6 +1751,9 @@ fn handle_command(window: HWND, command: u16) {
             }
         }
         ID_SEARCH_MATCH_CASE => toggle_match_case(window),
+        ID_VIEW_ZOOM_IN => zoom_grid(window, 1),
+        ID_VIEW_ZOOM_OUT => zoom_grid(window, -1),
+        ID_VIEW_ZOOM_RESET => zoom_grid(window, 0),
         ID_VIEW_THEME => {
             if let Err(error) = cycle_theme(window) {
                 set_status(window, &format!("Theme change failed: {error}"));
@@ -1686,6 +1779,94 @@ fn handle_command(window: HWND, command: u16) {
             };
         }
         _ => {}
+    }
+}
+
+/// Zooms the rows one level in (`direction > 0`) or out, or back to actual
+/// size, as `LeanMark` zooms its document. The status strip says the level.
+fn zoom_grid(window: HWND, direction: i32) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The current zoom is copied while the attached state is live.
+    let Some(current) = (unsafe { pointer.as_ref() }).map(|state| state.theme.zoom) else {
+        return;
+    };
+    let next = crate::zoom::step_zoom(current, direction);
+    match set_grid_zoom(window, next) {
+        Ok(()) => set_status(window, &format!("Zoom {next}%")),
+        Err(error) => set_status(window, &format!("Zoom failed: {error}")),
+    }
+}
+
+/// Rebuilds the fonts at `zoom` percent, scales the column widths by the same
+/// ratio in every tab, and saves the level.
+fn set_grid_zoom(window: HWND, zoom: u32) -> Result<(), ShellError> {
+    // SAFETY: The live HWND provides its current monitor DPI.
+    let dpi = unsafe { GetDpiForWindow(window) }.max(96);
+    let pointer = state_pointer_for(window);
+    // SAFETY: Zoom changes run on the window's UI thread.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    let previous_zoom = state.theme.zoom;
+    if zoom == previous_zoom {
+        return Ok(());
+    }
+    let next = ThemeResources::new(state.theme.preference, dpi, zoom)?;
+    let zoom = next.zoom;
+    let previous = std::mem::replace(&mut state.theme, next);
+    let result = apply_native_presentation(state);
+    drop(previous);
+    result?;
+    let rescale = |width: i32| {
+        i32::try_from(i64::from(width) * i64::from(zoom) / i64::from(previous_zoom.max(1)))
+            .unwrap_or(width)
+            .max(1)
+    };
+    let widths: Vec<i32> = column_widths(state.list, state.columns)
+        .into_iter()
+        .map(rescale)
+        .collect();
+    set_column_widths(state.list, &widths);
+    for tab in &mut state.background_tabs {
+        for width in &mut tab.column_widths {
+            *width = rescale(*width);
+        }
+    }
+    refit_list_header(state.list);
+    let _ = theme::save_zoom_percent(zoom);
+    layout_children(window);
+    redraw_shell_children(window)
+}
+
+/// The list sizes its header from the header font only when it lays itself
+/// out, so a one-pixel resize makes it measure the zoomed font.
+fn refit_list_header(list: HWND) {
+    let mut bounds = RECT::default();
+    // SAFETY: The list is a live child; its rectangle is read and restored.
+    if unsafe { GetClientRect(list, &raw mut bounds) }.is_err() {
+        return;
+    }
+    let width = bounds.right.saturating_sub(bounds.left);
+    let height = bounds.bottom.saturating_sub(bounds.top);
+    // SAFETY: Both resizes keep the list's position and z-order.
+    unsafe {
+        let _ = SetWindowPos(
+            list,
+            None,
+            0,
+            0,
+            width,
+            height.saturating_add(1),
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+        let _ = SetWindowPos(
+            list,
+            None,
+            0,
+            0,
+            width,
+            height,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
     }
 }
 
@@ -1715,11 +1896,11 @@ fn cycle_theme(window: HWND) -> Result<(), ShellError> {
 fn refresh_theme(window: HWND, preference: ThemeMode) -> Result<(), ShellError> {
     // SAFETY: The live HWND provides its current monitor DPI.
     let dpi = unsafe { GetDpiForWindow(window) }.max(96);
-    let next = ThemeResources::new(preference, dpi)?;
     let pointer = state_pointer_for(window);
     // SAFETY: Theme refresh runs on the window's UI thread.
     let state = unsafe { pointer.as_mut() }
         .ok_or_else(|| ShellError::new("window state is unavailable"))?;
+    let next = ThemeResources::new(preference, dpi, state.theme.zoom)?;
     let previous = std::mem::replace(&mut state.theme, next);
     let result = apply_native_presentation(state);
     drop(previous);
@@ -2321,8 +2502,8 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
     let semibold = state.theme.fonts.semibold();
     let caption = state.theme.fonts.caption();
     let heading = state.theme.fonts.heading();
+    apply_font(state.list, state.theme.fonts.grid());
     for handle in [
-        state.list,
         state.chrome.search_edit,
         state.chrome.match_case,
         state.chrome.find_previous,
@@ -2342,7 +2523,7 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
         apply_font(handle, semibold);
     }
     if let Some(header) = list_header(state.list) {
-        apply_font(header, semibold);
+        apply_font(header, state.theme.fonts.grid_header());
     }
     for handle in [
         state.chrome.file_meta,
@@ -2545,7 +2726,7 @@ fn message_loop(window: HWND, accelerators: HACCEL) -> Result<(), ShellError> {
         if !result.as_bool() {
             return Ok(());
         }
-        if handle_shell_keyboard(window, &message) {
+        if handle_shell_keyboard(window, &message) || handle_zoom_wheel(window, &message) {
             continue;
         }
         // SAFETY: The message was populated successfully; handles are alive until WM_QUIT.
@@ -2556,6 +2737,41 @@ fn message_loop(window: HWND, accelerators: HACCEL) -> Result<(), ShellError> {
             }
         }
     }
+}
+
+/// Ctrl+wheel over the rows zooms them one level per notch, as in
+/// `LeanMark`. Precision touchpads send smaller steps, which add up.
+fn handle_zoom_wheel(window: HWND, message: &MSG) -> bool {
+    if message.message != WM_MOUSEWHEEL {
+        return false;
+    }
+    let keys = message.wParam.0 & 0xffff;
+    if keys & MK_CONTROL.0 as usize == 0 {
+        return false;
+    }
+    let pointer = state_pointer_for(window);
+    // SAFETY: Message dispatch and state access are serialized on this thread.
+    let Some(state) = (unsafe { pointer.as_mut() }) else {
+        return false;
+    };
+    if message.hwnd != state.list && Some(message.hwnd) != list_header(state.list) {
+        return false;
+    }
+    let delta = i32::from(i16::from_le_bytes(
+        u16::try_from((message.wParam.0 >> 16) & 0xffff)
+            .unwrap_or_default()
+            .to_le_bytes(),
+    ));
+    state.zoom_wheel = state.zoom_wheel.saturating_add(delta);
+    let notches = state.zoom_wheel / 120;
+    if notches == 0 {
+        return true;
+    }
+    state.zoom_wheel -= notches * 120;
+    for _ in 0..notches.unsigned_abs() {
+        zoom_grid(window, notches.signum());
+    }
+    true
 }
 
 fn handle_shell_keyboard(window: HWND, message: &MSG) -> bool {

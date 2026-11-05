@@ -1,4 +1,60 @@
 //! Zoom levels for the row grid, shared with `LeanMark`.
+//!
+//! Only the rows zoom, as in `LeanMark` only the document zooms: the toolbar,
+//! tabs and panels keep their size. The levels are the familiar browser
+//! steps, so repeated zooming lands on round values.
+
+/// Zoom levels in percent, `LeanMark`'s `kZoomLevels`.
+pub(crate) const ZOOM_LEVELS: [u32; 13] =
+    [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
+/// Actual size.
+pub(crate) const DEFAULT_ZOOM: u32 = 100;
+
+/// The next level above (`direction > 0`) or below (`direction < 0`) the
+/// current zoom, staying at the ends. A zero direction resets to 100%.
+#[must_use]
+pub(crate) fn step_zoom(current: u32, direction: i32) -> u32 {
+    match direction.cmp(&0) {
+        std::cmp::Ordering::Greater => ZOOM_LEVELS
+            .into_iter()
+            .find(|level| *level > current)
+            .unwrap_or(ZOOM_LEVELS[ZOOM_LEVELS.len() - 1]),
+        std::cmp::Ordering::Less => ZOOM_LEVELS
+            .into_iter()
+            .rev()
+            .find(|level| *level < current)
+            .unwrap_or(ZOOM_LEVELS[0]),
+        std::cmp::Ordering::Equal => DEFAULT_ZOOM,
+    }
+}
+
+/// Snaps a saved zoom to the nearest level. Values more than 1% outside the
+/// range give actual size, as `LeanMark`'s `NormalizeZoom`.
+#[must_use]
+pub(crate) fn normalize_zoom(value: u32) -> u32 {
+    let lowest = ZOOM_LEVELS[0];
+    let highest = ZOOM_LEVELS[ZOOM_LEVELS.len() - 1];
+    if value < lowest.saturating_sub(1) || value > highest.saturating_add(1) {
+        return DEFAULT_ZOOM;
+    }
+    ZOOM_LEVELS
+        .into_iter()
+        .min_by_key(|level| level.abs_diff(value))
+        .unwrap_or(DEFAULT_ZOOM)
+}
+
+/// Scales a pixel size, such as a font height or a column width, by `zoom`
+/// percent, rounding to the nearest pixel. A nonzero size stays nonzero.
+#[must_use]
+pub(crate) fn scale_by_zoom(size: i32, zoom: u32) -> i32 {
+    let scaled = (i64::from(size) * i64::from(zoom) + i64::from(size.signum()) * 50) / 100;
+    let scaled = if scaled == 0 {
+        i64::from(size.signum())
+    } else {
+        scaled
+    };
+    i32::try_from(scaled).unwrap_or(if size < 0 { i32::MIN } else { i32::MAX })
+}
 
 #[cfg(test)]
 mod tests {

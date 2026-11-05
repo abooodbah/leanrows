@@ -672,7 +672,7 @@ function Test-WindowsSourceContract {
     Assert-True -Condition $resourceText.Contains('#include "leanrows-version.rc"') `
         -Message 'The deterministic generated VERSIONINFO resource is not included.'
     Assert-Matches -Text $resourceText `
-        -Pattern '(?s)#define IDR_ACCELERATORS 102.*?IDR_ACCELERATORS ACCELERATORS\s*BEGIN\s*"O",\s*ID_FILE_OPEN,\s*VIRTKEY,\s*CONTROL\s*0x74,\s*ID_FILE_RELOAD,\s*VIRTKEY\s*"C",\s*ID_EDIT_COPY,\s*VIRTKEY,\s*CONTROL\s*"F",\s*ID_EDIT_FIND,\s*VIRTKEY,\s*CONTROL\s*0x72,\s*ID_EDIT_FIND_NEXT,\s*VIRTKEY\s*0x72,\s*ID_EDIT_FIND_PREVIOUS,\s*VIRTKEY,\s*SHIFT\s*"G",\s*ID_EDIT_GOTO,\s*VIRTKEY,\s*CONTROL\s*"W",\s*ID_TAB_CLOSE,\s*VIRTKEY,\s*CONTROL\s*0x73,\s*ID_TAB_CLOSE,\s*VIRTKEY,\s*CONTROL\s*0x09,\s*ID_TAB_NEXT,\s*VIRTKEY,\s*CONTROL\s*0x09,\s*ID_TAB_PREVIOUS,\s*VIRTKEY,\s*CONTROL,\s*SHIFT\s*0x22,\s*ID_TAB_NEXT,\s*VIRTKEY,\s*CONTROL\s*0x21,\s*ID_TAB_PREVIOUS,\s*VIRTKEY,\s*CONTROL\s*"1",\s*ID_TAB_SELECT_FIRST,\s*VIRTKEY,\s*CONTROL\s*"2",\s*142,\s*VIRTKEY,\s*CONTROL\s*"3",\s*143,\s*VIRTKEY,\s*CONTROL\s*"4",\s*144,\s*VIRTKEY,\s*CONTROL\s*"5",\s*145,\s*VIRTKEY,\s*CONTROL\s*"6",\s*146,\s*VIRTKEY,\s*CONTROL\s*"7",\s*147,\s*VIRTKEY,\s*CONTROL\s*"8",\s*148,\s*VIRTKEY,\s*CONTROL\s*"9",\s*ID_TAB_SELECT_LAST,\s*VIRTKEY,\s*CONTROL\s*"T",\s*ID_VIEW_THEME,\s*VIRTKEY,\s*CONTROL,\s*SHIFT\s*END' `
+        -Pattern '(?s)#define IDR_ACCELERATORS 102.*?IDR_ACCELERATORS ACCELERATORS\s*BEGIN\s*"O",\s*ID_FILE_OPEN,\s*VIRTKEY,\s*CONTROL\s*0x74,\s*ID_FILE_RELOAD,\s*VIRTKEY\s*"C",\s*ID_EDIT_COPY,\s*VIRTKEY,\s*CONTROL\s*"F",\s*ID_EDIT_FIND,\s*VIRTKEY,\s*CONTROL\s*0x72,\s*ID_EDIT_FIND_NEXT,\s*VIRTKEY\s*0x72,\s*ID_EDIT_FIND_PREVIOUS,\s*VIRTKEY,\s*SHIFT\s*"G",\s*ID_EDIT_GOTO,\s*VIRTKEY,\s*CONTROL\s*"W",\s*ID_TAB_CLOSE,\s*VIRTKEY,\s*CONTROL\s*0x73,\s*ID_TAB_CLOSE,\s*VIRTKEY,\s*CONTROL\s*0x09,\s*ID_TAB_NEXT,\s*VIRTKEY,\s*CONTROL\s*0x09,\s*ID_TAB_PREVIOUS,\s*VIRTKEY,\s*CONTROL,\s*SHIFT\s*0x22,\s*ID_TAB_NEXT,\s*VIRTKEY,\s*CONTROL\s*0x21,\s*ID_TAB_PREVIOUS,\s*VIRTKEY,\s*CONTROL\s*"1",\s*ID_TAB_SELECT_FIRST,\s*VIRTKEY,\s*CONTROL\s*"2",\s*142,\s*VIRTKEY,\s*CONTROL\s*"3",\s*143,\s*VIRTKEY,\s*CONTROL\s*"4",\s*144,\s*VIRTKEY,\s*CONTROL\s*"5",\s*145,\s*VIRTKEY,\s*CONTROL\s*"6",\s*146,\s*VIRTKEY,\s*CONTROL\s*"7",\s*147,\s*VIRTKEY,\s*CONTROL\s*"8",\s*148,\s*VIRTKEY,\s*CONTROL\s*"9",\s*ID_TAB_SELECT_LAST,\s*VIRTKEY,\s*CONTROL\s*"T",\s*ID_VIEW_THEME,\s*VIRTKEY,\s*CONTROL,\s*SHIFT\s*0xBB,\s*ID_VIEW_ZOOM_IN,\s*VIRTKEY,\s*CONTROL\s*0xBB,\s*ID_VIEW_ZOOM_IN,\s*VIRTKEY,\s*CONTROL,\s*SHIFT\s*0x6B,\s*ID_VIEW_ZOOM_IN,\s*VIRTKEY,\s*CONTROL\s*0xBD,\s*ID_VIEW_ZOOM_OUT,\s*VIRTKEY,\s*CONTROL\s*0x6D,\s*ID_VIEW_ZOOM_OUT,\s*VIRTKEY,\s*CONTROL\s*"0",\s*ID_VIEW_ZOOM_RESET,\s*VIRTKEY,\s*CONTROL\s*0x60,\s*ID_VIEW_ZOOM_RESET,\s*VIRTKEY,\s*CONTROL\s*END' `
         -Message 'The embedded accelerator table does not preserve the approved keyboard command map.'
     Assert-True -Condition (-not [regex]::IsMatch(
             $resourceText,
@@ -694,7 +694,8 @@ function Test-WindowsSourceContract {
         ID_EDIT_FIND_PREVIOUS = 113; ID_EDIT_GOTO = 114
         ID_TAB_CLOSE = 130; ID_TAB_NEXT = 131; ID_TAB_PREVIOUS = 132
         ID_TAB_SELECT_FIRST = 141; ID_TAB_SELECT_LAST = 149
-        ID_VIEW_THEME = 120
+        ID_VIEW_THEME = 120; ID_VIEW_ZOOM_IN = 123; ID_VIEW_ZOOM_OUT = 124
+        ID_VIEW_ZOOM_RESET = 125
     }
     foreach ($entry in $acceleratorCommandIds.GetEnumerator()) {
         $name = [regex]::Escape([string]$entry.Key)
