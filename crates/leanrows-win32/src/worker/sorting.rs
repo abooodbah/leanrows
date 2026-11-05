@@ -54,6 +54,7 @@ pub(super) fn start_sort(
             source_memory: None,
             permit: None,
             last_emit: std::time::Instant::now(),
+            source_check: SourceCheck::default(),
         });
     } else {
         let generation = runtime.cancellation.snapshot();
@@ -82,6 +83,27 @@ pub(super) fn start_sort(
     }
     let _ = emit_active(runtime, document, current_document_phase(document), None);
 }
+/// Sort steps between checks of the source path. A step is 64 KiB of work,
+/// so this is about 2 MiB of sorting. The retained handle already refuses
+/// in-place writes, and a replaced path is caught here or, at the latest,
+/// when the finished order is checked before it is shown.
+const SORT_SOURCE_CHECK_STEPS: usize = 32;
+
+/// Counts sort steps and says when the source path is due a check: on the
+/// first step and then every `SORT_SOURCE_CHECK_STEPS`.
+#[derive(Debug, Default)]
+pub(super) struct SourceCheck {
+    steps: usize,
+}
+
+impl SourceCheck {
+    pub(super) fn due(&mut self) -> bool {
+        let due = self.steps % SORT_SOURCE_CHECK_STEPS == 0;
+        self.steps = self.steps.wrapping_add(1);
+        due
+    }
+}
+
 /// Peak temporary disk per row: a merge pass holds two 128-byte copies of
 /// every row's sort record.
 const SORT_SCRATCH_BYTES_PER_ROW: u64 = 256;
@@ -233,13 +255,16 @@ pub(super) fn advance_sort(runtime: &WorkerRuntime, document: &mut ActiveDocumen
     let Some(session) = active.session.as_mut() else {
         return;
     };
+    let source_check = &mut active.source_check;
     let result = session
         .advance(&runtime.sort_cancellation, active.generation)
         .and_then(|step| {
-            document
-                .engine
-                .validate_query_snapshot()
-                .map_err(|e| leanrows_core::SortError::Io(io::Error::other(e)))?;
+            if source_check.due() || step.phase == SortPhase::Complete {
+                document
+                    .engine
+                    .validate_query_snapshot()
+                    .map_err(|e| leanrows_core::SortError::Io(io::Error::other(e)))?;
+            }
             Ok(step)
         });
     match result {

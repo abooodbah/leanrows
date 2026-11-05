@@ -605,6 +605,7 @@ struct ActiveSort {
     source_memory: Option<leanrows_core::SortMemoryReservation>,
     permit: Option<SortPermit>,
     last_emit: std::time::Instant,
+    source_check: sorting::SourceCheck,
 }
 
 struct CacheState {
