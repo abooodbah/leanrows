@@ -241,9 +241,10 @@ until process exit and startup recovery, rather than permitting quota bypass.
 The window, top-bar controls, virtual grid, progress control, and row items
 retain native accessibility semantics, with bounded Microsoft Active
 Accessibility names where the application supplies them. The appearance
-button cycles System, Light, Dark, and back to System. System resolves the
-active Windows app theme, while explicit Light and Dark choices remain stable
-across restarts. Documented Windows theme and custom-draw APIs apply the
+button cycles System, Light, Dark, Dim, Dusk, and back to System, with
+LeanMark 0.6.0's colour values. System resolves the active Windows app theme,
+while an explicit choice remains stable across restarts. Dark, Dim, and Dusk
+use the dark title bar. Documented Windows theme and custom-draw APIs apply the
 effective appearance to child controls without changing their native roles.
 When Windows high contrast is active, application colors yield to the
 applicable system colors. Keyboard focus remains visible, and per-monitor DPI

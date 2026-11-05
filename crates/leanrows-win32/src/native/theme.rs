@@ -43,15 +43,25 @@ pub(super) enum ThemeMode {
     System,
     Light,
     Dark,
+    /// A softer dark theme with cool greys, from `LeanMark`.
+    Dim,
+    /// A softer dark theme with warm browns, from `LeanMark`.
+    Dusk,
 }
 
 impl ThemeMode {
+    /// Every theme in the theme button's order, as in `LeanMark`.
+    pub(super) const ALL: [Self; 5] =
+        [Self::System, Self::Light, Self::Dark, Self::Dim, Self::Dusk];
+
     #[must_use]
     pub(super) const fn next(self) -> Self {
         match self {
             Self::System => Self::Light,
             Self::Light => Self::Dark,
-            Self::Dark => Self::System,
+            Self::Dark => Self::Dim,
+            Self::Dim => Self::Dusk,
+            Self::Dusk => Self::System,
         }
     }
 
@@ -61,6 +71,8 @@ impl ThemeMode {
             Self::System => "System",
             Self::Light => "Light",
             Self::Dark => "Dark",
+            Self::Dim => "Dim",
+            Self::Dusk => "Dusk",
         }
     }
 
@@ -80,6 +92,8 @@ impl ThemeMode {
             Self::System => b"s\0y\0s\0t\0e\0m\0\0\0",
             Self::Light => b"l\0i\0g\0h\0t\0\0\0",
             Self::Dark => b"d\0a\0r\0k\0\0\0",
+            Self::Dim => b"d\0i\0m\0\0\0",
+            Self::Dusk => b"d\0u\0s\0k\0\0\0",
         }
     }
 }
@@ -89,7 +103,17 @@ impl ThemeMode {
 pub(super) enum EffectiveTheme {
     Light,
     Dark,
+    Dim,
+    Dusk,
     HighContrast,
+}
+
+impl EffectiveTheme {
+    /// Dark, Dim and Dusk use a dark title bar and dark native controls.
+    #[must_use]
+    pub(super) const fn is_dark(self) -> bool {
+        matches!(self, Self::Dark | Self::Dim | Self::Dusk)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,7 +142,7 @@ impl UiColor {
     }
 }
 
-/// LeanMark-aligned semantic colors.
+/// `LeanMark`-aligned semantic colors.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Palette {
     pub(super) canvas: UiColor,
@@ -145,6 +169,8 @@ impl Palette {
         match theme {
             EffectiveTheme::Light => light_palette(),
             EffectiveTheme::Dark => dark_palette(),
+            EffectiveTheme::Dim => dim_palette(),
+            EffectiveTheme::Dusk => dusk_palette(),
             EffectiveTheme::HighContrast => high_contrast_palette(),
         }
     }
@@ -357,6 +383,8 @@ fn select_effective_theme(
     }
     match preference {
         ThemeMode::Dark => EffectiveTheme::Dark,
+        ThemeMode::Dim => EffectiveTheme::Dim,
+        ThemeMode::Dusk => EffectiveTheme::Dusk,
         ThemeMode::System if system_dark == Some(true) => EffectiveTheme::Dark,
         // A missing or malformed Windows preference safely falls back to the
         // fully supported light palette.
@@ -447,11 +475,59 @@ fn dark_palette() -> Palette {
         text_disabled: UiColor::rgb(0x71, 0x6b, 0x5f),
         accent: UiColor::rgb(0x1d, 0x4e, 0xd8),
         accent_text: UiColor::rgb(0xff, 0xff, 0xff),
-        focus: UiColor::rgb(0x60, 0xa5, 0xfa),
+        // LeanMark's ring is --accent-400 in Dark as in Light.
+        focus: UiColor::rgb(0x3b, 0x82, 0xf6),
         selection: UiColor::rgb(0x23, 0x46, 0x8c),
         selection_text: UiColor::rgb(0xfa, 0xf9, 0xf7),
         find: UiColor::rgb(0x73, 0x5d, 0x1e),
         find_current: UiColor::rgb(0xb4, 0x53, 0x09),
+        warning_surface: UiColor::rgb(0x43, 0x35, 0x19),
+        danger_surface: UiColor::rgb(0x44, 0x27, 0x26),
+    }
+}
+
+/// `LeanMark` 0.6.0 `:root[data-theme="dim"]`. Text is near 10:1 against the
+/// page, softer than Dark. `LeanMark` has no warning or danger surfaces, so
+/// these keep Dark's.
+fn dim_palette() -> Palette {
+    Palette {
+        canvas: UiColor::rgb(0x1e, 0x20, 0x23),
+        surface: UiColor::rgb(0x25, 0x28, 0x2c),
+        surface_muted: UiColor::rgb(0x2d, 0x30, 0x35),
+        border: UiColor::rgb(0x39, 0x3d, 0x43),
+        text_primary: UiColor::rgb(0xc8, 0xcc, 0xd2),
+        text_secondary: UiColor::rgb(0x9e, 0xa4, 0xac),
+        text_disabled: UiColor::rgb(0x6c, 0x72, 0x7a),
+        accent: UiColor::rgb(0x1d, 0x4e, 0xd8),
+        accent_text: UiColor::rgb(0xff, 0xff, 0xff),
+        focus: UiColor::rgb(0x6c, 0x9b, 0xe0),
+        selection: UiColor::rgb(0x34, 0x48, 0x6a),
+        selection_text: UiColor::rgb(0xc8, 0xcc, 0xd2),
+        find: UiColor::rgb(0x5c, 0x4d, 0x1f),
+        find_current: UiColor::rgb(0x7a, 0x53, 0x17),
+        warning_surface: UiColor::rgb(0x43, 0x35, 0x19),
+        danger_surface: UiColor::rgb(0x44, 0x27, 0x26),
+    }
+}
+
+/// `LeanMark` 0.6.0 `:root[data-theme="dusk"]`, the warm soft dark theme.
+/// Warning and danger surfaces keep Dark's, as in Dim.
+fn dusk_palette() -> Palette {
+    Palette {
+        canvas: UiColor::rgb(0x22, 0x1e, 0x19),
+        surface: UiColor::rgb(0x29, 0x24, 0x1e),
+        surface_muted: UiColor::rgb(0x32, 0x2c, 0x25),
+        border: UiColor::rgb(0x3f, 0x38, 0x30),
+        text_primary: UiColor::rgb(0xd4, 0xc8, 0xb4),
+        text_secondary: UiColor::rgb(0xa9, 0x9c, 0x87),
+        text_disabled: UiColor::rgb(0x77, 0x6c, 0x5c),
+        accent: UiColor::rgb(0x1d, 0x4e, 0xd8),
+        accent_text: UiColor::rgb(0xff, 0xff, 0xff),
+        focus: UiColor::rgb(0xc9, 0x9a, 0x62),
+        selection: UiColor::rgb(0x4d, 0x3f, 0x2c),
+        selection_text: UiColor::rgb(0xd4, 0xc8, 0xb4),
+        find: UiColor::rgb(0x6a, 0x54, 0x20),
+        find_current: UiColor::rgb(0x82, 0x56, 0x1c),
         warning_surface: UiColor::rgb(0x43, 0x35, 0x19),
         danger_surface: UiColor::rgb(0x44, 0x27, 0x26),
     }
@@ -584,6 +660,10 @@ fn parse_theme_mode(value: &[u16]) -> Option<ThemeMode> {
         Some(ThemeMode::Light)
     } else if matches_ascii(value, b"dark") {
         Some(ThemeMode::Dark)
+    } else if matches_ascii(value, b"dim") {
+        Some(ThemeMode::Dim)
+    } else if matches_ascii(value, b"dusk") {
+        Some(ThemeMode::Dusk)
     } else {
         None
     }
@@ -617,7 +697,7 @@ fn save_theme_mode(mode: ThemeMode) -> bool {
 }
 
 fn apply_window_chrome(window: HWND, theme: EffectiveTheme) -> DwmChromeResult {
-    let dark = i32::from(theme == EffectiveTheme::Dark);
+    let dark = i32::from(theme.is_dark());
     let corner = if theme == EffectiveTheme::HighContrast {
         DWMWCP_DEFAULT
     } else {
