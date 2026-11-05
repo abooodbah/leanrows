@@ -4,6 +4,7 @@ mod accessibility;
 mod clipboard;
 mod drop_files;
 mod header;
+mod hover;
 mod layout;
 mod process;
 mod progress;
@@ -32,7 +33,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::{FindResourceW, GetModuleHandleW};
 use windows::Win32::System::SystemServices::{
-    MK_CONTROL, SS_CENTER, SS_CENTERIMAGE, SS_ICON, SS_OWNERDRAW, SS_TYPEMASK,
+    MK_CONTROL, SS_CENTER, SS_CENTERIMAGE, SS_OWNERDRAW, SS_TYPEMASK,
 };
 use windows::Win32::UI::Controls::Dialogs::{
     CommDlgExtendedError, FNERR_BUFFERTOOSMALL, GetOpenFileNameW, OFN_ALLOWMULTISELECT,
@@ -65,15 +66,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, BM_CLICK, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_OWNERDRAW, BS_TYPEMASK,
     CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreatePopupMenu, CreateWindowExW,
     DefWindowProcW, DestroyAcceleratorTable, DestroyMenu, DestroyWindow, DialogBoxParamW,
-    DispatchMessageW, ES_AUTOHSCROLL, EndDialog, GCLP_HICON, GCLP_HICONSM, GWL_STYLE,
-    GWLP_USERDATA, GetClassLongPtrW, GetClassNameW, GetClientRect, GetDlgItemTextW, GetMessageW,
-    GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
-    HACCEL, HICON, HMENU, HWND_TOP, IDC_ARROW, IDCANCEL, IDOK, IMAGE_ICON, IsIconic, IsWindow,
-    IsWindowVisible, KillTimer, LR_SHARED, LoadAcceleratorsW, LoadCursorW, LoadImageW,
-    MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL, MF_CHECKED, MF_GRAYED,
-    MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MINMAXINFO, MSG, MessageBoxW, MoveWindow, PostMessageW,
-    PostQuitMessage, RT_DIALOG, RegisterClassExW, SIZE_MINIMIZED, SM_CXICON, SM_CXSMICON,
-    SM_CYICON, SM_CYSMICON, STM_SETICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWDEFAULT,
+    DispatchMessageW, EN_KILLFOCUS, EN_SETFOCUS, ES_AUTOHSCROLL, EndDialog, GCLP_HICON,
+    GCLP_HICONSM, GWL_STYLE, GWLP_USERDATA, GetClassLongPtrW, GetClassNameW, GetClientRect,
+    GetDlgItemTextW, GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
+    GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU, HWND_TOP, IDC_ARROW, IDCANCEL,
+    IDOK, IMAGE_ICON, IsIconic, IsWindow, IsWindowVisible, KillTimer, LR_SHARED, LoadAcceleratorsW,
+    LoadCursorW, LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL,
+    MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MINMAXINFO, MSG, MessageBoxW,
+    MoveWindow, PostMessageW, PostQuitMessage, RT_DIALOG, RegisterClassExW, SIZE_MINIMIZED,
+    SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWDEFAULT,
     SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW,
     SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
     TPM_RETURNCMD, TPM_RIGHTALIGN, TrackPopupMenuEx, TranslateAcceleratorW, TranslateMessage,
@@ -82,8 +83,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_DPICHANGED, WM_DRAWITEM, WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETMINMAXINFO,
     WM_INITDIALOG, WM_KEYDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT,
     WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER,
-    WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES,
-    WS_EX_APPWINDOW, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_TABSTOP,
+    WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW,
+    WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -260,6 +261,10 @@ struct WindowState {
     tab_hover: TabHover,
     /// Ctrl+wheel movement not yet a whole notch.
     zoom_wheel: i32,
+    /// The toolbar or panel button under the mouse, painted hovered.
+    hover_button: HWND,
+    /// The search field's frame, painted on the top bar.
+    search_frame: Option<UiRect>,
     /// The settings panel's controls, and whether it is open.
     settings: settings::SettingsHandles,
     settings_open: bool,
@@ -571,6 +576,8 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         tab_labels: Vec::new(),
         tab_hover: TabHover::default(),
         zoom_wheel: 0,
+        hover_button: HWND::default(),
+        search_frame: None,
         settings: settings::SettingsHandles::default(),
         settings_open: false,
         settings_return_focus: HWND::default(),
@@ -858,7 +865,7 @@ fn verify_initial_surface_colors(state_pointer: *mut WindowState) -> Result<(), 
     Ok(())
 }
 
-/// LeanMark's toolbar: ghost buttons on the surface, a bordered Open, a
+/// `LeanMark`'s toolbar: ghost buttons on the surface, a bordered Open, a
 /// border below the bar, the search field on the canvas, and the wordmark's
 /// own colours.
 fn verify_toolbar_restyle(state_pointer: *mut WindowState) -> Result<(), ShellError> {
@@ -893,7 +900,7 @@ fn verify_toolbar_restyle(state_pointer: *mut WindowState) -> Result<(), ShellEr
     };
     let checks = [
         (
-            pixel(state.chrome.more, None, Some(2))?,
+            pixel(state.chrome.more, None, Some(0))?,
             palette.surface,
             "ghost More button",
         ),
@@ -2110,6 +2117,16 @@ fn refit_list_header(list: HWND) {
     }
 }
 
+/// Repaints the bar so the search field's frame follows its focus.
+fn repaint_top_bar(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The top bar handle is copied while the state is attached.
+    if let Some(topbar) = unsafe { pointer.as_ref() }.map(|state| state.chrome.topbar) {
+        // SAFETY: The top bar is a live child on this thread.
+        let _ = unsafe { InvalidateRect(Some(topbar), None, false) };
+    }
+}
+
 fn toggle_match_case(window: HWND) {
     let pointer = state_pointer_for(window);
     // SAFETY: The checkbox belongs to this UI thread and is queried synchronously.
@@ -2721,23 +2738,6 @@ fn load_resource_icon(instance: HINSTANCE, width: i32, height: i32) -> Result<HI
 }
 
 fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
-    // SAFETY: The current executable module stays loaded for the process lifetime.
-    let module = unsafe { GetModuleHandleW(None) }
-        .map_err(|error| ShellError::new(format!("module lookup failed: {error}")))?;
-    let icon = load_resource_icon(
-        HINSTANCE(module.0),
-        state.theme.metrics.wordmark_size,
-        state.theme.metrics.wordmark_size,
-    )?;
-    // SAFETY: LR_SHARED leaves icon ownership with the module/system.
-    unsafe {
-        SendMessageW(
-            state.chrome.wordmark,
-            STM_SETICON,
-            Some(WPARAM(icon.0.addr())),
-            Some(LPARAM(0)),
-        );
-    }
     let body = state.theme.fonts.body();
     let semibold = state.theme.fonts.semibold();
     let caption = state.theme.fonts.caption();
@@ -2759,9 +2759,8 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
     ] {
         apply_font(handle, body);
     }
-    for handle in [state.chrome.wordmark, state.chrome.file_name] {
-        apply_font(handle, semibold);
-    }
+    apply_font(state.chrome.file_name, semibold);
+    apply_font(state.chrome.wordmark, state.theme.fonts.legend());
     if let Some(header) = list_header(state.list) {
         apply_font(header, state.theme.fonts.grid_header());
     }
@@ -3256,6 +3255,12 @@ unsafe extern "system" fn window_proc(
         WM_NOTIFY => handle_notify(window, lparam),
         WM_COPYDATA => LRESULT(isize::from(receive_open_request(window, lparam))),
         WM_COMMAND => {
+            let code = u32::try_from((wparam.0 >> 16) & 0xffff).unwrap_or_default();
+            if wparam.0 & 0xffff == usize::from(ID_SEARCH_FIELD)
+                && (code == EN_SETFOCUS || code == EN_KILLFOCUS)
+            {
+                repaint_top_bar(window);
+            }
             if let Ok(command) = u16::try_from(wparam.0 & 0xffff)
                 && (command != ID_SEARCH_MATCH_CASE || lparam.0 == 0)
             {
@@ -3433,6 +3438,31 @@ fn paint_window_background(window: HWND, wparam: WPARAM) -> LRESULT {
     }
     let device = HDC(wparam.0 as *mut c_void);
     let painted = unsafe { FillRect(device, &raw const client, state.theme.brushes.canvas()) };
+    // The tab strip's padding either side of the tab control is the bar's
+    // surface, with the border below it, as LeanMark's .tab-strip.
+    let layout = UiLayout::calculate(
+        client.right - client.left,
+        client.bottom - client.top,
+        state.theme.metrics.dpi,
+        state.tab_order.len() > 1,
+    );
+    if let Some(strip) = layout.tab_strip {
+        let strip_rect = RECT {
+            left: strip.x,
+            top: strip.y,
+            right: strip.right(),
+            bottom: strip.bottom(),
+        };
+        let rule = RECT {
+            top: strip_rect.bottom - state.theme.metrics.border_width.max(1),
+            ..strip_rect
+        };
+        // SAFETY: The device and brushes are live for this erase.
+        unsafe {
+            let _ = FillRect(device, &raw const strip_rect, state.theme.brushes.surface());
+            let _ = FillRect(device, &raw const rule, state.theme.brushes.border());
+        }
+    }
     LRESULT((painted != 0).into())
 }
 
@@ -3536,7 +3566,9 @@ fn draw_shell_button(window: HWND, lparam: LPARAM) -> bool {
     let Some(state) = (unsafe { pointer.as_ref() }) else {
         return false;
     };
-    let is_primary = item.hwndItem == state.chrome.open || item.hwndItem == state.chrome.empty_open;
+    // LeanMark: the empty state's Open is the one primary button; the
+    // toolbar's Open is secondary.
+    let is_primary = item.hwndItem == state.chrome.empty_open;
     let is_command = [
         state.chrome.find_previous,
         state.chrome.find_next,
@@ -3568,6 +3600,10 @@ fn draw_shell_surface(window: HWND, lparam: LPARAM) -> bool {
     let Some(state) = (unsafe { pointer.as_ref() }) else {
         return false;
     };
+    if item.hwndItem == state.chrome.wordmark {
+        paint_wordmark(state, item);
+        return true;
+    }
     let brush = if item.hwndItem == state.chrome.topbar {
         state.theme.brushes.surface()
     } else if item.hwndItem == state.chrome.status_backdrop || item.hwndItem == state.status {
@@ -3582,7 +3618,111 @@ fn draw_shell_surface(window: HWND, lparam: LPARAM) -> bool {
     if item.hwndItem == state.status {
         paint_status_text(state, item);
     }
+    if item.hwndItem == state.chrome.topbar {
+        paint_top_bar_details(state, item);
+    }
     true
+}
+
+/// The 1 px border below the bar, as `LeanMark`'s `.chrome`, and the search
+/// field's frame: the canvas inside a 4 DIP rounded border, which turns to
+/// the accent with a 2 DIP ring while the field has focus.
+fn paint_top_bar_details(state: &WindowState, item: &DRAWITEMSTRUCT) {
+    let m = state.theme.metrics;
+    let rule = RECT {
+        top: item.rcItem.bottom.saturating_sub(m.border_width.max(1)),
+        ..item.rcItem
+    };
+    // SAFETY: The device and brushes are live for this draw callback.
+    unsafe {
+        let _ = FillRect(item.hDC, &raw const rule, state.theme.brushes.border());
+    }
+    let Some(frame) = state.search_frame else {
+        return;
+    };
+    // SAFETY: GetFocus reads this thread's focus window.
+    let focused = unsafe { GetFocus() } == state.chrome.search_edit;
+    let round = |inflate: i32| {
+        let diameter = m.radius_small.saturating_add(inflate).saturating_mul(2);
+        // SAFETY: A temporary region owned and deleted by the caller.
+        unsafe {
+            CreateRoundRectRgn(
+                frame.x - inflate,
+                frame.y - inflate,
+                frame.right() + inflate + 1,
+                frame.bottom() + inflate + 1,
+                diameter,
+                diameter,
+            )
+        }
+    };
+    // SAFETY: Every region and brush is deleted before return.
+    unsafe {
+        if focused {
+            let ring = round(m.focus_width);
+            if !ring.is_invalid() {
+                if let Ok(brush) = theme::OwnedBrush::new(state.theme.palette.focus) {
+                    let _ = FillRgn(item.hDC, ring, brush.handle());
+                }
+                let _ = DeleteObject(HGDIOBJ(ring.0));
+            }
+        }
+        let field = round(0);
+        if !field.is_invalid() {
+            let _ = FillRgn(item.hDC, field, state.theme.brushes.canvas());
+            let border = if focused {
+                state.theme.brushes.accent()
+            } else {
+                state.theme.brushes.border()
+            };
+            let _ = FrameRgn(item.hDC, field, border, 1, 1);
+            let _ = DeleteObject(HGDIOBJ(field.0));
+        }
+    }
+}
+
+/// `LeanMark`'s wordmark: "LR" in a 32 DIP square with 6 DIP corners, in the
+/// theme's wordmark colours; under high contrast, bordered.
+fn paint_wordmark(state: &WindowState, item: &DRAWITEMSTRUCT) {
+    let (fill, letters) = theme::wordmark_colors(state.theme.effective, state.theme.palette);
+    let bounds = item.rcItem;
+    let diameter = state.theme.metrics.radius_medium.saturating_mul(2);
+    // SAFETY: The region and brushes are deleted before return; the device
+    // belongs to WM_DRAWITEM.
+    unsafe {
+        let _ = FillRect(item.hDC, &raw const bounds, state.theme.brushes.surface());
+        let region = CreateRoundRectRgn(
+            bounds.left,
+            bounds.top,
+            bounds.right + 1,
+            bounds.bottom + 1,
+            diameter,
+            diameter,
+        );
+        if !region.is_invalid() {
+            if let Ok(brush) = theme::OwnedBrush::new(fill) {
+                let _ = FillRgn(item.hDC, region, brush.handle());
+            }
+            if state.theme.effective == EffectiveTheme::HighContrast {
+                let _ = FrameRgn(item.hDC, region, state.theme.brushes.border(), 1, 1);
+            }
+            let _ = DeleteObject(HGDIOBJ(region.0));
+        }
+        let previous = SelectObject(item.hDC, HGDIOBJ(state.theme.fonts.legend().0));
+        let _ = SetBkMode(item.hDC, TRANSPARENT);
+        let _ = SetTextColor(item.hDC, letters.colorref());
+        let mut text: Vec<u16> = "LR".encode_utf16().collect();
+        let mut label = bounds;
+        let _ = DrawTextW(
+            item.hDC,
+            &mut text,
+            &raw mut label,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+        if !previous.is_invalid() {
+            let _ = SelectObject(item.hDC, previous);
+        }
+    }
 }
 
 fn paint_status_text(state: &WindowState, item: &DRAWITEMSTRUCT) {
@@ -3608,6 +3748,38 @@ fn paint_status_text(state: &WindowState, item: &DRAWITEMSTRUCT) {
     }
 }
 
+/// `LeanMark`'s three button looks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ButtonKind {
+    /// `.button`: no border, transparent on the bar.
+    Ghost,
+    /// `.button-secondary`: a bordered surface, the toolbar's Open.
+    Secondary,
+    /// `.button-primary`: the accent, the empty state's Open.
+    Primary,
+}
+
+/// How a button is filled, and whether it gets a border.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ButtonFill {
+    Surface { border: bool },
+    Muted { border: bool },
+    Accent,
+}
+
+/// `.button:hover` is the muted surface; pressed and
+/// `[aria-expanded="true"]` add the border.
+const fn button_fill(kind: ButtonKind, hovered: bool, pressed: bool, expanded: bool) -> ButtonFill {
+    match kind {
+        ButtonKind::Primary => ButtonFill::Accent,
+        ButtonKind::Secondary if hovered || pressed => ButtonFill::Muted { border: true },
+        ButtonKind::Secondary => ButtonFill::Surface { border: true },
+        ButtonKind::Ghost if pressed || expanded => ButtonFill::Muted { border: true },
+        ButtonKind::Ghost if hovered => ButtonFill::Muted { border: false },
+        ButtonKind::Ghost => ButtonFill::Surface { border: false },
+    }
+}
+
 fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bool) -> bool {
     let background = if item.hwndItem == state.chrome.empty_open {
         state.theme.brushes.canvas()
@@ -3619,14 +3791,18 @@ fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bo
 
     let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
     let selected = item.itemState.0 & ODS_SELECTED.0 != 0;
-    let brush = if disabled {
-        state.theme.brushes.surface_muted()
-    } else if is_primary {
-        state.theme.brushes.accent()
-    } else if selected || expanded {
-        state.theme.brushes.surface_muted()
+    let kind = if is_primary {
+        ButtonKind::Primary
+    } else if item.hwndItem == state.chrome.open {
+        ButtonKind::Secondary
     } else {
-        state.theme.brushes.surface()
+        ButtonKind::Ghost
+    };
+    let hovered = !disabled && state.hover_button == item.hwndItem;
+    let (brush, bordered) = match button_fill(kind, hovered, selected, expanded) {
+        ButtonFill::Surface { border } => (background, border),
+        ButtonFill::Muted { border } => (state.theme.brushes.surface_muted(), border),
+        ButtonFill::Accent => (state.theme.brushes.accent(), false),
     };
     let foreground = if disabled {
         state.theme.palette.text_disabled
@@ -3635,7 +3811,8 @@ fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bo
     } else {
         state.theme.palette.text_primary
     };
-    let radius = state.theme.metrics.radius_small.saturating_mul(2);
+    // LeanMark's --radius-md; GDI's rounded regions take the diameter.
+    let radius = state.theme.metrics.radius_medium.saturating_mul(2);
     let region = unsafe {
         CreateRoundRectRgn(
             item.rcItem.left,
@@ -3653,14 +3830,16 @@ fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bo
     unsafe {
         let _ = FillRect(item.hDC, &raw const item.rcItem, background);
         let _ = FillRgn(item.hDC, region, brush);
-        let border_width = state.theme.metrics.border_width.max(1);
-        let _ = FrameRgn(
-            item.hDC,
-            region,
-            state.theme.brushes.border(),
-            border_width,
-            border_width,
-        );
+        if bordered {
+            let border_width = state.theme.metrics.border_width.max(1);
+            let _ = FrameRgn(
+                item.hDC,
+                region,
+                state.theme.brushes.border(),
+                border_width,
+                border_width,
+            );
+        }
         let _ = DeleteObject(HGDIOBJ(region.0));
         let previous_font = SelectObject(item.hDC, HGDIOBJ(state.theme.fonts.semibold().0));
         let _ = SetBkMode(item.hDC, TRANSPARENT);
@@ -4006,6 +4185,9 @@ fn open_settings(window: HWND) {
             return;
         };
         state.settings = handles;
+        for button in state.settings.buttons() {
+            let _ = hover::install(button, window);
+        }
         if let Err(error) = apply_settings_presentation(state) {
             set_status(window, &format!("Settings panel failed: {error}"));
         }
@@ -4223,12 +4405,13 @@ fn create_children(window: HWND) -> Result<(), ()> {
         WS_CHILD | static_style(SS_OWNERDRAW.0),
         None,
     )?;
+    // LeanMark's wordmark: two letters in a rounded square.
     let wordmark = create_child(
         instance,
         window,
         w!("STATIC"),
-        w!(""),
-        WS_CHILD | static_style(SS_ICON.0 | SS_CENTERIMAGE.0),
+        w!("LR"),
+        WS_CHILD | static_style(SS_OWNERDRAW.0),
         None,
     )?;
     let file_name = create_child(instance, window, w!("STATIC"), w!(""), WS_CHILD, None)?;
@@ -4238,7 +4421,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         window,
         w!("EDIT"),
         w!(""),
-        WS_CHILD | WS_TABSTOP | WS_BORDER | control_style(ES_AUTOHSCROLL),
+        WS_CHILD | WS_TABSTOP | control_style(ES_AUTOHSCROLL),
         Some(ID_SEARCH_FIELD),
     )?;
     let match_case = create_child(
@@ -4364,6 +4547,21 @@ fn create_children(window: HWND) -> Result<(), ()> {
     )?;
     // The settings panel is built the first time it opens, so starting
     // LeanRows does not pay for its controls and its shortcut list.
+    for button in [
+        find_previous,
+        find_next,
+        reload,
+        goto,
+        theme,
+        settings_button,
+        open,
+        more,
+        empty_open,
+    ] {
+        if !hover::install(button, window) {
+            return Err(());
+        }
+    }
     // Workers start with their first file, so an empty window runs no
     // background thread.
     let count = state.rows.visible_rows();
@@ -4727,12 +4925,11 @@ fn layout_children(window: HWND) {
         commands.file_identity,
         layout.metrics.space_1,
     );
-    place_search_controls(
-        state.chrome.search_edit,
-        state.chrome.match_case,
+    let frame = place_search_controls(
+        state,
         commands.search_field,
         commands.mode,
-        layout.metrics.space_2,
+        layout.metrics,
         scale(88, dpi),
     );
     place_optional(state.chrome.find_previous, commands.previous_match_button);
@@ -4744,6 +4941,10 @@ fn layout_children(window: HWND) {
     move_and_show(state.chrome.open, commands.open_button);
     move_and_show(state.chrome.more, commands.overflow_button);
     layout_empty_state(state, layout.empty_state, dpi);
+    // SAFETY: The state is still attached; only the frame is recorded.
+    if let Some(state) = unsafe { pointer.as_mut() } {
+        state.search_frame = Some(frame);
+    }
 }
 
 fn place_tab_strip(state: &WindowState, rect: Option<UiRect>, metrics: layout::UiMetrics) {
@@ -4756,7 +4957,10 @@ fn place_tab_strip(state: &WindowState, rect: Option<UiRect>, metrics: layout::U
         tab_item_width(rect.width, state.tab_order.len(), metrics),
         rect.height.saturating_sub(metrics.space_1),
     );
-    move_and_show(state.chrome.tab_strip, rect);
+    move_and_show(
+        state.chrome.tab_strip,
+        layout::tab_control_rect(rect, metrics),
+    );
 }
 
 fn move_control(handle: HWND, rect: UiRect) {
@@ -4808,36 +5012,68 @@ fn place_file_identity(file_name: HWND, file_meta: HWND, rect: Option<UiRect>, g
     );
 }
 
+/// Places the search text inside `LeanMark`'s bordered field, which the top
+/// bar paints, with Match case beside it. Returns the field's frame.
 fn place_search_controls(
-    search: HWND,
-    match_case: HWND,
+    state: &WindowState,
     rect: UiRect,
     mode: CommandLayoutMode,
-    gap: i32,
+    metrics: layout::UiMetrics,
     desired_case_width: i32,
-) {
-    if matches!(mode, CommandLayoutMode::Narrow) {
-        move_and_show(search, rect);
+) -> UiRect {
+    let (search, match_case) = (state.chrome.search_edit, state.chrome.match_case);
+    let gap = metrics.space_2;
+    let field = if matches!(mode, CommandLayoutMode::Narrow) {
         set_control_visible(match_case, false);
-        return;
-    }
-    let case_width = desired_case_width.min(rect.width / 3).max(0);
-    let search_width = rect.width.saturating_sub(case_width).saturating_sub(gap);
-    move_and_show(
-        search,
+        rect
+    } else {
+        let case_width = desired_case_width.min(rect.width / 3).max(0);
+        let search_width = rect.width.saturating_sub(case_width).saturating_sub(gap);
+        move_and_show(
+            match_case,
+            UiRect {
+                x: rect.x.saturating_add(search_width).saturating_add(gap),
+                width: case_width,
+                ..rect
+            },
+        );
         UiRect {
             width: search_width,
             ..rect
-        },
-    );
-    move_and_show(
-        match_case,
-        UiRect {
-            x: rect.x.saturating_add(search_width).saturating_add(gap),
-            width: case_width,
-            ..rect
-        },
-    );
+        }
+    };
+    let (frame, edit) = layout::search_field_layout(field, text_line_height(state), metrics);
+    move_and_show(search, edit);
+    frame
+}
+
+/// The height of one line of the body font, plus a pixel above and below.
+fn text_line_height(state: &WindowState) -> i32 {
+    let fallback = state
+        .theme
+        .metrics
+        .space_4
+        .saturating_add(state.theme.metrics.space_1);
+    // SAFETY: The edit owns this DC until the paired ReleaseDC below; the
+    // theme owns the font, and the previous font is restored.
+    unsafe {
+        let device = GetDC(Some(state.chrome.search_edit));
+        if device.0.is_null() {
+            return fallback;
+        }
+        let previous = SelectObject(device, HGDIOBJ(state.theme.fonts.body().0));
+        let mut size = SIZE::default();
+        let measured = GetTextExtentPoint32W(device, &[0x41, 0x67], &raw mut size).as_bool();
+        if !previous.is_invalid() {
+            let _ = SelectObject(device, previous);
+        }
+        let _ = ReleaseDC(Some(state.chrome.search_edit), device);
+        if measured && size.cy > 0 {
+            size.cy.saturating_add(2)
+        } else {
+            fallback
+        }
+    }
 }
 
 fn layout_empty_state(state: &WindowState, bounds: UiRect, dpi: u32) {

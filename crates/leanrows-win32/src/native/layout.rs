@@ -5,7 +5,7 @@ const TOP_BAR_HEIGHT_DIP: i32 = 56;
 const PROGRESS_HEIGHT_DIP: i32 = 2;
 const TAB_STRIP_HEIGHT_DIP: i32 = 36;
 const TAB_MIN_WIDTH_DIP: i32 = 96;
-const TAB_MAX_WIDTH_DIP: i32 = 220;
+const TAB_MAX_WIDTH_DIP: i32 = 240;
 const STATUS_HEIGHT_DIP: i32 = 32;
 const SPACE_1_DIP: i32 = 4;
 const SPACE_2_DIP: i32 = 8;
@@ -524,9 +524,46 @@ impl UiLayout {
 pub(super) fn tab_item_width(strip_width: i32, count: usize, metrics: UiMetrics) -> i32 {
     let count = i32::try_from(count.max(1)).unwrap_or(i32::MAX);
     let usable = strip_width
-        .saturating_sub(metrics.space_2.saturating_mul(2))
+        .saturating_sub(metrics.space_3.saturating_mul(2))
         .max(0);
     (usable / count).clamp(metrics.tab_min_width, metrics.tab_max_width)
+}
+
+/// The tab control inside the strip, inset by `LeanMark`'s 12 DIP of strip
+/// padding at either end.
+#[must_use]
+pub(super) fn tab_control_rect(strip: UiRect, metrics: UiMetrics) -> UiRect {
+    let pad = metrics.space_3.min(strip.width / 2).max(0);
+    UiRect::new(
+        strip.x.saturating_add(pad),
+        strip.y,
+        strip.width.saturating_sub(pad.saturating_mul(2)).max(0),
+        strip.height,
+    )
+}
+
+/// `LeanMark`'s search field: a bordered frame the size of the field, with the
+/// text line inside it after a 1 px border and 12 DIP of padding on the left
+/// and 4 on the right, centred vertically. Returns the frame and the edit.
+#[must_use]
+pub(super) fn search_field_layout(
+    field: UiRect,
+    text_height: i32,
+    metrics: UiMetrics,
+) -> (UiRect, UiRect) {
+    let border = 1;
+    let left = border + metrics.space_3;
+    let right = border + metrics.space_1;
+    let height = text_height.min(field.height).max(0);
+    let edit = UiRect::new(
+        field.x.saturating_add(left),
+        field
+            .y
+            .saturating_add(field.height.saturating_sub(height).max(0) / 2),
+        field.width.saturating_sub(left + right).max(0),
+        height,
+    );
+    (field, edit)
 }
 
 fn place_identity_and_search(

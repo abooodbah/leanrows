@@ -374,13 +374,13 @@ fn paint_tab(strip: HWND, device: HDC, theme: &ThemeResources, tab: TabPaint) {
             );
         }
     }
+    if !close_visible(tab.selected, tab.hovered) {
+        paint_tab_rule(device, theme, tab);
+        return;
+    }
     if tab.close_hovered {
-        let brush = if tab.selected {
-            theme.brushes.surface_muted()
-        } else {
-            theme.brushes.border()
-        };
-        fill(device, close, brush);
+        // LeanMark's .tab-close:hover uses the border colour.
+        fill(device, close, theme.brushes.border());
     }
     let glyph_color = if tab.close_hovered {
         palette.text_primary
@@ -400,7 +400,14 @@ fn paint_tab(strip: HWND, device: HDC, theme: &ThemeResources, tab: TabPaint) {
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
         );
     }
-    let border = metrics.border_width.max(1);
+    paint_tab_rule(device, theme, tab);
+}
+
+/// The selected tab's 2 DIP accent underline and the keyboard focus mark.
+/// `LeanMark` has no separators between tabs.
+fn paint_tab_rule(device: HDC, theme: &ThemeResources, tab: TabPaint) {
+    let metrics = theme.metrics;
+    let bounds = tab.bounds;
     if tab.selected {
         let underline = RECT {
             left: bounds.left,
@@ -409,16 +416,6 @@ fn paint_tab(strip: HWND, device: HDC, theme: &ThemeResources, tab: TabPaint) {
             bottom: tab.client_bottom,
         };
         fill(device, underline, theme.brushes.accent());
-    } else {
-        let separator = RECT {
-            left: bounds.right.saturating_sub(border),
-            top: bounds.top.saturating_add(metrics.space_2),
-            right: bounds.right,
-            bottom: bounds.bottom.saturating_sub(metrics.space_2),
-        };
-        if separator.bottom > separator.top {
-            fill(device, separator, theme.brushes.border());
-        }
     }
     if tab.focused {
         let inset = metrics.space_1.max(2);
@@ -490,6 +487,12 @@ fn tab_bounds(strip: HWND, index: usize, client: RECT, border: i32) -> Option<RE
         bottom: client.bottom.saturating_sub(border),
     };
     (bounds.right > bounds.left && bounds.bottom > bounds.top).then_some(bounds)
+}
+
+/// `LeanMark` hides a tab's close mark until the tab is hovered or selected.
+#[must_use]
+pub(super) const fn close_visible(selected: bool, hovered: bool) -> bool {
+    selected || hovered
 }
 
 /// The square target for a tab's close glyph, inset from its right edge.
