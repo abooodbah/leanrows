@@ -98,7 +98,7 @@ pub(super) struct SourceCheck {
 
 impl SourceCheck {
     pub(super) fn due(&mut self) -> bool {
-        let due = self.steps % SORT_SOURCE_CHECK_STEPS == 0;
+        let due = self.steps.is_multiple_of(SORT_SOURCE_CHECK_STEPS);
         self.steps = self.steps.wrapping_add(1);
         due
     }
@@ -381,7 +381,11 @@ mod tests {
         let mut check = SourceCheck::default();
         let due: Vec<bool> = (0..70).map(|_| check.due()).collect();
         for (step, due) in due.iter().enumerate() {
-            assert_eq!(*due, step % SORT_SOURCE_CHECK_STEPS == 0, "step {step}");
+            assert_eq!(
+                *due,
+                step.is_multiple_of(SORT_SOURCE_CHECK_STEPS),
+                "step {step}"
+            );
         }
         assert_eq!(SORT_SOURCE_CHECK_STEPS, 32);
     }
