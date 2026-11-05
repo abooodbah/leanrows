@@ -778,6 +778,7 @@ fn run_smoke(
         ));
     }
     verify_initial_surface_colors(state_pointer)?;
+    verify_toolbar_restyle(state_pointer)?;
     let verification = verify_shell_smoke(window, state_pointer, controls_verified);
     let shutdown = destroy_shell_window(window)
         .map_err(|error| ShellError::new(format!("smoke shutdown failed: {error}")));
@@ -853,6 +854,82 @@ fn verify_initial_surface_colors(state_pointer: *mut WindowState) -> Result<(), 
         ),
     ] {
         verify_child_background_pixel(handle, expected, name)?;
+    }
+    Ok(())
+}
+
+/// LeanMark's toolbar: ghost buttons on the surface, a bordered Open, a
+/// border below the bar, the search field on the canvas, and the wordmark's
+/// own colours.
+fn verify_toolbar_restyle(state_pointer: *mut WindowState) -> Result<(), ShellError> {
+    // SAFETY: The initial presentation message leaves the attached state live.
+    let state = unsafe { state_pointer.as_ref() }
+        .ok_or_else(|| ShellError::new("toolbar smoke state was detached"))?;
+    let palette = state.theme.palette;
+    let pixel = |handle: HWND, x: Option<i32>, y: Option<i32>| -> Result<u32, ShellError> {
+        let mut client = RECT::default();
+        // SAFETY: The child is live and RECT is writable.
+        unsafe { GetClientRect(handle, &raw mut client) }
+            .map_err(|error| ShellError::new(format!("toolbar geometry failed: {error}")))?;
+        let x = x.unwrap_or(client.right / 2);
+        let y = y.unwrap_or(client.bottom / 2);
+        // SAFETY: The child owns this DC until the paired ReleaseDC below.
+        let device = unsafe { GetDC(Some(handle)) };
+        if device.0.is_null() {
+            return Err(ShellError::new("toolbar smoke could not acquire a DC"));
+        }
+        // SAFETY: The DC is live; negative coordinates count from the far edge.
+        let value = unsafe {
+            GetPixel(
+                device,
+                if x < 0 { client.right + x } else { x },
+                if y < 0 { client.bottom + y } else { y },
+            )
+        }
+        .0;
+        // SAFETY: Releases the exact HWND/DC pair acquired above.
+        let _ = unsafe { ReleaseDC(Some(handle), device) };
+        Ok(value)
+    };
+    let checks = [
+        (
+            pixel(state.chrome.more, None, Some(2))?,
+            palette.surface,
+            "ghost More button",
+        ),
+        (
+            pixel(state.chrome.open, None, Some(0))?,
+            palette.border,
+            "bordered Open button",
+        ),
+        (
+            pixel(state.chrome.open, None, Some(3))?,
+            palette.surface,
+            "Open button surface",
+        ),
+        (
+            pixel(state.chrome.topbar, None, Some(-1))?,
+            palette.border,
+            "border below the top bar",
+        ),
+        (
+            pixel(state.chrome.search_edit, Some(-2), Some(1))?,
+            palette.canvas,
+            "search field on the canvas",
+        ),
+        (
+            pixel(state.chrome.wordmark, Some(3), None)?,
+            theme::wordmark_colors(state.theme.effective, palette).0,
+            "wordmark",
+        ),
+    ];
+    for (actual, expected, name) in checks {
+        if actual != expected.colorref().0 {
+            return Err(ShellError::new(format!(
+                "{name} painted {actual:06x}, not {:06x}",
+                expected.colorref().0
+            )));
+        }
     }
     Ok(())
 }
@@ -6317,6 +6394,44 @@ mod tests {
             escaped_non_utf8_rows: 0,
             sheets: None,
         }
+    }
+
+    #[test]
+    fn toolbar_buttons_use_leanmarks_button_styles() {
+        use super::{ButtonFill, ButtonKind, button_fill};
+        // .button is a ghost: no border, the surface muted on hover.
+        assert_eq!(
+            button_fill(ButtonKind::Ghost, false, false, false),
+            ButtonFill::Surface { border: false }
+        );
+        assert_eq!(
+            button_fill(ButtonKind::Ghost, true, false, false),
+            ButtonFill::Muted { border: false }
+        );
+        // Pressed, and the settings button while its panel is open
+        // ([aria-expanded="true"]): muted with a border.
+        assert_eq!(
+            button_fill(ButtonKind::Ghost, false, true, false),
+            ButtonFill::Muted { border: true }
+        );
+        assert_eq!(
+            button_fill(ButtonKind::Ghost, false, false, true),
+            ButtonFill::Muted { border: true }
+        );
+        // .button-secondary, the toolbar's Open: a bordered surface.
+        assert_eq!(
+            button_fill(ButtonKind::Secondary, false, false, false),
+            ButtonFill::Surface { border: true }
+        );
+        assert_eq!(
+            button_fill(ButtonKind::Secondary, true, false, false),
+            ButtonFill::Muted { border: true }
+        );
+        // .button-primary, the empty state's Open: the accent.
+        assert_eq!(
+            button_fill(ButtonKind::Primary, false, false, false),
+            ButtonFill::Accent
+        );
     }
 
     #[test]

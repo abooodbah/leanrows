@@ -624,7 +624,8 @@ fn scale_dip(value: i32, dpi: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandLayout, CommandLayoutMode, UiLayout, UiMetrics, UiRect, scale_dip, tab_item_width,
+        CommandLayout, CommandLayoutMode, UiLayout, UiMetrics, UiRect, scale_dip,
+        search_field_layout, tab_control_rect, tab_item_width,
     };
 
     const DPIS: [u32; 3] = [96, 144, 192];
@@ -729,15 +730,47 @@ mod tests {
 
     #[test]
     fn tabs_share_the_strip_between_a_readable_minimum_and_a_maximum() {
+        // LeanMark: tabs from 96 to 240 wide, 12 DIP of strip padding.
         let metrics = UiMetrics::for_dpi(96);
-        assert_eq!(tab_item_width(960, 1, metrics), 220);
-        assert_eq!(tab_item_width(960, 4, metrics), 220);
-        assert_eq!(tab_item_width(960, 8, metrics), 118);
+        assert_eq!(tab_item_width(960, 1, metrics), 240);
+        assert_eq!(tab_item_width(960, 4, metrics), 234);
+        assert_eq!(tab_item_width(960, 8, metrics), 117);
         assert_eq!(tab_item_width(960, 32, metrics), 96);
         assert_eq!(tab_item_width(0, 0, metrics), 96);
         assert_eq!(tab_item_width(-5, 3, metrics), 96);
         let scaled = UiMetrics::for_dpi(192);
-        assert_eq!(tab_item_width(scale_dip(960, 192), 8, scaled), 236);
+        assert_eq!(tab_item_width(scale_dip(960, 192), 8, scaled), 234);
+    }
+
+    #[test]
+    fn tab_control_sits_inside_the_strip_padding() {
+        for dpi in DPIS {
+            let strip = UiRect::new(
+                0,
+                scale_dip(56, dpi),
+                scale_dip(960, dpi),
+                scale_dip(36, dpi),
+            );
+            let control = tab_control_rect(strip, UiMetrics::for_dpi(dpi));
+            assert_eq!(control.x, scale_dip(12, dpi));
+            assert_eq!(control.right(), strip.right() - scale_dip(12, dpi));
+            assert_eq!((control.y, control.height), (strip.y, strip.height));
+        }
+        let tiny = tab_control_rect(UiRect::new(0, 0, 10, 36), UiMetrics::for_dpi(96));
+        assert!(tiny.width >= 0 && tiny.right() <= 10);
+    }
+
+    #[test]
+    fn search_text_sits_inside_leanmarks_field() {
+        let metrics = UiMetrics::for_dpi(96);
+        let field = UiRect::new(300, 8, 272, 40);
+        let (frame, edit) = search_field_layout(field, 16, metrics);
+        assert_eq!(frame, field);
+        // 1 px border and 12 DIP of padding on the left, 4 on the right,
+        // and the text line centred.
+        assert_eq!(edit, UiRect::new(313, 20, 254, 16));
+        let (_, squeezed) = search_field_layout(UiRect::new(0, 0, 10, 10), 16, metrics);
+        assert!(squeezed.width >= 0 && squeezed.height <= 10);
     }
 
     #[test]
