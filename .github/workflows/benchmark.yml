@@ -1,7 +1,7 @@
 name: Windows benchmark
 
-# Builds main and the branch on the same runner and measures both the same
-# way: executable size, start time, working set with a large file open and,
+# Builds main (or another base ref) and the branch on the same runner and
+# measures both the same way: executable size, start time, working set with a large file open and,
 # when sorting code changes or a run asks for it, a 10M-row whole-file sort.
 # The results are in the job log and the run summary.
 
@@ -13,6 +13,10 @@ on:
         description: "Also sort the 10M-row fixture"
         type: boolean
         default: true
+      base:
+        description: "Ref to compare against, such as main or v0.4.0"
+        type: string
+        default: main
 
 permissions:
   contents: read
@@ -35,10 +39,10 @@ jobs:
           path: head
           fetch-depth: 0
 
-      - name: Check out main
+      - name: Check out the base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ inputs.base || 'main' }}
           path: base
 
       - name: Install the pinned Rust toolchain
@@ -75,7 +79,7 @@ jobs:
           "sort=$($sort.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           Write-Host "Sort benchmark: $sort"
 
-      - name: Build main
+      - name: Build the base
         working-directory: base
         run: cargo +1.97.1 build --release --locked -p leanrows-app -p leanrows-spike
 
@@ -117,6 +121,7 @@ jobs:
             FixturePath = (Join-Path $env:RUNNER_TEMP 'shuffled-10000000.csv')
             StartRuns = 5
             OutputPath = (Join-Path $env:RUNNER_TEMP 'comparison.json')
+            BaseName = '${{ inputs.base || 'main' }}'
           }
           if ('${{ steps.scope.outputs.sort }}' -eq 'true') { $arguments.Sort = $true }
           ./head/tools/Compare-LeanRowsBuilds.ps1 @arguments
