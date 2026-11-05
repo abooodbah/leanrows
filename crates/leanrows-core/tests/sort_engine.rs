@@ -582,3 +582,34 @@ fn inverse_map_is_written_in_large_pieces() -> Result<(), Box<dyn Error>> {
     );
     Ok(())
 }
+
+#[test]
+fn building_the_maps_releases_the_merge_buffers() -> Result<(), Box<dyn Error>> {
+    // The merge's batch arrays and read pages are not needed once the maps
+    // are built, so the map buffers must replace them, not add to them.
+    let scratch = Scratch::new()?;
+    let resources = SortResources::new(16 * 1024 * 1024, 8 * 1024 * 1024 * 1024);
+    let mut input = String::new();
+    for row in 0..5_000_u64 {
+        writeln!(&mut input, "{:05}", (row * 7_919) % 5_000)?;
+    }
+    let mut config = config(SortMode::Text, SortDirection::Ascending, 0);
+    config.batch_capacity = 1_024;
+    config.merge_fan_in = 64;
+    config.step_bytes = 4 * 1024;
+    let mut session = SortSession::new(
+        Fixture(input.into_bytes()),
+        config,
+        resources.clone(),
+        &scratch.0,
+    )?;
+    let token = CancellationToken::new();
+    while session.advance(&token, token.snapshot())?.phase != SortPhase::BuildingInverse {}
+    let held = resources.memory_bytes();
+    assert!(
+        held < 1024 * 1024,
+        "{held} bytes held while building the maps"
+    );
+    while session.advance(&token, token.snapshot())?.phase != SortPhase::Complete {}
+    Ok(())
+}
