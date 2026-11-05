@@ -881,6 +881,17 @@ fn verify_toolbar_restyle(state_pointer: *mut WindowState) -> Result<(), ShellEr
             .map_err(|error| ShellError::new(format!("toolbar geometry failed: {error}")))?;
         let x = x.unwrap_or(client.right / 2);
         let y = y.unwrap_or(client.bottom / 2);
+        // Owner-drawn buttons paint on their own WM_PAINT, which may not have
+        // run yet on first presentation; paint now before reading pixels.
+        // SAFETY: The child is live; the repaint is synchronous.
+        let _ = unsafe {
+            RedrawWindow(
+                Some(handle),
+                None,
+                None,
+                RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW,
+            )
+        };
         // SAFETY: The child owns this DC until the paired ReleaseDC below.
         let device = unsafe { GetDC(Some(handle)) };
         if device.0.is_null() {
