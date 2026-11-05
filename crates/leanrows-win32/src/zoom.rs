@@ -104,6 +104,9 @@ mod tests {
         assert_eq!(scale_by_zoom(-12, 125), -15);
         assert_eq!(scale_by_zoom(-12, 50), -6);
         assert_eq!(scale_by_zoom(112, 150), 168);
+        // Half a pixel rounds away from zero.
+        assert_eq!(scale_by_zoom(15, 110), 17);
+        assert_eq!(scale_by_zoom(-15, 110), -17);
         assert_eq!(scale_by_zoom(1, 50), 1);
         assert_eq!(scale_by_zoom(0, 200), 0);
         assert_eq!(scale_by_zoom(i32::MAX, 300), i32::MAX);
