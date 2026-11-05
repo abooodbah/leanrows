@@ -10,7 +10,9 @@ param(
     [ValidateRange(1, 20)][int]$StartRuns = 5,
     [switch]$Sort,
     [ValidateRange(60, 7200)][int]$SortTimeoutSeconds = 3600,
-    [string]$OutputPath
+    [string]$OutputPath,
+    # The name the table gives the base build.
+    [string]$BaseName = 'main'
 )
 
 # Measures main and a branch the same way on one machine: executable size,
@@ -159,7 +161,7 @@ function Format-Range {
 
 $fixture = (Resolve-Path -LiteralPath $FixturePath).Path
 $FixturePath = $fixture
-$builds = @((Get-Build -Name 'main' -Directory $BaseDirectory), (Get-Build -Name 'branch' -Directory $HeadDirectory))
+$builds = @((Get-Build -Name $BaseName -Directory $BaseDirectory), (Get-Build -Name 'branch' -Directory $HeadDirectory))
 $results = @{}
 foreach ($build in $builds) {
     $results[$build.name] = [ordered]@{
@@ -190,12 +192,12 @@ if ($Sort) {
 
 $fixtureInfo = Get-Item -LiteralPath $fixture
 $lines = New-Object System.Collections.Generic.List[string]
-$lines.Add('## Main and branch on one runner')
+$lines.Add("## $BaseName and branch on one runner")
 $lines.Add('')
 $lines.Add(('Fixture: {0:N0} bytes, SHA-256 `{1}`. Start runs per build: {2}. Times are medians with the range in brackets.' -f `
             $fixtureInfo.Length, (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant(), $StartRuns))
 $lines.Add('')
-$lines.Add('| Measure | main | branch |')
+$lines.Add("| Measure | $BaseName | branch |")
 $lines.Add('| --- | --- | --- |')
 $lines.Add(('| Commit | `{0}` | `{1}` |' -f $builds[0].commit.Substring(0, 7), $builds[1].commit.Substring(0, 7)))
 $lines.Add(('| Executable size | {0:N0} bytes | {1:N0} bytes |' -f $builds[0].exe_bytes, $builds[1].exe_bytes))
@@ -219,7 +221,7 @@ if ($Sort) {
     & $row 'Sort, core engine, process working set peak' { param($r) $r.core.working_set_peak } 1MB ' MiB' 1
     & $row 'Sort, app worker' { param($r) if ($r.worker) { $r.worker.elapsed_ms } } 1000 ' s' 1
     & $row 'Sort, app worker, managed peak' { param($r) if ($r.worker) { $r.worker.managed_peak } } 1MB ' MiB' 2
-    $lines.Add(('| Rows sorted | {0:N0} | {1:N0} |' -f $results['main'].core.rows, $results['branch'].core.rows))
+    $lines.Add(('| Rows sorted | {0:N0} | {1:N0} |' -f $results[$BaseName].core.rows, $results['branch'].core.rows))
 }
 $markdown = $lines -join [Environment]::NewLine
 Write-Host $markdown
