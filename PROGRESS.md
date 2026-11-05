@@ -91,16 +91,18 @@ measured the same way.
 | 1. Review and plan | [#27](https://github.com/abooodbah/leanrows/pull/27) | This file. |
 | 2. Benchmark workflow | [#28](https://github.com/abooodbah/leanrows/pull/28) | `.github/workflows/benchmark.yml` and `tools/Compare-LeanRowsBuilds.ps1`: main and the branch on one `windows-2022` runner. |
 | 3. Merge up to 64 runs at a time | [#29](https://github.com/abooodbah/leanrows/pull/29) | 10M-row sort on Windows CI: core engine 95.6 s to 82.7 s, app worker 112.5 s to 91.4 s. |
+| 7. Dim and Dusk themes | [#30](https://github.com/abooodbah/leanrows/pull/30) | Five themes with LeanMark 0.6.0's values; start time, memory and size unchanged. |
 
 ## In progress
 
 - 4. Inverse map with sequential writes (branch `sort-inverse-sequential`).
 - 5. Comparisons decided from stored fields (branch `sort-comparison-fast-path`).
-- 7. Dim and Dusk themes (branch `themes-dim-dusk`).
+- 8. Theme button with dot and tooltip (branch `theme-button-dot`).
+- 9. Zoom for the rows (branch `grid-zoom`).
 
 ## Remaining
 
-Items 6 and 8 to 14 of the plan.
+Items 6 and 10 to 14 of the plan.
 
 ## Known gaps
 
@@ -134,6 +136,10 @@ numbers within one run, not across runs.
 | Peak working set, 250 MB CSV open, #29 | 16.2 MiB | 16.2 MiB | same run |
 | 10M-row sort, core engine, #29 | 95.6 s | 82.7 s | same run |
 | 10M-row sort, app worker, #29 | 112.5 s | 91.4 s | same run |
+| Executable size, #30 | 917,504 bytes | 916,480 bytes | [run 41985452878](https://github.com/abooodbah/leanrows/actions/runs/41985452878) |
+| Start to input idle, no file, #30 | 56 ms | 56 ms | same run |
+| Start to input idle, 250 MB CSV, #30 | 86 ms | 88 ms | same run |
+| Peak working set, 250 MB CSV open, #30 | 16.2 MiB | 16.2 MiB | same run |
 
 Main before any change (0.4.0 code):
 

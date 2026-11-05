@@ -981,7 +981,13 @@ fn verify_theme_button_cycle(window: HWND) -> Result<(), ShellError> {
     let verification = (|| {
         refresh_theme(window, ThemeMode::System)?;
         verify_theme_runtime_state(window, ThemeMode::System)?;
-        for expected in [ThemeMode::Light, ThemeMode::Dark, ThemeMode::System] {
+        // Light, Dark, Dim, Dusk and back to System.
+        for expected in ThemeMode::ALL
+            .into_iter()
+            .cycle()
+            .skip(1)
+            .take(ThemeMode::ALL.len())
+        {
             // SAFETY: BM_CLICK performs the real accessible BUTTON activation and
             // synchronously routes ID_VIEW_THEME through the parent window.
             unsafe {

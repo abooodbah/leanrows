@@ -276,8 +276,9 @@ Find compares raw UTF-8 bytes. Its optional case-insensitive mode folds ASCII
 letters only; non-ASCII bytes remain exact. Regular expressions are not
 supported in 0.4.
 
-The interface provides System, Light, and Dark appearance modes. System follows
-the active Windows app theme. The application also provides per-monitor DPI
+The interface provides five themes, the same as LeanMark: System, Light, Dark,
+Dim, and Dusk. Dim and Dusk are softer dark themes. System follows the active
+Windows app theme. The application also provides per-monitor DPI
 handling, visible keyboard focus, and Microsoft Active Accessibility names for
 the window, grid, and row items. When Windows high contrast is active,
 application colors yield to the corresponding system colors.
