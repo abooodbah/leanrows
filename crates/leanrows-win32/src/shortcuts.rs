@@ -1,6 +1,90 @@
 //! Every keyboard shortcut and pointer action the settings panel lists,
 //! grouped as `LeanMark` groups its own.
 
+/// One row of the shortcut list.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Shortcut {
+    pub(crate) group: &'static str,
+    pub(crate) keys: &'static str,
+    pub(crate) action: &'static str,
+}
+
+const fn row(group: &'static str, keys: &'static str, action: &'static str) -> Shortcut {
+    Shortcut {
+        group,
+        keys,
+        action,
+    }
+}
+
+/// The list in the order the panel shows it. A test checks it against the
+/// accelerator table in `leanrows.rc`.
+pub(crate) const SHORTCUTS: [Shortcut; 39] = [
+    row("File", "Ctrl+O", "Open files"),
+    row("File", "F5", "Reload the file"),
+    row("Rows", "Ctrl+C", "Copy the selected rows"),
+    row("Rows", "Ctrl+G", "Go to a row"),
+    row("Rows", "Arrow keys", "Move through the rows"),
+    row("Rows", "Page Up", "Up one page"),
+    row("Rows", "Page Down", "Down one page"),
+    row("Rows", "Ctrl++", "Zoom in"),
+    row("Rows", "Ctrl+-", "Zoom out"),
+    row("Rows", "Ctrl+0", "Actual size"),
+    row("Rows", "Ctrl+wheel", "Zoom in or out"),
+    row("Find", "Ctrl+F", "Find in the file"),
+    row("Find", "F3", "Next match"),
+    row("Find", "Shift+F3", "Previous match"),
+    row("Find box", "Enter", "Next match"),
+    row("Find box", "Shift+Enter", "Previous match"),
+    row("Find box", "Esc", "Back to the rows"),
+    row(
+        "Sorting",
+        "Click a column header",
+        "Sort by it, again to reverse",
+    ),
+    row(
+        "Sorting",
+        "Right-click a column header",
+        "Sort as text or numbers",
+    ),
+    row("Sorting", "Click Row", "Restore source order"),
+    row("Sorting", "More menu", "Sort, restore, or cancel a sort"),
+    row("Tabs", "Ctrl+Tab", "Next tab"),
+    row("Tabs", "Ctrl+Shift+Tab", "Previous tab"),
+    row("Tabs", "Ctrl+Page Down", "Next tab"),
+    row("Tabs", "Ctrl+Page Up", "Previous tab"),
+    row("Tabs", "Ctrl+1 to Ctrl+8", "Go to a tab by position"),
+    row("Tabs", "Ctrl+9", "Go to the last tab"),
+    row("Tabs", "Ctrl+W", "Close the tab"),
+    row("Tabs", "Ctrl+F4", "Close the tab"),
+    row("Tabs", "Middle click", "Close a tab"),
+    row(
+        "Tabs",
+        "Left or right arrow",
+        "Move between tabs in the strip",
+    ),
+    row("Window", "Ctrl+Shift+T", "Change the theme"),
+    row("Window", "Ctrl+/", "Settings and shortcuts"),
+    row("Window", "F1", "Settings and shortcuts"),
+    row("Window", "Esc", "Close the settings panel"),
+    row("Window", "Tab", "Next control"),
+    row("Window", "Shift+Tab", "Previous control"),
+    row("Window", "Up or down arrow", "Next theme in the panel"),
+    row("Window", "Drop files", "Open them in tabs"),
+];
+
+/// The groups in the order they first appear.
+#[must_use]
+pub(crate) fn groups() -> Vec<&'static str> {
+    let mut groups: Vec<&'static str> = Vec::new();
+    for entry in SHORTCUTS {
+        if !groups.contains(&entry.group) {
+            groups.push(entry.group);
+        }
+    }
+    groups
+}
+
 #[cfg(test)]
 mod tests {
     use super::{SHORTCUTS, groups};

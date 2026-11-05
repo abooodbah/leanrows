@@ -251,7 +251,10 @@ while an explicit choice remains stable across restarts. Dark, Dim, and Dusk
 use the dark title bar. Documented Windows theme and custom-draw APIs apply the
 effective appearance to child controls without changing their native roles.
 When Windows high contrast is active, application colors yield to the
-applicable system colors. Keyboard focus remains visible, and per-monitor DPI
+applicable system colors. A settings panel on the right edge, below the chrome,
+holds the theme choices, the zoom and the shortcut list; it is a child window
+of ordinary buttons, radio buttons, labels and a read-only list, so each keeps
+its native role. Keyboard focus remains visible, and per-monitor DPI
 changes rebuild the layout metrics and fonts. Cached UTF-16 cells are
 NUL-terminated before they reach the native control.
 
