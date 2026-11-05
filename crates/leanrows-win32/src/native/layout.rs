@@ -702,7 +702,8 @@ mod tests {
         assert_eq!(commands.wordmark.map(|rect| rect.width), Some(32));
         assert!(commands.file_identity.is_some());
         assert_eq!(commands.search_field.width, 360);
-        assert_eq!(commands.theme_button.map(|rect| rect.width), Some(88));
+        // Room for the dot, the gap and the longest label, "System".
+        assert_eq!(commands.theme_button.map(|rect| rect.width), Some(100));
         assert_eq!(commands.open_button.width, 104);
         assert!(commands.previous_match_button.is_none());
         assert!(commands.next_match_button.is_none());

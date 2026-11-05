@@ -1032,6 +1032,8 @@ fn verify_theme_runtime_state(window: HWND, expected: ThemeMode) -> Result<(), S
         )));
     }
     verify_control_text(state.chrome.theme, expected.label(), "theme button")?;
+    verify_theme_tooltip(state)?;
+    verify_theme_dot(state)?;
     // SAFETY: LVM_GETBKCOLOR is a pointer-free read of the live list-view palette.
     let list_background = unsafe { SendMessageW(state.list, LVM_GETBKCOLOR, None, None) }.0;
     let expected_background =
@@ -1044,6 +1046,84 @@ fn verify_theme_runtime_state(window: HWND, expected: ThemeMode) -> Result<(), S
     // SAFETY: The top-level window and children repaint synchronously here.
     let _ = unsafe { UpdateWindow(window) };
     Ok(())
+}
+
+/// The theme button's tooltip names the theme and its shortcut.
+fn verify_theme_tooltip(state: &WindowState) -> Result<(), ShellError> {
+    let mut text = [0_u16; 128];
+    let mut tool = TTTOOLINFOW {
+        cbSize: u32::try_from(size_of::<TTTOOLINFOW>()).unwrap_or_default(),
+        uFlags: TTF_IDISHWND,
+        hwnd: state.window,
+        uId: state.chrome.theme.0.addr(),
+        lpszText: PWSTR(text.as_mut_ptr()),
+        ..Default::default()
+    };
+    // SAFETY: The tooltip is live; TTM_GETTEXTW copies at most the WPARAM
+    // count of units into the writable local buffer.
+    unsafe {
+        SendMessageW(
+            state.chrome.tooltip,
+            TTM_GETTEXTW,
+            Some(WPARAM(text.len())),
+            Some(LPARAM((&raw mut tool) as isize)),
+        );
+    }
+    let length = text
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(text.len());
+    let expected = theme::theme_tooltip(state.theme.preference, state.theme.effective);
+    if String::from_utf16_lossy(&text[..length]) != expected {
+        return Err(ShellError::new(format!(
+            "theme tooltip does not read \"{expected}\""
+        )));
+    }
+    Ok(())
+}
+
+/// Samples the painted dot: its centre, or both halves for System.
+fn verify_theme_dot(state: &WindowState) -> Result<(), ShellError> {
+    let button = state.chrome.theme;
+    // SAFETY: Reading the visibility of a live child.
+    if !unsafe { IsWindowVisible(button) }.as_bool() {
+        return Ok(());
+    }
+    // SAFETY: The button repaints synchronously before its pixels are read.
+    let _ = unsafe { UpdateWindow(button) };
+    let mut client = RECT::default();
+    // SAFETY: The button is live and RECT is writable.
+    unsafe { GetClientRect(button, &raw mut client) }
+        .map_err(|error| ShellError::new(format!("theme button geometry failed: {error}")))?;
+    // SAFETY: The button owns this DC until the paired ReleaseDC below.
+    let device = unsafe { GetDC(Some(button)) };
+    if device.0.is_null() {
+        return Err(ShellError::new("theme dot check could not acquire a DC"));
+    }
+    let dot = theme_dot_rect(state, device, client);
+    let centre_y = (dot.top + dot.bottom) / 2;
+    let quarter = (dot.right - dot.left) / 4;
+    let samples: Vec<(i32, theme::UiColor)> = match state.theme.preference.swatch() {
+        theme::Swatch::Solid(color) => vec![((dot.left + dot.right) / 2, color)],
+        theme::Swatch::Split { left, right } => vec![
+            (dot.left + quarter + 1, left),
+            (dot.right - quarter - 1, right),
+        ],
+    };
+    let mut result = Ok(());
+    for (x, expected) in samples {
+        // SAFETY: The DC is live and the point lies inside the button.
+        let actual = unsafe { GetPixel(device, x, centre_y) }.0;
+        if actual != expected.colorref().0 {
+            result = Err(ShellError::new(format!(
+                "theme dot for {:?} painted {actual:06x}",
+                state.theme.preference
+            )));
+        }
+    }
+    // SAFETY: Releases the exact HWND/DC pair acquired above.
+    let _ = unsafe { ReleaseDC(Some(button), device) };
+    result
 }
 
 fn verify_control_text(handle: HWND, expected: &str, name: &str) -> Result<(), ShellError> {
@@ -5234,6 +5314,24 @@ mod tests {
             escaped_non_utf8_rows: 0,
             sheets: None,
         }
+    }
+
+    #[test]
+    fn theme_dot_and_label_are_centred_together() {
+        use windows::Win32::Foundation::RECT;
+        let button = RECT {
+            left: 0,
+            top: 0,
+            right: 100,
+            bottom: 40,
+        };
+        // 10 dot + 8 gap + 45 text = 63, so the pair starts at 18.
+        let (dot, text) = super::swatch_layout(button, 45, 10, 8);
+        assert_eq!((dot.left, dot.top, dot.right, dot.bottom), (18, 15, 28, 25));
+        assert_eq!((text.left, text.right), (36, 100));
+        // A label wider than the button still keeps the dot inside it.
+        let (dot, _) = super::swatch_layout(button, 200, 10, 8);
+        assert_eq!(dot.left, 0);
     }
 
     #[test]

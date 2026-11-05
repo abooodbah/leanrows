@@ -775,8 +775,9 @@ impl Drop for OwnedRegistryKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        EffectiveTheme, Palette, ThemeMode, UiColor, UiMetrics, parse_apps_use_light_theme,
-        parse_theme_mode, select_effective_theme,
+        EffectiveTheme, Palette, SWATCH_RING, Swatch, ThemeMode, UiColor, UiMetrics,
+        parse_apps_use_light_theme, parse_theme_mode, select_effective_theme,
+        theme_accessible_name, theme_display_name, theme_tooltip,
     };
 
     #[test]
@@ -847,6 +848,63 @@ mod tests {
         // LeanMark's ring is --accent-400 in Light and Dark.
         let dark = Palette::for_theme(EffectiveTheme::Dark);
         assert_eq!(dark.focus, UiColor::rgb(0x3b, 0x82, 0xf6));
+    }
+
+    #[test]
+    fn theme_dots_use_leanmarks_swatch_colours() {
+        // LeanMark's .theme-swatch: one fixed colour per theme and the same
+        // #8c8c8c ring in every theme; System is half white, half black.
+        assert_eq!(
+            ThemeMode::System.swatch(),
+            Swatch::Split {
+                left: UiColor::rgb(0xff, 0xff, 0xff),
+                right: UiColor::rgb(0x00, 0x00, 0x00),
+            }
+        );
+        assert_eq!(
+            ThemeMode::Light.swatch(),
+            Swatch::Solid(UiColor::rgb(0xff, 0xff, 0xff))
+        );
+        assert_eq!(
+            ThemeMode::Dark.swatch(),
+            Swatch::Solid(UiColor::rgb(0x00, 0x00, 0x00))
+        );
+        assert_eq!(
+            ThemeMode::Dim.swatch(),
+            Swatch::Solid(UiColor::rgb(0x7f, 0x8a, 0x99))
+        );
+        assert_eq!(
+            ThemeMode::Dusk.swatch(),
+            Swatch::Solid(UiColor::rgb(0xc9, 0x8f, 0x4f))
+        );
+        assert_eq!(SWATCH_RING, UiColor::rgb(0x8c, 0x8c, 0x8c));
+    }
+
+    #[test]
+    fn theme_names_never_depend_on_colour_alone() {
+        use EffectiveTheme::{Dark, Dusk, HighContrast, Light};
+        assert_eq!(theme_display_name(ThemeMode::System, Dark), "System (Dark)");
+        assert_eq!(
+            theme_display_name(ThemeMode::System, Light),
+            "System (Light)"
+        );
+        assert_eq!(theme_display_name(ThemeMode::Dusk, Dusk), "Dusk");
+        assert_eq!(
+            theme_display_name(ThemeMode::System, HighContrast),
+            "System (Windows high contrast)"
+        );
+        assert_eq!(
+            theme_display_name(ThemeMode::Dim, HighContrast),
+            "Dim (Windows high contrast)"
+        );
+        assert_eq!(
+            theme_tooltip(ThemeMode::System, Dark),
+            "Theme: System (Dark) (Ctrl+Shift+T)"
+        );
+        assert_eq!(
+            theme_accessible_name(ThemeMode::Dusk, Dusk),
+            "Theme: Dusk. Activate to change theme."
+        );
     }
 
     #[test]
