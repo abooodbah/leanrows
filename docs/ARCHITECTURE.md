@@ -211,6 +211,10 @@ however many runs there are. Runs hold 8,192 rows, so any file up to the
 
 The final disk maps contain 24 bytes per row for source row/start/end and 8 bytes
 per row for inverse source-row-to-display-rank lookup, plus versioned headers.
+The inverse map is built in sequence rather than one row at a time: each
+(row, rank) pair goes to the bucket for its block of 524,288 rows in a
+temporary 16-byte-per-row file, and each bucket is then placed in memory
+(4 MiB) and written to the map in 64 KiB pieces.
 The worker reads only the bounded current viewport by exact source spans. Cache
 and accessibility lookup use display ranks; Row cells keep source numbers.
 Find remains in source order and uses the inverse map to reveal its result.

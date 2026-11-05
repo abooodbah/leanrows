@@ -536,6 +536,31 @@ pub(super) fn read_exact_at(
     }
     Ok(())
 }
+/// Writes all of `bytes` at `offset` without moving a shared file position,
+/// counting each request in the file's sort resources.
+pub(super) fn write_all_at(
+    file: &DiskFile,
+    mut offset: u64,
+    mut bytes: &[u8],
+) -> Result<(), SortError> {
+    #[cfg(not(windows))]
+    use std::os::unix::fs::FileExt;
+    #[cfg(windows)]
+    use std::os::windows::fs::FileExt;
+    while !bytes.is_empty() {
+        file.reservation.resources.count_write();
+        #[cfg(windows)]
+        let n = file.file.seek_write(bytes, offset)?;
+        #[cfg(not(windows))]
+        let n = file.file.write_at(bytes, offset)?;
+        if n == 0 {
+            return Err(SortError::InvalidScratch);
+        }
+        offset += n as u64;
+        bytes = &bytes[n..];
+    }
+    Ok(())
+}
 pub(super) fn encode(d: Descriptor) -> [u8; 128] {
     let mut b = [0; 128];
     for (index, value) in [d.row, d.start, d.end, d.key_start, d.key_end]

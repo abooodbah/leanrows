@@ -1,3 +1,4 @@
+use super::inverse::{BUCKET_BUFFER_BYTES, BUCKET_ROWS, InverseBuilder};
 use super::key::{Builder, Comparison, Descriptor, Locator, checked_read};
 use super::storage::{DiskFile, Owner, ReadPage, Reservation, encode, map_header};
 use super::{SortConfig, SortError, SortPhase, SortResources, SortStep, SortedOrder};
@@ -5,12 +6,7 @@ use crate::{
     CancellationGeneration, CancellationToken, CsvBoundaryScanner, EmitControl,
     LineBoundaryScanner, PositionedRead, RecordSpan, SourceFingerprint, ViewportFormat,
 };
-use std::{
-    cmp::Ordering,
-    io::{Seek, SeekFrom, Write},
-    path::Path,
-    sync::Arc,
-};
+use std::{cmp::Ordering, path::Path, sync::Arc};
 enum Scanner {
     Csv(CsvBoundaryScanner),
     Lines(LineBoundaryScanner),
@@ -150,6 +146,7 @@ pub struct SortSession<R> {
     order: Option<DiskFile>,
     inverse: Option<DiskFile>,
     inverse_at: u64,
+    inverse_builder: Option<InverseBuilder>,
     pages: Vec<ReadPage>,
 }
 impl<R: PositionedRead> SortSession<R> {
@@ -235,6 +232,7 @@ impl<R: PositionedRead> SortSession<R> {
             order: None,
             inverse: None,
             inverse_at: 0,
+            inverse_builder: None,
             pages,
         })
     }
@@ -631,19 +629,40 @@ impl<R: PositionedRead> SortSession<R> {
                 .checked_mul(8)
                 .ok_or(SortError::InvalidScratch)?,
         )?;
+        self.inverse_builder = Some(InverseBuilder::new(
+            &self.owner,
+            &self.resources,
+            self.records,
+            BUCKET_ROWS,
+            BUCKET_BUFFER_BYTES,
+        )?);
         self.order = Some(order);
         self.inverse = Some(inverse);
         self.phase = SortPhase::BuildingInverse;
         Ok(())
     }
+    /// Writes the order map in rank order while collecting (row, rank)
+    /// pairs, then places the pairs into the inverse map bucket by bucket.
     fn build_maps(&mut self, budget: &mut usize) -> Result<(), SortError> {
         if self.inverse_at == self.records {
-            self.order
+            let builder = self
+                .inverse_builder
                 .as_mut()
-                .ok_or(SortError::InvalidScratch)?
-                .finish_writing()?;
-            self.run_file = None;
-            self.phase = SortPhase::Complete;
+                .ok_or(SortError::InvalidScratch)?;
+            if self.run_file.is_some() {
+                builder.finish_collecting()?;
+                self.order
+                    .as_mut()
+                    .ok_or(SortError::InvalidScratch)?
+                    .finish_writing()?;
+                self.run_file = None;
+                return Ok(());
+            }
+            let inverse = self.inverse.as_ref().ok_or(SortError::InvalidScratch)?;
+            if builder.place(inverse, budget)? {
+                self.inverse_builder = None;
+                self.phase = SortPhase::Complete;
+            }
             return Ok(());
         }
         let d = self.load_descriptor(self.inverse_at, 0)?;
@@ -655,12 +674,10 @@ impl<R: PositionedRead> SortSession<R> {
             .as_mut()
             .ok_or(SortError::InvalidScratch)?
             .append(&bytes)?;
-        let inverse = &mut self.inverse.as_mut().ok_or(SortError::InvalidScratch)?.file;
-        inverse.seek(SeekFrom::Start(
-            32 + d.row.checked_mul(8).ok_or(SortError::InvalidScratch)?,
-        ))?;
-        self.resources.count_write();
-        inverse.write_all(&self.inverse_at.to_le_bytes())?;
+        self.inverse_builder
+            .as_mut()
+            .ok_or(SortError::InvalidScratch)?
+            .push(d.row, self.inverse_at)?;
         self.inverse_at += 1;
         *budget = budget.saturating_sub(128);
         Ok(())
