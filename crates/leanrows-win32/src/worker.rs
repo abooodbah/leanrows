@@ -605,6 +605,7 @@ struct ActiveSort {
     source_memory: Option<leanrows_core::SortMemoryReservation>,
     permit: Option<SortPermit>,
     last_emit: std::time::Instant,
+    source_check: sorting::SourceCheck,
 }
 
 struct CacheState {
@@ -1872,6 +1873,46 @@ mod tests {
 
     /// A sort or restore in one tab must not cancel a sort waiting or running in
     /// another tab. The other tab's sort waits its turn instead.
+    /// A file replaced on disk after it was opened is never published as a
+    /// sorted view, however often the sort checks the path while it runs.
+    #[test]
+    fn a_sort_of_a_replaced_file_fails_instead_of_publishing()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = TempFixture::file("csv", b"c,3\na,1\nb,2\n")?;
+        let worker = Worker::start(Arc::new(|| {}))?;
+        worker.submit_path(fixture.path().to_path_buf());
+        wait_complete(&worker, Duration::from_secs(5))?;
+        let replacement = fixture.path().with_extension("new");
+        fs::write(&replacement, b"z,9\ny,8\nx,7\n")?;
+        fs::rename(&replacement, fixture.path())?;
+        let request = leanrows_core::SortRequest {
+            column: 0,
+            mode: leanrows_core::SortMode::Text,
+            direction: leanrows_core::SortDirection::Ascending,
+        };
+        let serial = worker.request_sort(Some(request));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(event) = worker.poll()
+                && let Some(sort) = event.sort.as_ref().filter(|s| s.serial == serial)
+            {
+                assert_ne!(
+                    sort.phase,
+                    leanrows_core::SortPhase::Complete,
+                    "a replaced file was sorted and shown"
+                );
+                if sort.error.is_some() {
+                    break;
+                }
+            }
+            if Instant::now() > deadline {
+                return Err(io::Error::other("sort of a replaced file did not fail").into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        Ok(())
+    }
+
     #[test]
     fn sort_in_another_tab_does_not_cancel_this_tab() -> Result<(), Box<dyn std::error::Error>> {
         let fixture = TempFixture::file("csv", b"c,3\na,1\nb,2\n")?;

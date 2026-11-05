@@ -95,11 +95,11 @@ measured the same way.
 | 8. Theme button with dot and tooltip | [#32](https://github.com/abooodbah/leanrows/pull/32) | LeanMark's dot in a grey ring, the tooltip "Theme: System (Dark) (Ctrl+Shift+T)", Ctrl+Shift+T. |
 | 5. Comparisons decided from stored fields | [#34](https://github.com/abooodbah/leanrows/pull/34) | 10M-row sort on Windows CI: core engine 42.8 s to 13.5 s, app worker 53.5 s to 23.6 s. |
 | 9. Zoom for the rows | [#35](https://github.com/abooodbah/leanrows/pull/35) | LeanMark's steps from 50% to 300%, Ctrl+Plus, Ctrl+Minus, Ctrl+0 and Ctrl+wheel, saved as ZoomPercent. |
+| 6. The sort's source check every 32 steps | [#36](https://github.com/abooodbah/leanrows/pull/36) | 10M-row sort through the app's worker on Windows CI: 65.1 s to 49.0 s; the core engine alone took 49.9 s. |
 | 7. Dim and Dusk themes | [#30](https://github.com/abooodbah/leanrows/pull/30) | Five themes with LeanMark 0.6.0's values; start time, memory and size unchanged. |
 
 ## In progress
 
-- 6. The sort's source check every 32 steps (branch `sort-source-check`).
 - 10. Settings panel (branch `settings-panel`).
 - 11. Toolbar and tabs restyle (branch `toolbar-tabs-restyle`).
 
@@ -151,6 +151,8 @@ numbers within one run, not across runs.
 | 10M-row sort, app worker, #34 | 53.5 s | 23.6 s | same run |
 | Sort managed memory peak, #34 | 6.58 MiB | 6.58 MiB | same run |
 | Executable size, #34 | 929,280 bytes | 929,280 bytes | same run |
+| 10M-row sort, app worker, #36 | 65.1 s | 49.0 s | [run 41990867569](https://github.com/abooodbah/leanrows/actions/runs/41990867569) |
+| 10M-row sort, core engine, #36 | 49.9 s | 50.0 s | same run |
 | Executable size, #35 | 941,568 bytes | 949,248 bytes | [run 41990328339](https://github.com/abooodbah/leanrows/actions/runs/41990328339) |
 | Start to input idle, 250 MB CSV, #35 | 93 ms | 90 ms | same run |
 | Peak working set, 250 MB CSV open, #35 | 16.3 MiB | 16.3 MiB | same run |
