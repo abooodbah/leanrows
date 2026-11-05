@@ -69,22 +69,23 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, EN_KILLFOCUS, EN_SETFOCUS, ES_AUTOHSCROLL, EndDialog, GCLP_HICON,
     GCLP_HICONSM, GWL_STYLE, GWLP_USERDATA, GetClassLongPtrW, GetClassNameW, GetClientRect,
     GetDlgItemTextW, GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
-    GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU, HWND_TOP, IDC_ARROW, IDCANCEL,
-    IDOK, IMAGE_ICON, IsIconic, IsWindow, IsWindowVisible, KillTimer, LR_SHARED, LoadAcceleratorsW,
-    LoadCursorW, LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_TASKMODAL,
-    MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MINMAXINFO, MSG, MessageBoxW,
-    MoveWindow, PostMessageW, PostQuitMessage, RT_DIALOG, RegisterClassExW, SIZE_MINIMIZED,
-    SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWDEFAULT,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW,
-    SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
-    TPM_RETURNCMD, TPM_RIGHTALIGN, TrackPopupMenuEx, TranslateAcceleratorW, TranslateMessage,
-    WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND,
-    WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY,
-    WM_DPICHANGED, WM_DRAWITEM, WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETMINMAXINFO,
-    WM_INITDIALOG, WM_KEYDOWN, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT,
-    WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER,
-    WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW,
-    WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_TABSTOP,
+    GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU, HWND_BOTTOM, HWND_TOP, IDC_ARROW,
+    IDCANCEL, IDOK, IMAGE_ICON, IsIconic, IsWindow, IsWindowVisible, KillTimer, LR_SHARED,
+    LoadAcceleratorsW, LoadCursorW, LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING,
+    MB_OK, MB_TASKMODAL, MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MINMAXINFO,
+    MSG, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage, RT_DIALOG, RegisterClassExW,
+    SIZE_MINIMIZED, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW,
+    SW_SHOWDEFAULT, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW,
+    SetDlgItemTextW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowWindow, TPM_RETURNCMD, TPM_RIGHTALIGN, TrackPopupMenuEx,
+    TranslateAcceleratorW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE,
+    WM_APP, WM_CLOSE, WM_COMMAND, WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLOREDIT,
+    WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM, WM_DROPFILES, WM_ERASEBKGND,
+    WM_GETFONT, WM_GETMINMAXINFO, WM_INITDIALOG, WM_KEYDOWN, WM_MOUSEWHEEL, WM_NCCREATE,
+    WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
+    WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN,
+    WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW,
+    WS_POPUP, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -4397,9 +4398,9 @@ fn create_children(window: HWND) -> Result<(), ()> {
     // SAFETY: `WM_NCCREATE` attached the state before `WM_CREATE`.
     let state = unsafe { pointer.as_mut() }.ok_or(())?;
     state.window = window;
-    // The bar is the first child, so every control on it is above it, and it
-    // clips its own painting to stay under them when it repaints the search
-    // frame.
+    // The bar clips its own painting against the controls on it, and is moved
+    // below them once they exist, so repainting the search frame never covers
+    // a button.
     let topbar = create_child(
         instance,
         window,
@@ -4600,6 +4601,20 @@ fn create_children(window: HWND) -> Result<(), ()> {
     let header = list_header(list).ok_or(())?;
     header::install_subclass(header, window).map_err(|_| ())?;
     tabs::install_subclass(tab_strip, window).map_err(|_| ())?;
+    // A new child goes below its older siblings; the bar was created first,
+    // so it goes to the bottom, under the controls it holds.
+    // SAFETY: The bar is a live child created on this UI thread.
+    let _ = unsafe {
+        SetWindowPos(
+            topbar,
+            Some(HWND_BOTTOM),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
+    };
     // The progress rule straddles the lower edge of the chrome. Keeping it
     // above its siblings stops the tab strip from painting over it.
     // SAFETY: Both windows are live children created on this UI thread.
