@@ -349,6 +349,19 @@ mod tests {
     use super::*;
     const QUOTA: u64 = 8 * 1024 * 1024 * 1024;
     #[test]
+    fn the_source_path_is_checked_every_32_sort_steps() {
+        // Opening the path again after every 64 KiB step cost about 10 s of a
+        // 10M-row sort; the handle already refuses in-place writes, and the
+        // finished order is always checked before it is shown.
+        let mut check = SourceCheck::default();
+        let due: Vec<bool> = (0..70).map(|_| check.due()).collect();
+        for (step, due) in due.iter().enumerate() {
+            assert_eq!(*due, step % SORT_SOURCE_CHECK_STEPS == 0, "step {step}");
+        }
+        assert_eq!(SORT_SOURCE_CHECK_STEPS, 32);
+    }
+
+    #[test]
     fn sort_space_check_refuses_one_byte_short_of_free_space() {
         let rows = 1_000_000;
         let needed = rows * 256 + 64 * 1024 * 1024;
