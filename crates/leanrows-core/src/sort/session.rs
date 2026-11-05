@@ -57,6 +57,61 @@ enum Pending {
     Locate(Locator),
     Build(Builder),
 }
+/// Bytes of one run's read page during a merge.
+const PAGE_BYTES: usize = 64 * 1024;
+/// Memory charged per merged run for its tree nodes, head and positions.
+const TREE_BYTES_PER_RUN: usize = 256;
+/// A tree node or leaf with no run, or a run with no records left.
+const EMPTY: u32 = u32::MAX;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stage {
+    /// Between merge groups.
+    Idle,
+    /// Filling inner nodes from the last one up to the root.
+    Build(usize),
+    /// Writing the root's record and reading that run's next one.
+    Emit,
+    /// Replaying the matches from that run's leaf up to the root.
+    Replay(usize),
+}
+/// A winner tree over the runs of one merge group. Leaf `leaves + r` is run
+/// `r`; every inner node holds the run whose head sorts first below it.
+struct Tree {
+    leaves: usize,
+    nodes: Vec<u32>,
+    heads: Vec<Option<Descriptor>>,
+    next: Vec<u64>,
+    end: Vec<u64>,
+    group_end: u64,
+    stage: Stage,
+}
+impl Tree {
+    fn new(fan_in: usize) -> Result<Self, SortError> {
+        let leaves = fan_in
+            .checked_next_power_of_two()
+            .ok_or(SortError::InvalidConfig)?;
+        Ok(Self {
+            leaves,
+            nodes: filled(
+                leaves.checked_mul(2).ok_or(SortError::InvalidConfig)?,
+                EMPTY,
+            )?,
+            heads: filled(fan_in, None)?,
+            next: filled(fan_in, 0)?,
+            end: filled(fan_in, 0)?,
+            group_end: 0,
+            stage: Stage::Idle,
+        })
+    }
+}
+fn filled<T: Clone>(len: usize, value: T) -> Result<Vec<T>, SortError> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(len)
+        .map_err(|_| SortError::Allocation)?;
+    values.resize(len, value);
+    Ok(values)
+}
 #[derive(Default)]
 struct Merge {
     width: usize,
@@ -91,16 +146,11 @@ pub struct SortSession<R> {
     run_width: u64,
     pass: u64,
     group_start: u64,
-    left: u64,
-    right: u64,
-    middle: u64,
-    end: u64,
-    a: Option<Descriptor>,
-    b: Option<Descriptor>,
+    tree: Tree,
     order: Option<DiskFile>,
     inverse: Option<DiskFile>,
     inverse_at: u64,
-    pages: [ReadPage; 2],
+    pages: Vec<ReadPage>,
 }
 impl<R: PositionedRead> SortSession<R> {
     pub fn new(
@@ -113,11 +163,20 @@ impl<R: PositionedRead> SortSession<R> {
             return Err(SortError::InvalidConfig);
         }
         let snapshot = SourceFingerprint::capture(&source)?;
+        // The batch and its merge copy, fixed buffers, and one read page and
+        // tree slot for every run merged at a time.
         let bytes = config
             .batch_capacity
             .checked_mul(std::mem::size_of::<Descriptor>())
             .and_then(|n| n.checked_mul(2))
             .and_then(|n| n.checked_add(512 * 1024))
+            .and_then(|n| {
+                n.checked_add(
+                    config
+                        .merge_fan_in
+                        .checked_mul(PAGE_BYTES + TREE_BYTES_PER_RUN)?,
+                )
+            })
             .ok_or(SortError::Allocation)?;
         let memory = resources.reserve(bytes as u64, true)?;
         let mut batch = Vec::new();
@@ -134,6 +193,13 @@ impl<R: PositionedRead> SortSession<R> {
             .try_reserve_exact(64 * 1024)
             .map_err(|_| SortError::Allocation)?;
         scan_buffer.resize(64 * 1024, 0);
+        // Pages for a merge are added when one starts, so a file that fits in
+        // one run never allocates them.
+        let mut pages = Vec::new();
+        pages
+            .try_reserve_exact(config.merge_fan_in)
+            .map_err(|_| SortError::Allocation)?;
+        pages.push(ReadPage::new()?);
         resources.retry_cleanup();
         let owner = Owner::create(directory, &resources)?;
         let run_file = DiskFile::create(&owner, &resources, "runs-0.bin")?;
@@ -165,16 +231,11 @@ impl<R: PositionedRead> SortSession<R> {
             run_width: config.batch_capacity as u64,
             pass: 0,
             group_start: 0,
-            left: 0,
-            right: 0,
-            middle: 0,
-            end: 0,
-            a: None,
-            b: None,
+            tree: Tree::new(config.merge_fan_in)?,
             order: None,
             inverse: None,
             inverse_at: 0,
-            pages: [ReadPage::new()?, ReadPage::new()?],
+            pages,
         })
     }
     fn quote(&self) -> u8 {
@@ -232,6 +293,7 @@ impl<R: PositionedRead> SortSession<R> {
                 .map_or(self.snapshot.size(), Scanner::offset),
             source_bytes: self.snapshot.size(),
             records: self.records,
+            merge_passes: self.pass,
         }
     }
     pub fn into_order(mut self) -> Result<SortedOrder, SortError> {
@@ -404,6 +466,12 @@ impl<R: PositionedRead> SortSession<R> {
         if self.records <= self.run_width {
             self.begin_maps()?;
         } else {
+            let runs = usize::try_from(self.records.div_ceil(self.run_width))
+                .unwrap_or(usize::MAX)
+                .min(self.config.merge_fan_in);
+            while self.pages.len() < runs {
+                self.pages.push(ReadPage::new()?);
+            }
             self.pass += 1;
             self.pass_file = Some(DiskFile::create(
                 &self.owner,
@@ -411,7 +479,7 @@ impl<R: PositionedRead> SortSession<R> {
                 &format!("runs-{}.bin", self.pass),
             )?);
             self.group_start = 0;
-            self.end = 0;
+            self.tree.stage = Stage::Idle;
             self.phase = SortPhase::Merging;
         }
         Ok(())
@@ -422,66 +490,136 @@ impl<R: PositionedRead> SortSession<R> {
             index,
         )
     }
+    /// Merges up to `merge_fan_in` sorted runs at a time through a winner
+    /// tree, so one pass reads and writes every record once and the number
+    /// of passes is the logarithm of the run count to that base.
     fn merge_disk(&mut self, budget: &mut usize) -> Result<(), SortError> {
-        if self.group_start == self.records {
-            self.run_file = self.pass_file.take();
-            self.run_width = self.run_width.saturating_mul(2);
-            self.begin_disk_merge()?;
-            return Ok(());
+        if self.tree.stage == Stage::Idle {
+            if self.group_start == self.records {
+                self.run_file = self.pass_file.take();
+                self.run_width = self
+                    .run_width
+                    .saturating_mul(self.config.merge_fan_in as u64);
+                self.begin_disk_merge()?;
+                return Ok(());
+            }
+            self.start_group()?;
         }
-        if self.end == self.group_start {
-            self.left = self.group_start;
-            self.middle = self
-                .group_start
-                .saturating_add(self.run_width)
-                .min(self.records);
-            self.right = self.middle;
-            self.end = self.middle.saturating_add(self.run_width).min(self.records);
-        }
-        if self.a.is_none() && self.left < self.middle {
-            self.a = Some(self.load_descriptor(self.left, 0)?);
-        }
-        if self.b.is_none() && self.right < self.end {
-            self.b = Some(self.load_descriptor(self.right, 1)?);
-        }
-        let left = match (self.a, self.b) {
-            (Some(a), Some(b)) => {
-                if self.comparison.is_none() {
-                    self.comparison =
-                        Some(Comparison::new(a, b, self.config.request, self.quote()));
-                }
-                let Some(o) = self
-                    .comparison
-                    .as_mut()
-                    .ok_or(SortError::InvalidScratch)?
-                    .advance(&self.source, budget)?
-                else {
+        match self.tree.stage {
+            Stage::Build(node) => {
+                let Some(winner) = self.play(node, budget)? else {
                     return Ok(());
                 };
-                self.comparison = None;
-                o != Ordering::Greater
+                self.tree.nodes[node] = winner;
+                self.tree.stage = if node > 1 {
+                    Stage::Build(node - 1)
+                } else {
+                    Stage::Emit
+                };
             }
-            (Some(_), None) => true,
-            (None, Some(_)) => false,
-            (None, None) => return Err(SortError::InvalidScratch),
-        };
-        let d = if left {
-            self.left += 1;
-            self.a.take()
-        } else {
-            self.right += 1;
-            self.b.take()
-        }
-        .ok_or(SortError::InvalidScratch)?;
-        self.pass_file
-            .as_mut()
-            .ok_or(SortError::InvalidScratch)?
-            .append(&encode(d))?;
-        *budget = budget.saturating_sub(128);
-        if self.left == self.middle && self.right == self.end {
-            self.group_start = self.end;
+            Stage::Emit => {
+                let run = self.tree.nodes[1];
+                if run == EMPTY {
+                    self.group_start = self.tree.group_end;
+                    self.tree.stage = Stage::Idle;
+                    return Ok(());
+                }
+                let index = run as usize;
+                let d = self.tree.heads[index]
+                    .take()
+                    .ok_or(SortError::InvalidScratch)?;
+                self.pass_file
+                    .as_mut()
+                    .ok_or(SortError::InvalidScratch)?
+                    .append(&encode(d))?;
+                *budget = budget.saturating_sub(128);
+                self.tree.next[index] += 1;
+                self.load_head(index)?;
+                let leaf = self.tree.leaves + index;
+                self.tree.nodes[leaf] = if self.tree.heads[index].is_some() {
+                    run
+                } else {
+                    EMPTY
+                };
+                self.tree.stage = Stage::Replay(leaf / 2);
+            }
+            Stage::Replay(node) => {
+                let Some(winner) = self.play(node, budget)? else {
+                    return Ok(());
+                };
+                self.tree.nodes[node] = winner;
+                self.tree.stage = if node > 1 {
+                    Stage::Replay(node / 2)
+                } else {
+                    Stage::Emit
+                };
+            }
+            Stage::Idle => {}
         }
         Ok(())
+    }
+    /// Sets up the next group of runs and reads the first record of each.
+    fn start_group(&mut self) -> Result<(), SortError> {
+        let mut start = self.group_start;
+        self.tree.nodes.fill(EMPTY);
+        for run in 0..self.pages.len() {
+            let end = start.saturating_add(self.run_width).min(self.records);
+            self.tree.next[run] = start;
+            self.tree.end[run] = end;
+            start = end;
+            self.load_head(run)?;
+            if self.tree.heads[run].is_some() {
+                self.tree.nodes[self.tree.leaves + run] =
+                    u32::try_from(run).map_err(|_| SortError::InvalidConfig)?;
+            }
+        }
+        self.tree.group_end = start;
+        self.tree.stage = if self.tree.leaves > 1 {
+            Stage::Build(self.tree.leaves - 1)
+        } else {
+            Stage::Emit
+        };
+        Ok(())
+    }
+    fn load_head(&mut self, run: usize) -> Result<(), SortError> {
+        self.tree.heads[run] = if self.tree.next[run] < self.tree.end[run] {
+            Some(self.load_descriptor(self.tree.next[run], run)?)
+        } else {
+            None
+        };
+        Ok(())
+    }
+    /// The winner of one tree node's two children, or `None` when the budget
+    /// ran out in the middle of a comparison. Ties cannot occur: equal keys
+    /// are ordered by source row.
+    fn play(&mut self, node: usize, budget: &mut usize) -> Result<Option<u32>, SortError> {
+        let left = self.tree.nodes[node * 2];
+        let right = self.tree.nodes[node * 2 + 1];
+        if left == EMPTY {
+            return Ok(Some(right));
+        }
+        if right == EMPTY {
+            return Ok(Some(left));
+        }
+        let a = self.tree.heads[left as usize].ok_or(SortError::InvalidScratch)?;
+        let b = self.tree.heads[right as usize].ok_or(SortError::InvalidScratch)?;
+        if self.comparison.is_none() {
+            self.comparison = Some(Comparison::new(a, b, self.config.request, self.quote()));
+        }
+        let Some(order) = self
+            .comparison
+            .as_mut()
+            .ok_or(SortError::InvalidScratch)?
+            .advance(&self.source, budget)?
+        else {
+            return Ok(None);
+        };
+        self.comparison = None;
+        Ok(Some(if order == Ordering::Greater {
+            right
+        } else {
+            left
+        }))
     }
     fn begin_maps(&mut self) -> Result<(), SortError> {
         let mut order = DiskFile::create(&self.owner, &self.resources, "order.bin")?;

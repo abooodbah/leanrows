@@ -127,7 +127,7 @@ pub(super) fn run(arguments: Vec<OsString>) -> Result<String, AppError> {
         format: format.viewport_format(),
         request,
         batch_capacity: 8192,
-        merge_fan_in: 2,
+        merge_fan_in: 64,
         step_bytes: 64 * 1024,
     };
     let token = CancellationToken::new();
