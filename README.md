@@ -124,15 +124,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.4.0-windows-x64-unsigned.zip
-LeanRows-v0.4.0-windows-x64-unsigned.sha256
+LeanRows-v0.5.0-windows-x64-unsigned.zip
+LeanRows-v0.5.0-windows-x64-unsigned.sha256
 ```
 
-LeanRows 0.4 is not Authenticode-signed. Windows may therefore show a security
+LeanRows 0.5 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.4.0-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.5.0-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
@@ -176,7 +176,7 @@ registry behavior.
 
 ## Supported input
 
-| Format | Extensions | v0.3 behavior |
+| Format | Extensions | v0.5 behavior |
 | --- | --- | --- |
 | Comma-separated data | `.csv` | Quote-aware logical records in independently bounded native columns |
 | Tab-separated data | `.tsv` | Quote-aware logical records in independently bounded native columns |
@@ -184,11 +184,11 @@ registry behavior.
 | Logs and text | `.log`, `.txt` | One physical line per displayed record |
 | Excel workbooks | `.xlsx` | One worksheet at a time, stored values as text; see [XLSX cell text](docs/XLSX.md). Opened from LeanRows or the command line; the installer does not register `.xlsx`. |
 
-Format selection is extension-based in 0.4. Input is treated as bytes and
+Format selection is extension-based in 0.5. Input is treated as bytes and
 decoded for display as UTF-8; invalid bytes are shown as `\xNN`. Long records,
 fields, and display strings use bounded previews and are marked when truncated.
 
-LeanRows 0.4 deliberately excludes editing, saving, export, filtering,
+LeanRows 0.5 deliberately excludes editing, saving, export, filtering,
 regular expressions, SQL, charts, archives, remote or UNC paths, reparse points,
 tail/follow mode, plug-ins, scripts, and arbitrary JSON documents remain excluded.
 
@@ -284,7 +284,7 @@ qualification records full process-tree memory independently; see
 
 Find compares raw UTF-8 bytes. Its optional case-insensitive mode folds ASCII
 letters only; non-ASCII bytes remain exact. Regular expressions are not
-supported in 0.4.
+supported in 0.5.
 
 The interface provides five themes, the same as LeanMark: System, Light, Dark,
 Dim, and Dusk. Dim and Dusk are softer dark themes. System follows the active
@@ -320,6 +320,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
+- [LeanRows 0.5.0 release notes](docs/releases/v0.5.0.md)
 - [LeanRows 0.4.0 release notes](docs/releases/v0.4.0.md)
 - [LeanRows 0.3.0 release notes](docs/releases/v0.3.0.md)
 - [LeanRows 0.2.0 release notes](docs/releases/v0.2.0.md)
