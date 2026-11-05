@@ -26,6 +26,7 @@ pub struct SortResources {
     disk: AtomicU64,
     peak: AtomicU64,
     disk_peak: AtomicU64,
+    writes: AtomicU64,
     pending: Mutex<[Option<PendingCleanup>; 64]>,
 }
 impl SortResources {
@@ -47,6 +48,7 @@ impl SortResources {
             disk: AtomicU64::new(0),
             peak: AtomicU64::new(0),
             disk_peak: AtomicU64::new(0),
+            writes: AtomicU64::new(0),
             pending: Mutex::new(std::array::from_fn(|_| None)),
         })
     }
@@ -105,6 +107,15 @@ impl SortResources {
     #[must_use]
     pub fn disk_peak(&self) -> u64 {
         self.disk_peak.load(Ordering::Acquire)
+    }
+    /// Write requests made to the operating system for sort scratch files.
+    /// Tests and benchmarks use it to see how scratch data is written.
+    #[must_use]
+    pub fn scratch_write_calls(&self) -> u64 {
+        self.writes.load(Ordering::Relaxed)
+    }
+    pub(super) fn count_write(&self) {
+        self.writes.fetch_add(1, Ordering::Relaxed);
     }
     /// Retries a bounded set of owner directories whose deletion was blocked.
     pub fn retry_cleanup(&self) {
@@ -312,8 +323,22 @@ pub(super) struct DiskFile {
     pub bytes: u64,
     reservation: Reservation,
     owner: Arc<Owner>,
-    writer: Option<BufWriter<File>>,
+    writer: Option<BufWriter<CountedFile>>,
     buffer_memory: Option<Reservation>,
+}
+/// A scratch file whose write requests are counted in its sort resources.
+struct CountedFile {
+    file: File,
+    resources: Arc<SortResources>,
+}
+impl Write for CountedFile {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.resources.count_write();
+        self.file.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
 }
 impl DiskFile {
     pub fn create(
@@ -327,7 +352,13 @@ impl DiskFile {
             .create_new(true)
             .open(owner.path.join(name))?;
         let memory = resources.reserve(64 * 1024, true)?;
-        let writer = BufWriter::with_capacity(64 * 1024, file.try_clone()?);
+        let writer = BufWriter::with_capacity(
+            64 * 1024,
+            CountedFile {
+                file: file.try_clone()?,
+                resources: resources.clone(),
+            },
+        );
         Ok(Self {
             file,
             path: owner.path.join(name),
@@ -344,6 +375,7 @@ impl DiskFile {
         if let Some(writer) = &mut self.writer {
             writer.write_all(bytes)?;
         } else {
+            self.reservation.resources.count_write();
             self.file.write_all(bytes)?;
         }
         Ok(())

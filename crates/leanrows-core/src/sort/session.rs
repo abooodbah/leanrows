@@ -659,6 +659,7 @@ impl<R: PositionedRead> SortSession<R> {
         inverse.seek(SeekFrom::Start(
             32 + d.row.checked_mul(8).ok_or(SortError::InvalidScratch)?,
         ))?;
+        self.resources.count_write();
         inverse.write_all(&self.inverse_at.to_le_bytes())?;
         self.inverse_at += 1;
         *budget = budget.saturating_sub(128);

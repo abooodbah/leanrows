@@ -555,3 +555,30 @@ fn merge_buffers_count_against_the_memory_limit() -> Result<(), Box<dyn Error>> 
     assert_eq!(resources.memory_bytes(), 0);
     Ok(())
 }
+
+#[test]
+fn inverse_map_is_written_in_large_pieces() -> Result<(), Box<dyn Error>> {
+    // Writing the inverse map in place costs one write request per row,
+    // 20,000 here. Written in sequence it needs a few hundred in all.
+    let count = 20_000_u64;
+    let mut input = String::new();
+    let mut keys = Vec::new();
+    for row in 0..count {
+        let key = format!("{:05}", (row * 7_919) % count);
+        writeln!(&mut input, "{key},{row}")?;
+        keys.push(key.into_bytes());
+    }
+    let resources = SortResources::new(16 * 1024 * 1024, 8 * 1024 * 1024 * 1024);
+    let mut config = config(SortMode::Text, SortDirection::Ascending, 0);
+    config.batch_capacity = 4_096;
+    config.merge_fan_in = 64;
+    config.step_bytes = 64 * 1024;
+    let (rows, _) = run_to_completion(input.as_bytes(), config, &resources)?;
+    assert_eq!(rows, oracle(&keys, SortDirection::Ascending));
+    let writes = resources.scratch_write_calls();
+    assert!(
+        writes < 1_000,
+        "{writes} scratch write requests for {count} rows"
+    );
+    Ok(())
+}
