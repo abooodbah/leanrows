@@ -20,8 +20,8 @@ use windows::Win32::Graphics::Gdi::{
     GetSysColor, HBRUSH, HFONT, HGDIOBJ, LOGFONTW, SYS_COLOR_INDEX,
 };
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyW,
-    RegGetValueW, RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, REG_DWORD, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey,
+    RegCreateKeyW, RegGetValueW, RegSetValueExW,
 };
 use windows::Win32::UI::Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW};
 use windows::Win32::UI::HiDpi::SystemParametersInfoForDpi;
@@ -306,21 +306,26 @@ pub(super) struct ThemeResources {
     pub(super) effective: EffectiveTheme,
     pub(super) metrics: UiMetrics,
     pub(super) palette: Palette,
+    /// The grid's zoom in percent, one of `crate::zoom::ZOOM_LEVELS`.
+    pub(super) zoom: u32,
     pub(super) fonts: ThemeFonts,
     pub(super) brushes: ThemeBrushes,
 }
 
 impl ThemeResources {
-    pub(super) fn new(preference: ThemeMode, dpi: u32) -> Result<Self, ShellError> {
+    /// `zoom` is the grid's zoom in percent; only the grid fonts follow it.
+    pub(super) fn new(preference: ThemeMode, dpi: u32, zoom: u32) -> Result<Self, ShellError> {
         let effective = effective_theme(preference);
         let metrics = UiMetrics::for_dpi(dpi);
         let palette = Palette::for_theme(effective);
+        let zoom = crate::zoom::normalize_zoom(zoom);
         Ok(Self {
             preference,
             effective,
             metrics,
             palette,
-            fonts: ThemeFonts::new(metrics.dpi)?,
+            zoom,
+            fonts: ThemeFonts::new(metrics.dpi, zoom)?,
             brushes: ThemeBrushes::new(palette, effective)?,
         })
     }
@@ -339,10 +344,12 @@ pub(super) struct ThemeFonts {
     semibold: OwnedFont,
     caption: OwnedFont,
     heading: OwnedFont,
+    grid: OwnedFont,
+    grid_header: OwnedFont,
 }
 
 impl ThemeFonts {
-    fn new(dpi: u32) -> Result<Self, ShellError> {
+    fn new(dpi: u32, zoom: u32) -> Result<Self, ShellError> {
         let body_definition = message_logfont(dpi);
         let mut semibold_definition = body_definition;
         semibold_definition.lfWeight = i32::try_from(FW_SEMIBOLD.0).unwrap_or(600);
@@ -350,12 +357,33 @@ impl ThemeFonts {
         caption_definition.lfHeight = caption_height(body_definition.lfHeight);
         let mut heading_definition = semibold_definition;
         heading_definition.lfHeight = -scaled(28, normalized_dpi(dpi));
+        // The rows and their column titles zoom; the rest of the window keeps
+        // its size, as in LeanMark only the document zooms.
+        let mut grid_definition = body_definition;
+        grid_definition.lfHeight = crate::zoom::scale_by_zoom(body_definition.lfHeight, zoom);
+        let mut grid_header_definition = semibold_definition;
+        grid_header_definition.lfHeight =
+            crate::zoom::scale_by_zoom(semibold_definition.lfHeight, zoom);
         Ok(Self {
             body: OwnedFont::new(&body_definition)?,
             semibold: OwnedFont::new(&semibold_definition)?,
             caption: OwnedFont::new(&caption_definition)?,
             heading: OwnedFont::new(&heading_definition)?,
+            grid: OwnedFont::new(&grid_definition)?,
+            grid_header: OwnedFont::new(&grid_header_definition)?,
         })
+    }
+
+    /// The rows' font at the current zoom.
+    #[must_use]
+    pub(super) const fn grid(&self) -> HFONT {
+        self.grid.0
+    }
+
+    /// The column titles' font at the current zoom.
+    #[must_use]
+    pub(super) const fn grid_header(&self) -> HFONT {
+        self.grid_header.0
     }
 
     #[must_use]
@@ -764,6 +792,54 @@ fn matches_ascii(value: &[u16], expected: &[u8]) -> bool {
         && value.iter().zip(expected).all(|(left, right)| {
             u8::try_from(*left).is_ok_and(|left| left.eq_ignore_ascii_case(right))
         })
+}
+
+/// The saved grid zoom, snapped to a level; 100% when missing or unreadable.
+#[must_use]
+pub(super) fn load_zoom_percent() -> u32 {
+    let mut percent = crate::zoom::DEFAULT_ZOOM;
+    let Ok(mut byte_count) = u32::try_from(size_of_val(&percent)) else {
+        return crate::zoom::DEFAULT_ZOOM;
+    };
+    // SAFETY: Path and name are static; the DWORD and its byte count are
+    // valid writable storage for this synchronous bounded read.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!("Software\\LeanRows"),
+            w!("ZoomPercent"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&raw mut percent).cast()),
+            Some(&raw mut byte_count),
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return crate::zoom::DEFAULT_ZOOM;
+    }
+    crate::zoom::normalize_zoom(percent)
+}
+
+/// Saves the grid zoom as `LeanMark` does, a whole percentage. Returns false
+/// on a non-fatal registry failure.
+pub(super) fn save_zoom_percent(percent: u32) -> bool {
+    let mut raw_key = HKEY::default();
+    // SAFETY: The root and subkey are fixed; raw_key is valid writable output.
+    if unsafe {
+        RegCreateKeyW(
+            HKEY_CURRENT_USER,
+            w!("Software\\LeanRows"),
+            &raw mut raw_key,
+        )
+    } != ERROR_SUCCESS
+    {
+        return false;
+    }
+    let key = OwnedRegistryKey(raw_key);
+    let data = percent.to_le_bytes();
+    // SAFETY: key is live and data is a complete REG_DWORD payload.
+    (unsafe { RegSetValueExW(key.0, w!("ZoomPercent"), None, REG_DWORD, Some(&data)) })
+        == ERROR_SUCCESS
 }
 
 fn save_theme_mode(mode: ThemeMode) -> bool {
