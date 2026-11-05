@@ -53,6 +53,8 @@ enum Pending {
     Locate(Locator),
     Build(Builder),
 }
+/// Scan buffer, the first read page, cursors and other fixed state.
+const FIXED_BYTES: usize = 512 * 1024;
 /// Bytes of one run's read page during a merge.
 const PAGE_BYTES: usize = 64 * 1024;
 /// Memory charged per merged run for its tree nodes, head and positions.
@@ -124,7 +126,8 @@ pub struct SortSession<R> {
     config: SortConfig,
     resources: Arc<SortResources>,
     owner: Arc<Owner>,
-    _memory: Reservation,
+    _fixed_memory: Reservation,
+    merge_memory: Option<Reservation>,
     phase: SortPhase,
     scanner: Option<Scanner>,
     scan_buffer: Vec<u8>,
@@ -160,13 +163,14 @@ impl<R: PositionedRead> SortSession<R> {
             return Err(SortError::InvalidConfig);
         }
         let snapshot = SourceFingerprint::capture(&source)?;
-        // The batch and its merge copy, fixed buffers, and one read page and
-        // tree slot for every run merged at a time.
-        let bytes = config
+        // Fixed buffers stay for the whole sort. The batch and its merge copy,
+        // and one read page and tree slot for every run merged at a time, are
+        // released before the maps are built.
+        let fixed_memory = resources.reserve(FIXED_BYTES as u64, true)?;
+        let merge_bytes = config
             .batch_capacity
             .checked_mul(std::mem::size_of::<Descriptor>())
             .and_then(|n| n.checked_mul(2))
-            .and_then(|n| n.checked_add(512 * 1024))
             .and_then(|n| {
                 n.checked_add(
                     config
@@ -175,7 +179,7 @@ impl<R: PositionedRead> SortSession<R> {
                 )
             })
             .ok_or(SortError::Allocation)?;
-        let memory = resources.reserve(bytes as u64, true)?;
+        let merge_memory = resources.reserve(merge_bytes as u64, true)?;
         let mut batch = Vec::new();
         let mut alternate = Vec::new();
         let mut scan_buffer = Vec::new();
@@ -210,7 +214,8 @@ impl<R: PositionedRead> SortSession<R> {
             config,
             resources,
             owner,
-            _memory: memory,
+            _fixed_memory: fixed_memory,
+            merge_memory: Some(merge_memory),
             phase: SortPhase::Extracting,
             scanner: Some(scanner),
             scan_buffer,
@@ -620,6 +625,14 @@ impl<R: PositionedRead> SortSession<R> {
         }))
     }
     fn begin_maps(&mut self) -> Result<(), SortError> {
+        // The maps read the last run file through page 0 alone; the batch
+        // arrays, the other pages and the tree go before the map buffers come.
+        self.batch = Vec::new();
+        self.alternate = Vec::new();
+        self.pages.truncate(1);
+        self.pages.shrink_to_fit();
+        self.tree = Tree::new(1)?;
+        self.merge_memory = None;
         let mut order = DiskFile::create(&self.owner, &self.resources, "order.bin")?;
         order.append(&map_header(self.records, self.snapshot.size(), 24))?;
         let mut inverse = DiskFile::create(&self.owner, &self.resources, "inverse.bin")?;
