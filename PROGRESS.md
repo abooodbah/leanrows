@@ -96,6 +96,7 @@ measured the same way.
 | 5. Comparisons decided from stored fields | [#34](https://github.com/abooodbah/leanrows/pull/34) | 10M-row sort on Windows CI: core engine 42.8 s to 13.5 s, app worker 53.5 s to 23.6 s. |
 | 9. Zoom for the rows | [#35](https://github.com/abooodbah/leanrows/pull/35) | LeanMark's steps from 50% to 300%, Ctrl+Plus, Ctrl+Minus, Ctrl+0 and Ctrl+wheel, saved as ZoomPercent. |
 | 6. The sort's source check every 32 steps | [#36](https://github.com/abooodbah/leanrows/pull/36) | 10M-row sort through the app's worker on Windows CI: 65.1 s to 49.0 s; the core engine alone took 49.9 s. |
+| 10. Settings panel | [#37](https://github.com/abooodbah/leanrows/pull/37) | LeanMark's settings button and 300 DIP panel: the five themes, the zoom, and 39 shortcuts in 7 groups, sorting included. Ctrl+/ or F1 opens it, Escape closes it. |
 | 7. Dim and Dusk themes | [#30](https://github.com/abooodbah/leanrows/pull/30) | Five themes with LeanMark 0.6.0's values; start time, memory and size unchanged. |
 
 ## In progress
@@ -156,6 +157,7 @@ numbers within one run, not across runs.
 | Executable size, #35 | 941,568 bytes | 949,248 bytes | [run 41990328339](https://github.com/abooodbah/leanrows/actions/runs/41990328339) |
 | Start to input idle, 250 MB CSV, #35 | 93 ms | 90 ms | same run |
 | Peak working set, 250 MB CSV open, #35 | 16.3 MiB | 16.3 MiB | same run |
+| Settings panel, #37 | see the pull request | | benchmark run on the pull request |
 | Executable size, #32 | 916,480 bytes | 929,280 bytes | [run 41987029313](https://github.com/abooodbah/leanrows/actions/runs/41987029313) |
 | Start to input idle, no file, #32 | 59 ms | 60 ms | same run |
 | Start to input idle, 250 MB CSV, #32 | 90 ms | 94 ms | same run |

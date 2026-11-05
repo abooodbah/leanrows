@@ -29,6 +29,10 @@ const SEARCH_MAX_WIDTH_DIP: i32 = 360;
 const FILE_IDENTITY_MIN_WIDTH_DIP: i32 = 160;
 const FILE_IDENTITY_MAX_WIDTH_DIP: i32 = 440;
 const MIN_CLIENT_WIDTH_DIP: i32 = 640;
+/// `LeanMark`'s `--settings-width`.
+const SETTINGS_PANEL_WIDTH_DIP: i32 = 300;
+/// Rows kept beside the panel in a window too narrow for both.
+const SETTINGS_MIN_GRID_WIDTH_DIP: i32 = 200;
 const MIN_CLIENT_HEIGHT_DIP: i32 = 480;
 const NARROW_MAX_WIDTH_DIP: i32 = 760;
 const COMPACT_IDENTITY_MAX_WIDTH_DIP: i32 = 560;
@@ -103,6 +107,8 @@ pub(super) struct UiMetrics {
     pub(super) file_identity_min_width: i32,
     pub(super) file_identity_max_width: i32,
     pub(super) minimum_client_width: i32,
+    pub(super) settings_panel_width: i32,
+    pub(super) settings_min_grid_width: i32,
     pub(super) minimum_client_height: i32,
     pub(super) narrow_max_width: i32,
     pub(super) compact_identity_max_width: i32,
@@ -143,6 +149,8 @@ impl UiMetrics {
             file_identity_min_width: scale_dip(FILE_IDENTITY_MIN_WIDTH_DIP, dpi),
             file_identity_max_width: scale_dip(FILE_IDENTITY_MAX_WIDTH_DIP, dpi),
             minimum_client_width: scale_dip(MIN_CLIENT_WIDTH_DIP, dpi),
+            settings_panel_width: scale_dip(SETTINGS_PANEL_WIDTH_DIP, dpi),
+            settings_min_grid_width: scale_dip(SETTINGS_MIN_GRID_WIDTH_DIP, dpi),
             minimum_client_height: scale_dip(MIN_CLIENT_HEIGHT_DIP, dpi),
             narrow_max_width: scale_dip(NARROW_MAX_WIDTH_DIP, dpi),
             compact_identity_max_width: scale_dip(COMPACT_IDENTITY_MAX_WIDTH_DIP, dpi),
@@ -163,6 +171,8 @@ pub(super) struct CommandLayout {
     pub(super) reload_button: Option<UiRect>,
     pub(super) goto_button: Option<UiRect>,
     pub(super) theme_button: Option<UiRect>,
+    /// The settings button, always shown, just left of Open.
+    pub(super) settings_button: UiRect,
     pub(super) open_button: UiRect,
     pub(super) overflow_button: UiRect,
 }
@@ -196,6 +206,14 @@ impl CommandLayout {
             metrics.open_button_width,
             bar,
             metrics.primary_target_height,
+        );
+        retreat(&mut right, left, metrics.space_2);
+        let settings_button = take_right(
+            &mut right,
+            left,
+            metrics.compact_button_width,
+            bar,
+            metrics.control_height,
         );
         retreat(&mut right, left, metrics.space_2);
 
@@ -238,6 +256,7 @@ impl CommandLayout {
             reload_button: None,
             goto_button: None,
             theme_button: None,
+            settings_button,
             open_button,
             overflow_button,
         }
@@ -263,6 +282,14 @@ impl CommandLayout {
             metrics.primary_target_height,
         );
         retreat(&mut right, left, metrics.space_2);
+        let settings_button = take_right(
+            &mut right,
+            left,
+            metrics.compact_button_width,
+            bar,
+            metrics.control_height,
+        );
+        retreat(&mut right, left, metrics.space_2);
         let theme_button = Some(take_right(
             &mut right,
             left,
@@ -283,6 +310,7 @@ impl CommandLayout {
             reload_button: None,
             goto_button: None,
             theme_button,
+            settings_button,
             open_button,
             overflow_button,
         }
@@ -306,6 +334,14 @@ impl CommandLayout {
             metrics.open_button_width,
             bar,
             metrics.primary_target_height,
+        );
+        retreat(&mut right, left, metrics.space_2);
+        let settings_button = take_right(
+            &mut right,
+            left,
+            metrics.compact_button_width,
+            bar,
+            metrics.control_height,
         );
         retreat(&mut right, left, metrics.space_2);
         let theme_button = Some(take_right(
@@ -360,6 +396,7 @@ impl CommandLayout {
             reload_button,
             goto_button,
             theme_button,
+            settings_button,
             open_button,
             overflow_button,
         }
@@ -380,6 +417,8 @@ pub(super) struct UiLayout {
     pub(super) empty_state: UiRect,
     pub(super) status_strip: UiRect,
     pub(super) commands: CommandLayout,
+    /// Present only while the settings panel is open.
+    pub(super) settings_panel: Option<UiRect>,
 }
 
 impl UiLayout {
@@ -442,7 +481,39 @@ impl UiLayout {
             empty_state: inset(main_content, metrics.space_8),
             status_strip,
             commands: CommandLayout::calculate(top_bar, metrics),
+            settings_panel: None,
         }
+    }
+
+    /// Gives the right edge below the chrome to the settings panel when it is
+    /// open, as `LeanMark` does; the rows and the empty state move over.
+    #[must_use]
+    pub(super) fn with_settings_panel(mut self, open: bool) -> Self {
+        if !open {
+            return self;
+        }
+        let content = self.main_content;
+        let width = self.metrics.settings_panel_width.min(
+            content
+                .width
+                .saturating_sub(self.metrics.settings_min_grid_width)
+                .max(0),
+        );
+        let panel = UiRect::new(
+            content.right().saturating_sub(width),
+            content.y,
+            width,
+            content.height,
+        );
+        self.grid = UiRect::new(
+            content.x,
+            content.y,
+            panel.x.saturating_sub(content.x),
+            content.height,
+        );
+        self.empty_state = inset(self.grid, self.metrics.space_8);
+        self.settings_panel = Some(panel);
+        self
     }
 }
 
@@ -726,6 +797,55 @@ mod tests {
     }
 
     #[test]
+    fn settings_button_sits_left_of_open_in_every_layout() {
+        for dpi in DPIS {
+            for (width, height, _) in SIZES {
+                let commands =
+                    UiLayout::calculate(scale_dip(width, dpi), scale_dip(height, dpi), dpi, false)
+                        .commands;
+                assert_eq!(commands.settings_button.width, scale_dip(40, dpi));
+                assert_eq!(commands.settings_button.height, scale_dip(40, dpi));
+                assert_eq!(
+                    commands.settings_button.right() + scale_dip(8, dpi),
+                    commands.open_button.x
+                );
+            }
+        }
+        // LeanMark hides the theme button in a narrow window but keeps the
+        // settings button, which can change the theme.
+        let narrow = UiLayout::calculate(640, 480, 96, false).commands;
+        assert!(narrow.theme_button.is_none());
+        let default = UiLayout::calculate(960, 640, 96, false).commands;
+        let theme = default.theme_button.map(|rect| rect.right() + 8);
+        assert_eq!(theme, Some(default.settings_button.x));
+    }
+
+    #[test]
+    fn settings_panel_takes_the_right_edge_below_the_chrome() {
+        for dpi in DPIS {
+            for show_tabs in [false, true] {
+                let width = scale_dip(960, dpi);
+                let closed = UiLayout::calculate(width, scale_dip(640, dpi), dpi, show_tabs);
+                assert_eq!(closed.settings_panel, None);
+                let open = closed.with_settings_panel(true);
+                let panel = open.settings_panel.unwrap_or_default();
+                assert_eq!(panel.width, scale_dip(300, dpi));
+                assert_eq!(panel.right(), width);
+                assert_eq!(panel.y, closed.main_content.y);
+                assert_eq!(panel.bottom(), closed.status_strip.y);
+                assert_eq!(open.grid.right(), panel.x);
+                assert_eq!(open.grid.x, 0);
+                assert!(open.empty_state.right() <= panel.x);
+                assert_eq!(open.commands, closed.commands);
+                assert_eq!(closed.with_settings_panel(false), closed);
+            }
+        }
+        // A window too narrow for both keeps at least 200 DIP of rows.
+        let small = UiLayout::calculate(400, 480, 96, false).with_settings_panel(true);
+        assert_eq!(small.grid.width, 200);
+    }
+
+    #[test]
     fn scaled_breakpoints_select_the_same_modes() {
         for dpi in DPIS {
             let metrics = UiMetrics::for_dpi(dpi);
@@ -800,6 +920,7 @@ mod tests {
             commands.reload_button,
             commands.goto_button,
             commands.theme_button,
+            Some(commands.settings_button),
             Some(commands.open_button),
             Some(commands.overflow_button),
         ]

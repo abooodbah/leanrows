@@ -7,6 +7,7 @@ mod header;
 mod layout;
 mod process;
 mod progress;
+mod settings;
 mod sort_smoke;
 mod sorting;
 mod tabs;
@@ -21,12 +22,13 @@ use std::sync::{Arc, Mutex};
 
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    COLOR_WINDOW, CombineRgn, CreateEllipticRgn, CreateRectRgn, CreateRoundRectRgn, DT_CENTER,
-    DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawFocusRect, DrawTextW,
-    FillRect, FillRgn, FrameRgn, GetDC, GetPixel, GetSysColorBrush, GetTextExtentPoint32W, HBRUSH,
-    HDC, HGDIOBJ, InvalidateRect, RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW,
-    RGN_AND, RedrawWindow, ReleaseDC, SelectObject, SetBkColor, SetBkMode, SetTextColor,
-    TRANSPARENT, UpdateWindow,
+    BS_SOLID, COLOR_WINDOW, CombineRgn, CreateEllipticRgn, CreateRectRgn, CreateRoundRectRgn,
+    DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawFocusRect,
+    DrawTextW, Ellipse, ExtCreatePen, FillRect, FillRgn, FrameRgn, GetDC, GetPixel, GetStockObject,
+    GetSysColorBrush, GetTextExtentPoint32W, HBRUSH, HDC, HGDIOBJ, InvalidateRect, LOGBRUSH,
+    LineTo, MoveToEx, NULL_BRUSH, PS_ENDCAP_ROUND, PS_GEOMETRIC, PS_SOLID, RDW_ALLCHILDREN,
+    RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW, RGN_AND, RedrawWindow, ReleaseDC, SelectObject,
+    SetBkColor, SetBkMode, SetTextColor, TRANSPARENT, UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::{FindResourceW, GetModuleHandleW};
 use windows::Win32::System::SystemServices::{
@@ -43,20 +45,21 @@ use windows::Win32::UI::Controls::{
     InitCommonControlsEx, LIST_VIEW_ITEM_STATE_FLAGS, LVCF_SUBITEM, LVCF_TEXT, LVCF_WIDTH,
     LVCFMT_LEFT, LVCOLUMNW, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETECOLUMN,
     LVM_ENSUREVISIBLE, LVM_GETBKCOLOR, LVM_GETCOLUMNWIDTH, LVM_GETCOUNTPERPAGE, LVM_GETHEADER,
-    LVM_GETNEXTITEM, LVM_GETTOPINDEX, LVM_INSERTCOLUMNW, LVM_REDRAWITEMS, LVM_SETBKCOLOR,
-    LVM_SETCOLUMNWIDTH, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMCOUNT, LVM_SETITEMSTATE,
-    LVM_SETTEXTBKCOLOR, LVM_SETTEXTCOLOR, LVN_GETDISPINFOW, LVN_ODCACHEHINT, LVNI_SELECTED,
-    LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT, LVS_OWNERDATA, LVS_REPORT, LVS_SHOWSELALWAYS,
-    LVSICF_NOINVALIDATEALL, LVSICF_NOSCROLL, NM_CUSTOMDRAW, NMCUSTOMDRAW, NMHDR, NMLVCACHEHINT,
-    NMLVDISPINFOW, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT, ODS_SELECTED, ODT_BUTTON, ODT_STATIC,
-    PBM_GETPOS, PBM_SETRANGE32, PBS_MARQUEE, PROGRESS_CLASSW, SetWindowTheme, TCN_SELCHANGE,
-    TCS_FIXEDWIDTH, TOOLTIPS_CLASSW, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_GETTEXTW,
-    TTM_UPDATETIPTEXTW, TTS_ALWAYSTIP, TTS_NOPREFIX, TTTOOLINFOW, WC_LISTVIEWW, WC_TABCONTROLW,
+    LVM_GETITEMCOUNT, LVM_GETNEXTITEM, LVM_GETTOPINDEX, LVM_INSERTCOLUMNW, LVM_REDRAWITEMS,
+    LVM_SETBKCOLOR, LVM_SETCOLUMNWIDTH, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMCOUNT,
+    LVM_SETITEMSTATE, LVM_SETTEXTBKCOLOR, LVM_SETTEXTCOLOR, LVN_GETDISPINFOW, LVN_ODCACHEHINT,
+    LVNI_SELECTED, LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT, LVS_OWNERDATA, LVS_REPORT,
+    LVS_SHOWSELALWAYS, LVSICF_NOINVALIDATEALL, LVSICF_NOSCROLL, NM_CUSTOMDRAW, NMCUSTOMDRAW, NMHDR,
+    NMLVCACHEHINT, NMLVDISPINFOW, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT, ODS_SELECTED,
+    ODT_BUTTON, ODT_STATIC, PBM_GETPOS, PBM_SETRANGE32, PBS_MARQUEE, PROGRESS_CLASSW,
+    SetWindowTheme, TCN_SELCHANGE, TCS_FIXEDWIDTH, TOOLTIPS_CLASSW, TTF_IDISHWND, TTF_SUBCLASS,
+    TTM_ADDTOOLW, TTM_GETTEXTW, TTM_UPDATETIPTEXTW, TTS_ALWAYSTIP, TTS_NOPREFIX, TTTOOLINFOW,
+    WC_LISTVIEWW, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetFocus, GetKeyState, IsWindowEnabled, SetFocus, VK_CONTROL, VK_ESCAPE, VK_RETURN, VK_SHIFT,
-    VK_TAB,
+    GetFocus, GetKeyState, IsWindowEnabled, SetFocus, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_LEFT,
+    VK_RETURN, VK_RIGHT, VK_SHIFT, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, BM_CLICK, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_OWNERDRAW, BS_TYPEMASK,
@@ -126,6 +129,7 @@ const ID_APP_MORE: u16 = 122;
 const ID_VIEW_ZOOM_IN: u16 = 123;
 const ID_VIEW_ZOOM_OUT: u16 = 124;
 const ID_VIEW_ZOOM_RESET: u16 = 125;
+const ID_VIEW_SETTINGS: u16 = 126;
 const ID_TAB_CLOSE: u16 = 130;
 const ID_TAB_NEXT: u16 = 131;
 const ID_TAB_PREVIOUS: u16 = 132;
@@ -204,6 +208,7 @@ struct ChromeHandles {
     reload: HWND,
     goto: HWND,
     theme: HWND,
+    settings_button: HWND,
     open: HWND,
     more: HWND,
     tab_strip: HWND,
@@ -255,6 +260,11 @@ struct WindowState {
     tab_hover: TabHover,
     /// Ctrl+wheel movement not yet a whole notch.
     zoom_wheel: i32,
+    /// The settings panel's controls, and whether it is open.
+    settings: settings::SettingsHandles,
+    settings_open: bool,
+    /// Where focus goes back to when the panel closes.
+    settings_return_focus: HWND,
     /// Files handed over by another launch, opened once the sender returns.
     pending_opens: Vec<PathBuf>,
     /// Set once the window starts closing, so forwarded files go elsewhere.
@@ -438,9 +448,11 @@ impl WindowState {
         let item_result =
             self.accessibility
                 .clear_cached_items(self.list, self.rows, self.cache.as_ref());
-        let shell_result =
-            self.accessibility
-                .clear_shell(self.window, self.list, &[self.chrome.theme]);
+        let shell_result = self.accessibility.clear_shell(
+            self.window,
+            self.list,
+            &[self.chrome.theme, self.chrome.settings_button],
+        );
         item_result.and(shell_result)
     }
 }
@@ -490,6 +502,10 @@ fn startup_error_text(message: &str) -> Vec<u16> {
     text
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one startup sequence builds the window state field by field"
+)]
 pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let shell_smoke = validate_shell_options(&options)?;
     // Automation stays isolated. An ordinary launch hands its files to the
@@ -516,6 +532,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         .map_err(|error| ShellError::new(format!("module lookup failed: {error}")))?;
     let instance = HINSTANCE(module.0);
     register_window_class(instance)?;
+    settings::register_class(instance)?;
     let accelerators = load_accelerators(instance)?;
     let smoke_verified = Arc::new(AtomicBool::new(false));
     let document_smoke_observed = Arc::new(AtomicU64::new(0));
@@ -554,6 +571,9 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         tab_labels: Vec::new(),
         tab_hover: TabHover::default(),
         zoom_wheel: 0,
+        settings: settings::SettingsHandles::default(),
+        settings_open: false,
+        settings_return_focus: HWND::default(),
         pending_opens: Vec::new(),
         closing: false,
         document_smoke: options.document_smoke_test,
@@ -892,6 +912,7 @@ fn verify_shell_smoke(
             verify_modern_shell_chrome(state)?;
             verify_theme_button_cycle(window)?;
             verify_grid_zoom(window)?;
+            verify_settings_panel(window)?;
             verify_progress_indicator(state)?;
             verify_tab_strip(window)?;
             verify_native_presentation(window, state)?;
@@ -1085,6 +1106,129 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
         return Err(ShellError::new(format!(
             "zoom smoke could not restore the original level: {error}"
         )));
+    }
+    verification
+}
+
+/// The settings panel opens from its command, takes the right edge, focuses
+/// the chosen theme, lists every shortcut, changes theme and zoom, and closes
+/// on Escape with the rows back at full width.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one smoke walks the panel through its whole life in order"
+)]
+fn verify_settings_panel(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    let state = |what: &str| {
+        // SAFETY: The state stays attached during the synchronous smoke.
+        unsafe { pointer.as_ref() }
+            .ok_or_else(|| ShellError::new(format!("settings smoke state missing: {what}")))
+    };
+    let original_theme = state("start")?.theme.preference;
+    let original_zoom = state("start")?.theme.zoom;
+    let list_width = |state: &WindowState| {
+        let mut rect = RECT::default();
+        // SAFETY: The list is live and RECT is writable.
+        let _ = unsafe { GetClientRect(state.list, &raw mut rect) };
+        rect.right - rect.left
+    };
+    let full_width = list_width(state("closed")?);
+    let send = |command: u16| {
+        // SAFETY: The command is routed synchronously through the window.
+        unsafe {
+            SendMessageW(
+                window,
+                WM_COMMAND,
+                Some(WPARAM(usize::from(command))),
+                Some(LPARAM(0)),
+            );
+        }
+    };
+    let verification = (|| {
+        // SAFETY: Reading the visibility of a live child.
+        if unsafe { IsWindowVisible(state("closed")?.settings.panel) }.as_bool() {
+            return Err(ShellError::new("settings panel is open at start"));
+        }
+        send(ID_VIEW_SETTINGS);
+        let open = state("open")?;
+        // SAFETY: As above.
+        if !unsafe { IsWindowVisible(open.settings.panel) }.as_bool() || !open.settings_open {
+            return Err(ShellError::new("settings command did not open the panel"));
+        }
+        let mut panel = RECT::default();
+        // SAFETY: The panel is live and RECT is writable.
+        let _ = unsafe { GetClientRect(open.settings.panel, &raw mut panel) };
+        let panel_width = panel.right - panel.left;
+        if panel_width <= 0 || full_width - list_width(open) != panel_width {
+            return Err(ShellError::new(
+                "settings panel did not take the right edge",
+            ));
+        }
+        let chosen = ThemeMode::ALL
+            .iter()
+            .position(|mode| *mode == open.theme.preference)
+            .unwrap_or_default();
+        // SAFETY: GetFocus reads this thread's focus window.
+        if unsafe { GetFocus() } != open.settings.themes[chosen] {
+            return Err(ShellError::new(
+                "settings panel did not focus the chosen theme",
+            ));
+        }
+        // SAFETY: LVM_GETITEMCOUNT carries no pointers.
+        let items =
+            unsafe { SendMessageW(open.settings.shortcuts, LVM_GETITEMCOUNT, None, None) }.0;
+        let expected = crate::shortcuts::SHORTCUTS.len() + crate::shortcuts::groups().len();
+        if usize::try_from(items).unwrap_or_default() != expected {
+            return Err(ShellError::new(format!(
+                "shortcut list shows {items} rows, not {expected}"
+            )));
+        }
+        verify_child_background_pixel(
+            open.settings.panel,
+            open.theme.palette.surface.colorref().0,
+            "settings panel",
+        )?;
+        let dusk = open.settings.themes[4];
+        // SAFETY: BM_CLICK performs the real radio activation.
+        unsafe { SendMessageW(dusk, BM_CLICK, None, None) };
+        let after = state("theme")?;
+        if after.theme.preference != ThemeMode::Dusk || !inline_match_case(dusk) {
+            return Err(ShellError::new("settings panel did not choose Dusk"));
+        }
+        // SAFETY: As above.
+        unsafe { SendMessageW(after.settings.zoom_in, BM_CLICK, None, None) };
+        let zoomed = state("zoom")?;
+        if zoomed.theme.zoom != crate::zoom::step_zoom(original_zoom, 1)
+            || control_text(zoomed.settings.zoom_value) != format!("{}%", zoomed.theme.zoom)
+        {
+            return Err(ShellError::new("settings panel did not zoom in"));
+        }
+        let escape = MSG {
+            // SAFETY: GetFocus reads this thread's focus window.
+            hwnd: unsafe { GetFocus() },
+            message: WM_KEYDOWN,
+            wParam: WPARAM(usize::from(VK_ESCAPE.0)),
+            ..Default::default()
+        };
+        if !handle_shell_keyboard(window, &escape) {
+            return Err(ShellError::new("Escape did not reach the settings panel"));
+        }
+        let closed = state("closed again")?;
+        // SAFETY: As above.
+        if unsafe { IsWindowVisible(closed.settings.panel) }.as_bool()
+            || closed.settings_open
+            || list_width(closed) != full_width
+        {
+            return Err(ShellError::new("Escape did not close the settings panel"));
+        }
+        Ok(())
+    })();
+    let theme = refresh_theme(window, original_theme);
+    let zoom = set_grid_zoom(window, original_zoom);
+    if theme.is_err() || zoom.is_err() {
+        return Err(ShellError::new(
+            "settings smoke could not restore the theme and zoom",
+        ));
     }
     verification
 }
@@ -1553,6 +1697,10 @@ fn load_accelerators(instance: HINSTANCE) -> Result<AcceleratorGuard, ShellError
         .map_err(|error| ShellError::new(format!("embedded accelerator load failed: {error}")))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the menu is built item by item in the order it shows them"
+)]
 fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: Commands run synchronously while the UI-owned state is attached.
@@ -1622,6 +1770,11 @@ fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
     }
     .map_err(menu_error)?;
     unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
+    append_menu_text(
+        menu.handle(),
+        ID_VIEW_SETTINGS,
+        w!("&Settings and shortcuts\tCtrl+/"),
+    )?;
     append_menu_text(menu.handle(), ID_VIEW_ZOOM_IN, w!("Zoom &in\tCtrl++"))?;
     append_menu_text(menu.handle(), ID_VIEW_ZOOM_OUT, w!("Zoom o&ut\tCtrl+-"))?;
     append_menu_text(
@@ -1751,6 +1904,16 @@ fn handle_command(window: HWND, command: u16) {
             }
         }
         ID_SEARCH_MATCH_CASE => toggle_match_case(window),
+        ID_VIEW_SETTINGS => toggle_settings(window),
+        settings::ID_SETTINGS_CLOSE => close_settings(window),
+        settings::ID_SETTINGS_THEME_FIRST..=settings::ID_SETTINGS_THEME_LAST => {
+            let index = usize::from(command - settings::ID_SETTINGS_THEME_FIRST);
+            if let Some(mode) = ThemeMode::ALL.get(index)
+                && let Err(error) = refresh_theme(window, *mode)
+            {
+                set_status(window, &format!("Theme change failed: {error}"));
+            }
+        }
         ID_VIEW_ZOOM_IN => zoom_grid(window, 1),
         ID_VIEW_ZOOM_OUT => zoom_grid(window, -1),
         ID_VIEW_ZOOM_RESET => zoom_grid(window, 0),
@@ -2533,6 +2696,7 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
         apply_font(handle, caption);
     }
     apply_font(state.chrome.empty_title, heading);
+    apply_settings_presentation(state)?;
 
     let palette = state.theme.palette;
     // SAFETY: List-view color messages are synchronous integer payloads.
@@ -2583,6 +2747,63 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
     let _ = state.theme.apply_window_chrome(state.window);
     apply_theme_button_text(state)?;
     invalidate_native_presentation(state);
+    Ok(())
+}
+
+/// Fonts, choices, the zoom level and the row height for the settings panel.
+fn apply_settings_presentation(state: &WindowState) -> Result<(), ShellError> {
+    let panel = &state.settings;
+    let fonts = &state.theme.fonts;
+    apply_font(panel.title, fonts.title());
+    for handle in [panel.theme_label, panel.zoom_label, panel.shortcuts_label] {
+        apply_font(handle, fonts.legend());
+    }
+    for handle in panel
+        .themes
+        .into_iter()
+        .chain(panel.buttons())
+        .chain([panel.zoom_value, panel.shortcuts])
+    {
+        apply_font(handle, fonts.body());
+    }
+    for mode in ThemeMode::ALL {
+        let checked = if mode == state.theme.preference {
+            BST_CHECKED.0
+        } else {
+            0
+        };
+        // SAFETY: BM_SETCHECK carries only the documented small state value.
+        unsafe {
+            SendMessageW(
+                panel.theme_choice(mode),
+                BM_SETCHECK,
+                Some(WPARAM(usize::try_from(checked).unwrap_or_default())),
+                Some(LPARAM(0)),
+            );
+        }
+    }
+    if !panel.zoom_value.0.is_null() {
+        set_control_text(panel.zoom_value, &format!("{}%", state.theme.zoom))?;
+    }
+    if !panel.shortcuts.0.is_null() {
+        settings::apply_row_height(panel.shortcuts, state.theme.metrics.table_row_height);
+        let light = matches!(state.theme.effective, EffectiveTheme::Light);
+        // SAFETY: The list is live; an empty class turns visual styles off so
+        // a dark theme's colours are not covered by light chrome.
+        unsafe {
+            let _ = SetWindowTheme(
+                panel.shortcuts,
+                if light { w!("Explorer") } else { w!("") },
+                if light { PCWSTR::null() } else { w!("") },
+            );
+        }
+    }
+    if !state.chrome.settings_button.0.is_null() {
+        state.accessibility.name_control(
+            state.chrome.settings_button,
+            "Settings and keyboard shortcuts",
+        )?;
+    }
     Ok(())
 }
 
@@ -2637,6 +2858,19 @@ fn invalidate_native_presentation(state: &WindowState) {
     }
     progress::invalidate(state.chrome.progress);
     tabs::invalidate(state.chrome.tab_strip);
+    for handle in [state.chrome.settings_button, state.settings.panel] {
+        if !handle.0.is_null() {
+            // SAFETY: As above; the panel repaints its children with it.
+            let _ = unsafe {
+                RedrawWindow(
+                    Some(handle),
+                    None,
+                    None,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN,
+                )
+            };
+        }
+    }
 }
 
 fn apply_font(handle: HWND, font: windows::Win32::Graphics::Gdi::HFONT) {
@@ -2784,6 +3018,35 @@ fn handle_shell_keyboard(window: HWND, message: &MSG) -> bool {
         return false;
     };
     let key = u16::try_from(message.wParam.0).unwrap_or_default();
+    // Escape closes the settings panel first, wherever focus is, as in
+    // LeanMark.
+    if key == VK_ESCAPE.0 && state.settings_open {
+        close_settings(window);
+        return true;
+    }
+    if let Some(mode) = state.settings.theme_for(message.hwnd) {
+        let step = match key {
+            k if k == VK_UP.0 || k == VK_LEFT.0 => Some(ThemeMode::ALL.len() - 1),
+            k if k == VK_DOWN.0 || k == VK_RIGHT.0 => Some(1),
+            _ => None,
+        };
+        if let Some(step) = step {
+            let index = ThemeMode::ALL
+                .iter()
+                .position(|candidate| *candidate == mode)
+                .unwrap_or_default();
+            let next = ThemeMode::ALL[(index + step) % ThemeMode::ALL.len()];
+            if let Err(error) = refresh_theme(window, next) {
+                set_status(window, &format!("Theme change failed: {error}"));
+            }
+            // SAFETY: The state is reread after the theme change; focus moves
+            // to a live radio button of this window.
+            if let Some(state) = unsafe { state_pointer_for(window).as_ref() } {
+                let _ = unsafe { SetFocus(Some(state.settings.theme_choice(next))) };
+            }
+            return true;
+        }
+    }
     if message.hwnd == state.chrome.search_edit && key == VK_RETURN.0 {
         // SAFETY: This is a read-only query of the current keyboard state.
         let direction = if unsafe { GetKeyState(i32::from(VK_SHIFT.0)) } < 0 {
@@ -2814,18 +3077,22 @@ fn handle_shell_keyboard(window: HWND, message: &MSG) -> bool {
 }
 
 fn focus_adjacent_control(state: &WindowState) {
-    let controls = [
+    let mut controls = vec![
         state.chrome.open,
         state.chrome.search_edit,
         state.chrome.match_case,
         state.chrome.find_previous,
         state.chrome.find_next,
         state.chrome.theme,
+        state.chrome.settings_button,
         state.chrome.more,
         state.chrome.tab_strip,
         state.chrome.empty_open,
         state.list,
     ];
+    if state.settings_open {
+        controls.extend(state.settings.focus_order(state.theme.preference));
+    }
     // SAFETY: These calls query or move focus only among UI-thread-owned controls.
     let current = unsafe { GetFocus() };
     let reverse = unsafe { GetKeyState(i32::from(VK_SHIFT.0)) } < 0;
@@ -3099,49 +3366,66 @@ fn control_color(window: HWND, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return LRESULT(0);
     };
     let child = HWND(lparam.0 as *mut c_void);
-    let (brush, background, foreground) =
-        if child == state.status || child == state.chrome.status_backdrop {
-            (
-                state.theme.brushes.surface_muted(),
-                state.theme.palette.surface_muted,
-                state.theme.palette.text_secondary,
-            )
-        } else if child == state.chrome.topbar
-            || child == state.chrome.file_name
-            || child == state.chrome.file_meta
-            || child == state.chrome.open
-            || child == state.chrome.more
-            || child == state.chrome.theme
-            || child == state.chrome.reload
-            || child == state.chrome.goto
-            || child == state.chrome.find_previous
-            || child == state.chrome.find_next
-            || child == state.chrome.match_case
-        {
-            (
-                state.theme.brushes.surface(),
-                state.theme.palette.surface,
-                state.theme.palette.text_primary,
-            )
-        } else if child == state.chrome.wordmark {
-            (
-                state.theme.brushes.surface_muted(),
-                state.theme.palette.surface_muted,
-                state.theme.palette.accent,
-            )
-        } else if child == state.chrome.empty_eyebrow {
-            (
-                state.theme.brushes.canvas(),
-                state.theme.palette.canvas,
-                state.theme.palette.accent,
-            )
-        } else {
-            (
-                state.theme.brushes.canvas(),
-                state.theme.palette.canvas,
-                state.theme.palette.text_primary,
-            )
-        };
+    let (brush, background, foreground) = if child == state.status
+        || child == state.chrome.status_backdrop
+    {
+        (
+            state.theme.brushes.surface_muted(),
+            state.theme.palette.surface_muted,
+            state.theme.palette.text_secondary,
+        )
+    } else if child == state.chrome.topbar
+        || child == state.chrome.file_name
+        || child == state.chrome.file_meta
+        || child == state.chrome.open
+        || child == state.chrome.more
+        || child == state.chrome.theme
+        || child == state.chrome.reload
+        || child == state.chrome.goto
+        || child == state.chrome.find_previous
+        || child == state.chrome.find_next
+        || child == state.chrome.match_case
+    {
+        (
+            state.theme.brushes.surface(),
+            state.theme.palette.surface,
+            state.theme.palette.text_primary,
+        )
+    } else if child == state.chrome.wordmark {
+        (
+            state.theme.brushes.surface_muted(),
+            state.theme.palette.surface_muted,
+            state.theme.palette.accent,
+        )
+    } else if state.settings.labels().contains(&child) || state.settings.themes.contains(&child) {
+        let secondary = [
+            state.settings.theme_label,
+            state.settings.zoom_label,
+            state.settings.shortcuts_label,
+        ]
+        .contains(&child);
+        (
+            state.theme.brushes.surface(),
+            state.theme.palette.surface,
+            if secondary {
+                state.theme.palette.text_secondary
+            } else {
+                state.theme.palette.text_primary
+            },
+        )
+    } else if child == state.chrome.empty_eyebrow {
+        (
+            state.theme.brushes.canvas(),
+            state.theme.palette.canvas,
+            state.theme.palette.accent,
+        )
+    } else {
+        (
+            state.theme.brushes.canvas(),
+            state.theme.palette.canvas,
+            state.theme.palette.text_primary,
+        )
+    };
     let device = HDC(wparam.0 as *mut c_void);
     // SAFETY: The HDC is valid only for this synchronous control-color message.
     unsafe {
@@ -3182,9 +3466,11 @@ fn draw_shell_button(window: HWND, lparam: LPARAM) -> bool {
         state.chrome.reload,
         state.chrome.goto,
         state.chrome.theme,
+        state.chrome.settings_button,
         state.chrome.more,
     ]
-    .contains(&item.hwndItem);
+    .contains(&item.hwndItem)
+        || state.settings.buttons().contains(&item.hwndItem);
     if !is_primary && !is_command {
         return false;
     }
@@ -3251,6 +3537,8 @@ fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bo
     } else {
         state.theme.brushes.surface()
     };
+    // LeanMark marks the settings button while its panel is open.
+    let expanded = item.hwndItem == state.chrome.settings_button && state.settings_open;
 
     let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
     let selected = item.itemState.0 & ODS_SELECTED.0 != 0;
@@ -3258,7 +3546,7 @@ fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bo
         state.theme.brushes.surface_muted()
     } else if is_primary {
         state.theme.brushes.accent()
-    } else if selected {
+    } else if selected || expanded {
         state.theme.brushes.surface_muted()
     } else {
         state.theme.brushes.surface()
@@ -3313,6 +3601,8 @@ fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bo
         let length = usize::try_from(length).unwrap_or_default().min(text.len());
         if item.hwndItem == state.chrome.theme {
             paint_theme_label(state, item.hDC, bounds, &mut text[..length]);
+        } else if item.hwndItem == state.chrome.settings_button {
+            paint_settings_icon(state, item.hDC, bounds, foreground);
         } else {
             let _ = DrawTextW(
                 item.hDC,
@@ -3446,6 +3736,252 @@ fn draw_swatch(device: HDC, dot: RECT, swatch: theme::Swatch, ring: HBRUSH) {
     }
 }
 
+/// `LeanMark`'s settings icon, three sliders on a 16-unit grid drawn with a
+/// 1.6-unit round-capped line. GDI lines are not antialiased.
+fn paint_settings_icon(state: &WindowState, device: HDC, bounds: RECT, color: theme::UiColor) {
+    let size = state.theme.metrics.icon_small.max(8);
+    let left = i32::midpoint(bounds.left, bounds.right) - size / 2;
+    let top = i32::midpoint(bounds.top, bounds.bottom) - size / 2;
+    // Coordinates are in tenths of a grid unit.
+    let at = |tenths: i32, origin: i32| origin + (tenths * size + 80) / 160;
+    let width = u32::try_from((16 * size + 80) / 160).unwrap_or(1).max(1);
+    let brush = LOGBRUSH {
+        lbStyle: BS_SOLID,
+        lbColor: color.colorref(),
+        lbHatch: 0,
+    };
+    // SAFETY: The pen is selected only for this paint and deleted after the
+    // previous objects are restored; the device belongs to WM_DRAWITEM.
+    unsafe {
+        let pen = ExtCreatePen(
+            PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND,
+            width,
+            &raw const brush,
+            None,
+        );
+        if pen.is_invalid() {
+            return;
+        }
+        let previous_pen = SelectObject(device, HGDIOBJ(pen.0));
+        let previous_brush = SelectObject(device, GetStockObject(NULL_BRUSH));
+        for (x1, x2, y) in [
+            (20, 80, 40),
+            (110, 140, 40),
+            (20, 40, 80),
+            (70, 140, 80),
+            (20, 90, 120),
+            (120, 140, 120),
+        ] {
+            let _ = MoveToEx(device, at(x1, left), at(y, top), None);
+            let _ = LineTo(device, at(x2, left), at(y, top));
+        }
+        for (x, y) in [(95, 40), (55, 80), (105, 120)] {
+            let _ = Ellipse(
+                device,
+                at(x - 15, left),
+                at(y - 15, top),
+                at(x + 15, left) + 1,
+                at(y + 15, top) + 1,
+            );
+        }
+        SelectObject(device, previous_brush);
+        SelectObject(device, previous_pen);
+        let _ = DeleteObject(HGDIOBJ(pen.0));
+    }
+}
+
+/// One theme choice in the settings panel: a radio mark in the accent colour
+/// when chosen, the theme's dot, and its name.
+fn draw_theme_choice(state: &WindowState, custom: &NMCUSTOMDRAW, mode: ThemeMode) -> bool {
+    let bounds = custom.rc;
+    let height = bounds.bottom.saturating_sub(bounds.top);
+    if height <= 0 || bounds.right <= bounds.left {
+        return false;
+    }
+    let m = state.theme.metrics;
+    let palette = state.theme.palette;
+    let background = if custom.uItemState.contains(CDIS_HOT) {
+        state.theme.brushes.surface_muted()
+    } else {
+        state.theme.brushes.surface()
+    };
+    let mark = m.icon_small.min(height).max(4);
+    let mark_rect = RECT {
+        left: bounds.left.saturating_add(m.space_1),
+        top: bounds.top.saturating_add(height.saturating_sub(mark) / 2),
+        right: bounds.left.saturating_add(m.space_1).saturating_add(mark),
+        bottom: bounds
+            .top
+            .saturating_add(height.saturating_sub(mark) / 2)
+            .saturating_add(mark),
+    };
+    let dot = m.swatch_size;
+    let dot_left = mark_rect.right.saturating_add(m.space_2);
+    let dot_rect = RECT {
+        left: dot_left,
+        top: bounds.top.saturating_add(height.saturating_sub(dot) / 2),
+        right: dot_left.saturating_add(dot),
+        bottom: bounds
+            .top
+            .saturating_add(height.saturating_sub(dot) / 2)
+            .saturating_add(dot),
+    };
+    // SAFETY: Every region and brush created here is deleted before return;
+    // the device belongs to this custom-draw stage.
+    unsafe {
+        let _ = FillRect(custom.hdc, &raw const bounds, background);
+        let outer = CreateEllipticRgn(
+            mark_rect.left,
+            mark_rect.top,
+            mark_rect.right,
+            mark_rect.bottom,
+        );
+        if !outer.is_invalid() {
+            if let Ok(ring) = theme::OwnedBrush::new(palette.text_secondary) {
+                let _ = FrameRgn(custom.hdc, outer, ring.handle(), 1, 1);
+            }
+            let _ = DeleteObject(HGDIOBJ(outer.0));
+        }
+        if inline_match_case(custom.hdr.hwndFrom) {
+            let inset = mark / 4;
+            let inner = CreateEllipticRgn(
+                mark_rect.left + inset,
+                mark_rect.top + inset,
+                mark_rect.right - inset,
+                mark_rect.bottom - inset,
+            );
+            if !inner.is_invalid() {
+                let _ = FillRgn(custom.hdc, inner, state.theme.brushes.accent());
+                let _ = DeleteObject(HGDIOBJ(inner.0));
+            }
+        }
+    }
+    draw_swatch(
+        custom.hdc,
+        dot_rect,
+        mode.swatch(),
+        state.theme.brushes.swatch_ring(),
+    );
+    let mut label: Vec<u16> = mode.label().encode_utf16().collect();
+    let mut label_rect = RECT {
+        left: dot_rect.right.saturating_add(m.space_2),
+        ..bounds
+    };
+    // SAFETY: The theme owns the font; the label and rectangle are local.
+    unsafe {
+        let previous = SelectObject(custom.hdc, HGDIOBJ(state.theme.fonts.body().0));
+        let _ = SetBkMode(custom.hdc, TRANSPARENT);
+        let _ = SetTextColor(custom.hdc, palette.text_primary.colorref());
+        let _ = DrawTextW(
+            custom.hdc,
+            &mut label,
+            &raw mut label_rect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+        if !previous.is_invalid() {
+            let _ = SelectObject(custom.hdc, previous);
+        }
+        if custom.uItemState.contains(CDIS_FOCUS) {
+            let _ = DrawFocusRect(custom.hdc, &raw const bounds);
+        }
+    }
+    true
+}
+
+/// Paints the settings panel's surface; called from the panel's own
+/// window procedure with the main window that owns the theme.
+fn paint_settings_surface(window: HWND, panel: HWND, device: HDC) -> bool {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The state is attached while the panel exists.
+    let Some(state) = (unsafe { pointer.as_ref() }) else {
+        return false;
+    };
+    settings::paint_surface(&state.theme, panel, device)
+}
+
+/// Opens or closes the settings panel, as `Ctrl+/`, `F1` and the settings
+/// button do in `LeanMark`.
+fn toggle_settings(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: The flag is read while the attached state is live.
+    let open = unsafe { pointer.as_ref() }.is_some_and(|state| state.settings_open);
+    if open {
+        close_settings(window);
+    } else {
+        open_settings(window);
+    }
+}
+
+/// Shows the panel beside the rows and moves focus to the chosen theme.
+fn open_settings(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Settings changes run on the window's UI thread.
+    let Some(state) = (unsafe { pointer.as_mut() }) else {
+        return;
+    };
+    if state.settings.panel.0.is_null() {
+        // SAFETY: The module belongs to this process.
+        let Ok(module) = (unsafe { GetModuleHandleW(None) }) else {
+            return;
+        };
+        let Ok(handles) = settings::create(HINSTANCE(module.0), window) else {
+            set_status(window, "The settings panel could not be created");
+            return;
+        };
+        state.settings = handles;
+        if let Err(error) = apply_settings_presentation(state) {
+            set_status(window, &format!("Settings panel failed: {error}"));
+        }
+    }
+    // SAFETY: GetFocus reads this thread's focus window.
+    let focus = unsafe { GetFocus() };
+    state.settings_return_focus = if focus.0.is_null() {
+        state.chrome.settings_button
+    } else {
+        focus
+    };
+    state.settings_open = true;
+    let chosen = state.settings.theme_choice(state.theme.preference);
+    let button = state.chrome.settings_button;
+    layout_children(window);
+    // SAFETY: The panel and its radio are live children on this thread.
+    unsafe {
+        let _ = ShowWindow(state.settings.panel, SW_SHOW);
+        let _ = SetFocus(Some(chosen));
+        let _ = InvalidateRect(Some(button), None, true);
+    }
+}
+
+/// Hides the panel, gives the rows their width back and returns focus.
+fn close_settings(window: HWND) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Settings changes run on the window's UI thread.
+    let Some(state) = (unsafe { pointer.as_mut() }) else {
+        return;
+    };
+    if !state.settings_open {
+        return;
+    }
+    state.settings_open = false;
+    let back = state.settings_return_focus;
+    let button = state.chrome.settings_button;
+    // SAFETY: The panel is a live child on this thread.
+    unsafe {
+        let _ = ShowWindow(state.settings.panel, SW_HIDE);
+    }
+    layout_children(window);
+    // SAFETY: Focus moves only among this window's live, visible controls.
+    unsafe {
+        let target = if IsWindow(Some(back)).as_bool() && IsWindowVisible(back).as_bool() {
+            back
+        } else {
+            button
+        };
+        let _ = SetFocus(Some(target));
+        let _ = InvalidateRect(Some(button), None, true);
+    }
+}
+
 fn handle_custom_draw(window: HWND, lparam: LPARAM) -> Option<LRESULT> {
     if lparam.0 == 0 {
         return None;
@@ -3458,12 +3994,25 @@ fn handle_custom_draw(window: HWND, lparam: LPARAM) -> Option<LRESULT> {
     }) else {
         return None;
     };
-    if header.hwndFrom != state.chrome.match_case || header.code != NM_CUSTOMDRAW {
+    if header.code != NM_CUSTOMDRAW {
         return None;
+    }
+    if header.hwndFrom == state.settings.shortcuts {
+        return settings::draw_shortcut(&state.theme, state.settings.shortcuts, lparam);
     }
     // SAFETY: NM_CUSTOMDRAW identifies the exact payload type.
     let custom = unsafe { &*(lparam.0 as *const NMCUSTOMDRAW) };
-    if custom.dwDrawStage != CDDS_PREPAINT || !draw_match_case(state, custom) {
+    if custom.dwDrawStage != CDDS_PREPAINT {
+        return None;
+    }
+    let drawn = if let Some(mode) = state.settings.theme_for(header.hwndFrom) {
+        draw_theme_choice(state, custom, mode)
+    } else if header.hwndFrom == state.chrome.match_case {
+        draw_match_case(state, custom)
+    } else {
+        false
+    };
+    if !drawn {
         return None;
     }
     Some(LRESULT(
@@ -3628,6 +4177,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
     let reload = create_button(instance, window, w!("Reload"), ID_FILE_RELOAD)?;
     let goto = create_button(instance, window, w!("Go to row"), ID_EDIT_GOTO)?;
     let theme = create_button(instance, window, w!("Theme"), ID_VIEW_THEME)?;
+    let settings_button = create_button(instance, window, w!("Settings"), ID_VIEW_SETTINGS)?;
     let open = create_child(
         instance,
         window,
@@ -3717,6 +4267,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         reload,
         goto,
         theme,
+        settings_button,
         open,
         more,
         tab_strip,
@@ -3728,6 +4279,14 @@ fn create_children(window: HWND) -> Result<(), ()> {
         status_backdrop,
         tooltip: create_tooltip(instance, window, theme)?,
     };
+    add_tool(
+        state.chrome.tooltip,
+        window,
+        settings_button,
+        "Settings and shortcuts (Ctrl+/)",
+    )?;
+    // The settings panel is built the first time it opens, so starting
+    // LeanRows does not pay for its controls and its shortcut list.
     // Workers start with their first file, so an empty window runs no
     // background thread.
     let count = state.rows.visible_rows();
@@ -4058,7 +4617,12 @@ fn layout_children(window: HWND) {
         (client.bottom - client.top).max(0),
         dpi,
         state.tab_order.len() > 1,
-    );
+    )
+    .with_settings_panel(state.settings_open);
+    if let Some(panel) = layout.settings_panel {
+        move_control(state.settings.panel, panel);
+        settings::layout(&state.settings, panel, &state.theme);
+    }
     move_control(state.chrome.topbar, layout.top_bar);
     place_tab_strip(state, layout.tab_strip, layout.metrics);
     move_control(state.chrome.progress, layout.progress_track);
@@ -4099,6 +4663,7 @@ fn layout_children(window: HWND) {
     place_optional(state.chrome.reload, commands.reload_button);
     place_optional(state.chrome.goto, commands.goto_button);
     place_optional(state.chrome.theme, commands.theme_button);
+    move_and_show(state.chrome.settings_button, commands.settings_button);
     move_and_show(state.chrome.open, commands.open_button);
     move_and_show(state.chrome.more, commands.overflow_button);
     layout_empty_state(state, layout.empty_state, dpi);

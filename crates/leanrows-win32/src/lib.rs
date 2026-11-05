@@ -15,6 +15,8 @@ mod model;
 mod native;
 #[cfg(not(windows))]
 mod native_stub;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod shortcuts;
 mod sort_coordinator;
 mod worker;
 #[cfg_attr(not(windows), allow(dead_code))]

@@ -270,6 +270,10 @@ qualification records full process-tree memory independently; see
   actual size, as does `Ctrl` with the mouse wheel over the rows. The steps
   are LeanMark's, from 50% to 300%. Only the rows and their column titles
   zoom; the toolbar and tabs keep their size. The zoom is remembered.
+- `Ctrl+/` or `F1` opens the settings panel, and `Escape` closes it. The
+  panel, as in LeanMark, has the theme, the zoom, and the list of every
+  keyboard shortcut and mouse action, sorting included. The settings button
+  next to Open does the same.
 - `Ctrl+Shift+T` changes the theme, as the theme button does. The button shows
   a coloured dot for the current theme, and its tooltip names the theme.
 - `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+PgDn` and `Ctrl+PgUp`) move between

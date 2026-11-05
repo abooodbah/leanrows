@@ -346,6 +346,8 @@ pub(super) struct ThemeFonts {
     heading: OwnedFont,
     grid: OwnedFont,
     grid_header: OwnedFont,
+    title: OwnedFont,
+    legend: OwnedFont,
 }
 
 impl ThemeFonts {
@@ -359,6 +361,11 @@ impl ThemeFonts {
         heading_definition.lfHeight = -scaled(28, normalized_dpi(dpi));
         // The rows and their column titles zoom; the rest of the window keeps
         // its size, as in LeanMark only the document zooms.
+        // The settings panel's heading and its small group labels.
+        let mut title_definition = semibold_definition;
+        title_definition.lfHeight = -scaled(16, normalized_dpi(dpi));
+        let mut legend_definition = semibold_definition;
+        legend_definition.lfHeight = caption_height(body_definition.lfHeight);
         let mut grid_definition = body_definition;
         grid_definition.lfHeight = crate::zoom::scale_by_zoom(body_definition.lfHeight, zoom);
         let mut grid_header_definition = semibold_definition;
@@ -371,7 +378,21 @@ impl ThemeFonts {
             heading: OwnedFont::new(&heading_definition)?,
             grid: OwnedFont::new(&grid_definition)?,
             grid_header: OwnedFont::new(&grid_header_definition)?,
+            title: OwnedFont::new(&title_definition)?,
+            legend: OwnedFont::new(&legend_definition)?,
         })
+    }
+
+    /// The settings panel's heading.
+    #[must_use]
+    pub(super) const fn title(&self) -> HFONT {
+        self.title.0
+    }
+
+    /// The settings panel's group labels.
+    #[must_use]
+    pub(super) const fn legend(&self) -> HFONT {
+        self.legend.0
     }
 
     /// The rows' font at the current zoom.
