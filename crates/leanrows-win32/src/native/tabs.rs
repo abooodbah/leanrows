@@ -619,7 +619,7 @@ mod tests {
 
     use windows::Win32::Foundation::{LPARAM, POINT, RECT};
 
-    use super::{close_rect, contains, labels, point_from_lparam};
+    use super::{close_rect, close_visible, contains, labels, point_from_lparam};
 
     #[test]
     fn labels_add_the_folder_only_when_file_names_collide() {
@@ -666,6 +666,15 @@ mod tests {
         let squeezed = close_rect(narrow, 20, 8);
         assert!(squeezed.left >= narrow.left && squeezed.right <= narrow.right);
         assert!(squeezed.top >= narrow.top && squeezed.bottom <= narrow.bottom);
+    }
+
+    #[test]
+    fn close_marks_show_on_the_selected_or_hovered_tab_only() {
+        // LeanMark's .tab-close: hidden until the tab is hovered or selected.
+        assert!(close_visible(true, false));
+        assert!(close_visible(false, true));
+        assert!(close_visible(true, true));
+        assert!(!close_visible(false, false));
     }
 
     #[test]
