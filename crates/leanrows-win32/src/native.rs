@@ -892,6 +892,7 @@ fn verify_shell_smoke(
             verify_modern_shell_chrome(state)?;
             verify_theme_button_cycle(window)?;
             verify_grid_zoom(window)?;
+            verify_settings_panel(window)?;
             verify_progress_indicator(state)?;
             verify_tab_strip(window)?;
             verify_native_presentation(window, state)?;
@@ -1085,6 +1086,126 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
         return Err(ShellError::new(format!(
             "zoom smoke could not restore the original level: {error}"
         )));
+    }
+    verification
+}
+
+/// The settings panel opens from its command, takes the right edge, focuses
+/// the chosen theme, lists every shortcut, changes theme and zoom, and closes
+/// on Escape with the rows back at full width.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one smoke walks the panel through its whole life in order"
+)]
+fn verify_settings_panel(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    let state = |what: &str| {
+        // SAFETY: The state stays attached during the synchronous smoke.
+        unsafe { pointer.as_ref() }
+            .ok_or_else(|| ShellError::new(format!("settings smoke state missing: {what}")))
+    };
+    let original_theme = state("start")?.theme.preference;
+    let original_zoom = state("start")?.theme.zoom;
+    let list_width = |state: &WindowState| {
+        let mut rect = RECT::default();
+        // SAFETY: The list is live and RECT is writable.
+        let _ = unsafe { GetClientRect(state.list, &raw mut rect) };
+        rect.right - rect.left
+    };
+    let full_width = list_width(state("closed")?);
+    let send = |command: u16| {
+        // SAFETY: The command is routed synchronously through the window.
+        unsafe {
+            SendMessageW(
+                window,
+                WM_COMMAND,
+                Some(WPARAM(usize::from(command))),
+                Some(LPARAM(0)),
+            );
+        }
+    };
+    let verification = (|| {
+        // SAFETY: Reading the visibility of a live child.
+        if unsafe { IsWindowVisible(state("closed")?.settings.panel) }.as_bool() {
+            return Err(ShellError::new("settings panel is open at start"));
+        }
+        send(ID_VIEW_SETTINGS);
+        let open = state("open")?;
+        // SAFETY: As above.
+        if !unsafe { IsWindowVisible(open.settings.panel) }.as_bool() || !open.settings_open {
+            return Err(ShellError::new("settings command did not open the panel"));
+        }
+        let panel_width = open.theme.metrics.settings_panel_width;
+        if full_width - list_width(open) != panel_width {
+            return Err(ShellError::new(
+                "settings panel did not take the right edge",
+            ));
+        }
+        let chosen = ThemeMode::ALL
+            .iter()
+            .position(|mode| *mode == open.theme.preference)
+            .unwrap_or_default();
+        // SAFETY: GetFocus reads this thread's focus window.
+        if unsafe { GetFocus() } != open.settings.themes[chosen] {
+            return Err(ShellError::new(
+                "settings panel did not focus the chosen theme",
+            ));
+        }
+        // SAFETY: LVM_GETITEMCOUNT carries no pointers.
+        let items =
+            unsafe { SendMessageW(open.settings.shortcuts, LVM_GETITEMCOUNT, None, None) }.0;
+        let expected = crate::shortcuts::SHORTCUTS.len() + crate::shortcuts::groups().len();
+        if usize::try_from(items).unwrap_or_default() != expected {
+            return Err(ShellError::new(format!(
+                "shortcut list shows {items} rows, not {expected}"
+            )));
+        }
+        verify_child_background_pixel(
+            open.settings.panel,
+            open.theme.palette.surface.colorref().0,
+            "settings panel",
+        )?;
+        let dusk = open.settings.themes[4];
+        // SAFETY: BM_CLICK performs the real radio activation.
+        unsafe { SendMessageW(dusk, BM_CLICK, None, None) };
+        let after = state("theme")?;
+        if after.theme.preference != ThemeMode::Dusk || !inline_match_case(dusk) {
+            return Err(ShellError::new("settings panel did not choose Dusk"));
+        }
+        // SAFETY: As above.
+        unsafe { SendMessageW(after.settings.zoom_in, BM_CLICK, None, None) };
+        let zoomed = state("zoom")?;
+        if zoomed.theme.zoom != crate::zoom::step_zoom(original_zoom, 1)
+            || control_text(zoomed.settings.zoom_value) != format!("{}%", zoomed.theme.zoom)
+        {
+            return Err(ShellError::new("settings panel did not zoom in"));
+        }
+        let escape = MSG {
+            // SAFETY: GetFocus reads this thread's focus window.
+            hwnd: unsafe { GetFocus() },
+            message: WM_KEYDOWN,
+            wParam: WPARAM(usize::from(VK_ESCAPE.0)),
+            ..Default::default()
+        };
+        if !handle_shell_keyboard(window, &escape) {
+            return Err(ShellError::new("Escape did not reach the settings panel"));
+        }
+        let closed = state("closed again")?;
+        // SAFETY: As above.
+        if unsafe { IsWindowVisible(closed.settings.panel) }.as_bool()
+            || closed.settings_open
+            || list_width(closed) != full_width
+        {
+            return Err(ShellError::new("Escape did not close the settings panel"));
+        }
+        Ok(())
+    })();
+    let theme = refresh_theme(window, original_theme);
+    let zoom = set_grid_zoom(window, original_zoom);
+    if theme.is_err() || zoom.is_err() {
+        return Err(ShellError::new(
+            "settings smoke could not restore the theme and zoom",
+        ));
     }
     verification
 }

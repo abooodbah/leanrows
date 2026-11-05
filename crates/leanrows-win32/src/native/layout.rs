@@ -726,6 +726,55 @@ mod tests {
     }
 
     #[test]
+    fn settings_button_sits_left_of_open_in_every_layout() {
+        for dpi in DPIS {
+            for (width, height, _) in SIZES {
+                let commands =
+                    UiLayout::calculate(scale_dip(width, dpi), scale_dip(height, dpi), dpi, false)
+                        .commands;
+                assert_eq!(commands.settings_button.width, scale_dip(40, dpi));
+                assert_eq!(commands.settings_button.height, scale_dip(40, dpi));
+                assert_eq!(
+                    commands.settings_button.right() + scale_dip(8, dpi),
+                    commands.open_button.x
+                );
+            }
+        }
+        // LeanMark hides the theme button in a narrow window but keeps the
+        // settings button, which can change the theme.
+        let narrow = UiLayout::calculate(640, 480, 96, false).commands;
+        assert!(narrow.theme_button.is_none());
+        let default = UiLayout::calculate(960, 640, 96, false).commands;
+        let theme = default.theme_button.map(|rect| rect.right() + 8);
+        assert_eq!(theme, Some(default.settings_button.x));
+    }
+
+    #[test]
+    fn settings_panel_takes_the_right_edge_below_the_chrome() {
+        for dpi in DPIS {
+            for show_tabs in [false, true] {
+                let width = scale_dip(960, dpi);
+                let closed = UiLayout::calculate(width, scale_dip(640, dpi), dpi, show_tabs);
+                assert_eq!(closed.settings_panel, None);
+                let open = closed.with_settings_panel(true);
+                let panel = open.settings_panel.unwrap_or_default();
+                assert_eq!(panel.width, scale_dip(300, dpi));
+                assert_eq!(panel.right(), width);
+                assert_eq!(panel.y, closed.main_content.y);
+                assert_eq!(panel.bottom(), closed.status_strip.y);
+                assert_eq!(open.grid.right(), panel.x);
+                assert_eq!(open.grid.x, 0);
+                assert_eq!(open.empty_state.right() <= panel.x, true);
+                assert_eq!(open.commands, closed.commands);
+                assert_eq!(closed.with_settings_panel(false), closed);
+            }
+        }
+        // A window too narrow for both keeps at least 200 DIP of rows.
+        let small = UiLayout::calculate(400, 480, 96, false).with_settings_panel(true);
+        assert_eq!(small.grid.width, 200);
+    }
+
+    #[test]
     fn scaled_breakpoints_select_the_same_modes() {
         for dpi in DPIS {
             let metrics = UiMetrics::for_dpi(dpi);
@@ -800,6 +849,7 @@ mod tests {
             commands.reload_button,
             commands.goto_button,
             commands.theme_button,
+            Some(commands.settings_button),
             Some(commands.open_button),
             Some(commands.overflow_button),
         ]
