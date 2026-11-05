@@ -21,6 +21,8 @@ const COMPACT_BUTTON_WIDTH_DIP: i32 = 40;
 const OPEN_BUTTON_WIDTH_DIP: i32 = 104;
 const WIDE_RELOAD_WIDTH_DIP: i32 = 88;
 const WIDE_GOTO_WIDTH_DIP: i32 = 96;
+/// The dot, its gap and "System", with 16 DIP either side as in `LeanMark`.
+const THEME_BUTTON_WIDTH_DIP: i32 = 100;
 const NARROW_SEARCH_MIN_WIDTH_DIP: i32 = 132;
 const SEARCH_MIN_WIDTH_DIP: i32 = 220;
 const SEARCH_MAX_WIDTH_DIP: i32 = 360;
@@ -94,6 +96,7 @@ pub(super) struct UiMetrics {
     pub(super) open_button_width: i32,
     pub(super) wide_reload_width: i32,
     pub(super) wide_goto_width: i32,
+    pub(super) theme_button_width: i32,
     pub(super) narrow_search_min_width: i32,
     pub(super) search_min_width: i32,
     pub(super) search_max_width: i32,
@@ -133,6 +136,7 @@ impl UiMetrics {
             open_button_width: scale_dip(OPEN_BUTTON_WIDTH_DIP, dpi),
             wide_reload_width: scale_dip(WIDE_RELOAD_WIDTH_DIP, dpi),
             wide_goto_width: scale_dip(WIDE_GOTO_WIDTH_DIP, dpi),
+            theme_button_width: scale_dip(THEME_BUTTON_WIDTH_DIP, dpi),
             narrow_search_min_width: scale_dip(NARROW_SEARCH_MIN_WIDTH_DIP, dpi),
             search_min_width: scale_dip(SEARCH_MIN_WIDTH_DIP, dpi),
             search_max_width: scale_dip(SEARCH_MAX_WIDTH_DIP, dpi),
@@ -262,7 +266,7 @@ impl CommandLayout {
         let theme_button = Some(take_right(
             &mut right,
             left,
-            metrics.wide_reload_width,
+            metrics.theme_button_width,
             bar,
             metrics.control_height,
         ));
@@ -307,7 +311,7 @@ impl CommandLayout {
         let theme_button = Some(take_right(
             &mut right,
             left,
-            metrics.wide_reload_width,
+            metrics.theme_button_width,
             bar,
             metrics.control_height,
         ));

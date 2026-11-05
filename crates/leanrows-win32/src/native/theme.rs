@@ -15,9 +15,9 @@ use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    COLOR_GRAYTEXT, COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT, COLOR_WINDOW, COLOR_WINDOWTEXT,
-    CreateFontIndirectW, CreateSolidBrush, DeleteObject, FW_NORMAL, FW_SEMIBOLD, GetSysColor,
-    HBRUSH, HFONT, HGDIOBJ, LOGFONTW, SYS_COLOR_INDEX,
+    COLOR_BTNTEXT, COLOR_GRAYTEXT, COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT, COLOR_WINDOW,
+    COLOR_WINDOWTEXT, CreateFontIndirectW, CreateSolidBrush, DeleteObject, FW_NORMAL, FW_SEMIBOLD,
+    GetSysColor, HBRUSH, HFONT, HGDIOBJ, LOGFONTW, SYS_COLOR_INDEX,
 };
 use windows::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyW,
@@ -87,6 +87,21 @@ impl ThemeMode {
         save_theme_mode(self)
     }
 
+    /// The colour of this theme's dot on the theme button.
+    #[must_use]
+    pub(super) const fn swatch(self) -> Swatch {
+        match self {
+            Self::System => Swatch::Split {
+                left: UiColor::rgb(0xff, 0xff, 0xff),
+                right: UiColor::rgb(0x00, 0x00, 0x00),
+            },
+            Self::Light => Swatch::Solid(UiColor::rgb(0xff, 0xff, 0xff)),
+            Self::Dark => Swatch::Solid(UiColor::rgb(0x00, 0x00, 0x00)),
+            Self::Dim => Swatch::Solid(UiColor::rgb(0x7f, 0x8a, 0x99)),
+            Self::Dusk => Swatch::Solid(UiColor::rgb(0xc9, 0x8f, 0x4f)),
+        }
+    }
+
     const fn registry_data(self) -> &'static [u8] {
         match self {
             Self::System => b"s\0y\0s\0t\0e\0m\0\0\0",
@@ -96,6 +111,58 @@ impl ThemeMode {
             Self::Dusk => b"d\0u\0s\0k\0\0\0",
         }
     }
+}
+
+/// The theme button's dot, `LeanMark`'s `.theme-swatch`: one fixed colour per
+/// theme, so the five dots differ on any toolbar. The page colours of the
+/// three dark themes are too close to tell apart at this size.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Swatch {
+    Solid(UiColor),
+    /// System: the left half Light's dot, the right half Dark's.
+    Split {
+        left: UiColor,
+        right: UiColor,
+    },
+}
+
+/// The ring around every dot, the same grey in every theme.
+pub(super) const SWATCH_RING: UiColor = UiColor::rgb(0x8c, 0x8c, 0x8c);
+
+/// The theme shortcut, as the tooltip and the shortcut list show it.
+pub(super) const THEME_SHORTCUT: &str = "Ctrl+Shift+T";
+
+/// "Dusk", or "System (Dark)", so the name never depends on colour alone.
+/// Under Windows high contrast every theme shows system colours, so the name
+/// says so.
+#[must_use]
+pub(super) fn theme_display_name(preference: ThemeMode, effective: EffectiveTheme) -> String {
+    if effective == EffectiveTheme::HighContrast {
+        return format!("{} (Windows high contrast)", preference.label());
+    }
+    if preference == ThemeMode::System {
+        let shown = if effective.is_dark() { "Dark" } else { "Light" };
+        return format!("System ({shown})");
+    }
+    preference.label().to_owned()
+}
+
+/// The theme button's tooltip, as in `LeanMark`.
+#[must_use]
+pub(super) fn theme_tooltip(preference: ThemeMode, effective: EffectiveTheme) -> String {
+    format!(
+        "Theme: {} ({THEME_SHORTCUT})",
+        theme_display_name(preference, effective)
+    )
+}
+
+/// The theme button's accessible name, as `LeanMark`'s `aria-label`.
+#[must_use]
+pub(super) fn theme_accessible_name(preference: ThemeMode, effective: EffectiveTheme) -> String {
+    format!(
+        "Theme: {}. Activate to change theme.",
+        theme_display_name(preference, effective)
+    )
 }
 
 /// Palette selected after system preference and high contrast are applied.
@@ -195,6 +262,7 @@ pub(super) struct UiMetrics {
     pub(super) progress_height: i32,
     pub(super) icon_small: i32,
     pub(super) icon_command: i32,
+    pub(super) swatch_size: i32,
     pub(super) border_width: i32,
     pub(super) focus_width: i32,
     pub(super) radius_small: i32,
@@ -222,6 +290,7 @@ impl UiMetrics {
             progress_height: scaled(2, dpi),
             icon_small: scaled(16, dpi),
             icon_command: scaled(20, dpi),
+            swatch_size: scaled(10, dpi).max(4),
             border_width: scaled(1, dpi).max(1),
             focus_width: scaled(2, dpi).max(1),
             radius_small: scaled(4, dpi),
@@ -252,7 +321,7 @@ impl ThemeResources {
             metrics,
             palette,
             fonts: ThemeFonts::new(metrics.dpi)?,
-            brushes: ThemeBrushes::new(palette)?,
+            brushes: ThemeBrushes::new(palette, effective)?,
         })
     }
 
@@ -317,17 +386,30 @@ pub(super) struct ThemeBrushes {
     surface_muted: OwnedBrush,
     border: OwnedBrush,
     accent: OwnedBrush,
+    swatch_ring: OwnedBrush,
 }
 
 impl ThemeBrushes {
-    fn new(palette: Palette) -> Result<Self, ShellError> {
+    fn new(palette: Palette, effective: EffectiveTheme) -> Result<Self, ShellError> {
+        // LeanMark's forced-colours rule draws the ring in ButtonText.
+        let ring = if effective == EffectiveTheme::HighContrast {
+            system_color(COLOR_BTNTEXT)
+        } else {
+            SWATCH_RING
+        };
         Ok(Self {
             canvas: OwnedBrush::new(palette.canvas)?,
             surface: OwnedBrush::new(palette.surface)?,
             surface_muted: OwnedBrush::new(palette.surface_muted)?,
             border: OwnedBrush::new(palette.border)?,
             accent: OwnedBrush::new(palette.accent)?,
+            swatch_ring: OwnedBrush::new(ring)?,
         })
+    }
+
+    #[must_use]
+    pub(super) const fn swatch_ring(&self) -> HBRUSH {
+        self.swatch_ring.0
     }
 
     #[must_use]
@@ -743,16 +825,24 @@ impl Drop for OwnedFont {
     }
 }
 
+/// A solid brush deleted when dropped.
 #[derive(Debug)]
-struct OwnedBrush(HBRUSH);
+pub(super) struct OwnedBrush(HBRUSH);
 
 impl OwnedBrush {
-    fn new(color: UiColor) -> Result<Self, ShellError> {
+    pub(super) fn new(color: UiColor) -> Result<Self, ShellError> {
         // SAFETY: COLORREF is a value-only GDI input.
         let handle = unsafe { CreateSolidBrush(color.colorref()) };
         (!handle.0.is_null())
             .then_some(Self(handle))
             .ok_or_else(|| ShellError::new("native theme brush creation failed"))
+    }
+}
+
+impl OwnedBrush {
+    #[must_use]
+    pub(super) const fn handle(&self) -> HBRUSH {
+        self.0
     }
 }
 
