@@ -4397,12 +4397,15 @@ fn create_children(window: HWND) -> Result<(), ()> {
     // SAFETY: `WM_NCCREATE` attached the state before `WM_CREATE`.
     let state = unsafe { pointer.as_mut() }.ok_or(())?;
     state.window = window;
+    // The bar is the first child, so every control on it is above it, and it
+    // clips its own painting to stay under them when it repaints the search
+    // frame.
     let topbar = create_child(
         instance,
         window,
         w!("STATIC"),
         w!(""),
-        WS_CHILD | static_style(SS_OWNERDRAW.0),
+        WS_CHILD | WS_CLIPSIBLINGS | static_style(SS_OWNERDRAW.0),
         None,
     )?;
     // LeanMark's wordmark: two letters in a rounded square.
