@@ -1,5 +1,6 @@
 //! External single-column sorting with fixed-memory, cancellable work steps.
 #![allow(clippy::missing_errors_doc)]
+mod inverse;
 mod key;
 mod session;
 mod storage;
