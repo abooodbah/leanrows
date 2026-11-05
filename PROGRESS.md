@@ -93,11 +93,11 @@ measured the same way.
 | 3. Merge up to 64 runs at a time | [#29](https://github.com/abooodbah/leanrows/pull/29) | 10M-row sort on Windows CI: core engine 95.6 s to 82.7 s, app worker 112.5 s to 91.4 s. |
 | 4. Inverse map with sequential writes | [#31](https://github.com/abooodbah/leanrows/pull/31) | 10M-row sort on Windows CI: core engine 89.4 s to 50.1 s, app worker 107.9 s to 64.7 s. 1M rows: 2,084,481 system calls to 86,321. |
 | 8. Theme button with dot and tooltip | [#32](https://github.com/abooodbah/leanrows/pull/32) | LeanMark's dot in a grey ring, the tooltip "Theme: System (Dark) (Ctrl+Shift+T)", Ctrl+Shift+T. |
+| 5. Comparisons decided from stored fields | [#34](https://github.com/abooodbah/leanrows/pull/34) | 10M-row sort on Windows CI: core engine 42.8 s to 13.5 s, app worker 53.5 s to 23.6 s. |
 | 7. Dim and Dusk themes | [#30](https://github.com/abooodbah/leanrows/pull/30) | Five themes with LeanMark 0.6.0's values; start time, memory and size unchanged. |
 
 ## In progress
 
-- 5. Comparisons decided from stored fields (branch `sort-comparison-fast-path`).
 - 9. Zoom for the rows (branch `grid-zoom`).
 
 ## Remaining
@@ -144,6 +144,10 @@ numbers within one run, not across runs.
 | Sort managed memory peak, #31 | 6.64 MiB | 6.58 MiB | same run |
 | Executable size, #31 | 917,504 bytes | 928,768 bytes | same run |
 | System calls, 1M-row sort, #31 | 2,084,481 (1,006,231 `write`, 1,000,000 `lseek`) | 86,321 (6,231 `write`, 1,100 `pwrite64`, no `lseek`) | Local, `strace -c` |
+| 10M-row sort, core engine, #34 | 42.8 s | 13.5 s | [run 41989731116](https://github.com/abooodbah/leanrows/actions/runs/41989731116) |
+| 10M-row sort, app worker, #34 | 53.5 s | 23.6 s | same run |
+| Sort managed memory peak, #34 | 6.58 MiB | 6.58 MiB | same run |
+| Executable size, #34 | 929,280 bytes | 929,280 bytes | same run |
 | Executable size, #32 | 916,480 bytes | 929,280 bytes | [run 41987029313](https://github.com/abooodbah/leanrows/actions/runs/41987029313) |
 | Start to input idle, no file, #32 | 59 ms | 60 ms | same run |
 | Start to input idle, 250 MB CSV, #32 | 90 ms | 94 ms | same run |
