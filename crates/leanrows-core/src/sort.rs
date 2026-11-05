@@ -48,6 +48,8 @@ pub struct SortStep {
     pub scanned_bytes: u64,
     pub source_bytes: u64,
     pub records: u64,
+    /// Merge passes over the sorted runs started so far.
+    pub merge_passes: u64,
 }
 #[derive(Debug)]
 pub enum SortError {

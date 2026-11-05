@@ -232,6 +232,7 @@ impl<R: PositionedRead> SortSession<R> {
                 .map_or(self.snapshot.size(), Scanner::offset),
             source_bytes: self.snapshot.size(),
             records: self.records,
+            merge_passes: self.pass,
         }
     }
     pub fn into_order(mut self) -> Result<SortedOrder, SortError> {

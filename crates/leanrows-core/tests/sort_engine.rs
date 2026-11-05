@@ -412,3 +412,146 @@ fn stale_recovery_skips_a_folder_it_cannot_delete() -> Result<(), Box<dyn Error>
     assert!(!held.exists());
     Ok(())
 }
+
+fn run_to_completion(
+    input: &[u8],
+    config: SortConfig,
+    resources: &std::sync::Arc<SortResources>,
+) -> Result<(Vec<u64>, u64), Box<dyn Error>> {
+    let scratch = Scratch::new()?;
+    let mut session = SortSession::new(
+        Fixture(input.to_vec()),
+        config,
+        resources.clone(),
+        &scratch.0,
+    )?;
+    let token = CancellationToken::new();
+    let passes = loop {
+        let step = session.advance(&token, token.snapshot())?;
+        if step.phase == SortPhase::Complete {
+            break step.merge_passes;
+        }
+    };
+    let order = session.into_order()?;
+    let mut result = Vec::new();
+    for rank in 0..order.len() {
+        let row = order.record_at(rank)?.source_row;
+        assert_eq!(order.rank_of(row)?, rank);
+        result.push(row);
+    }
+    drop(order);
+    assert_eq!(resources.disk_bytes(), 0);
+    assert_eq!(resources.memory_bytes(), 0);
+    Ok((result, passes))
+}
+
+/// Rows whose first field is a key with a long shared prefix, so most
+/// comparisons must read past the 32 stored bytes, and with repeated keys,
+/// so ties must keep source order.
+fn shuffled_long_keys(count: u64) -> (Vec<u8>, Vec<Vec<u8>>) {
+    let mut input = Vec::new();
+    let mut keys = Vec::new();
+    for row in 0..count {
+        let value = (row * 37 + 11) % (count / 2 + 1);
+        let key = if row % 3 == 0 {
+            format!("{value:03}")
+        } else {
+            format!("{}{value:05}", "p".repeat(40))
+        };
+        input.extend_from_slice(key.as_bytes());
+        input.extend_from_slice(format!(",row {row}\n").as_bytes());
+        keys.push(key.into_bytes());
+    }
+    (input, keys)
+}
+
+fn oracle(keys: &[Vec<u8>], direction: SortDirection) -> Vec<u64> {
+    let mut order: Vec<u64> = (0..keys.len() as u64).collect();
+    order.sort_by(|a, b| {
+        let by_key = keys[usize::try_from(*a).unwrap_or_default()]
+            .cmp(&keys[usize::try_from(*b).unwrap_or_default()]);
+        let by_key = if direction == SortDirection::Descending {
+            by_key.reverse()
+        } else {
+            by_key
+        };
+        by_key.then(a.cmp(b))
+    });
+    order
+}
+
+#[test]
+fn merge_uses_the_configured_fan_in() -> Result<(), Box<dyn Error>> {
+    // 64 rows in runs of 2 make 32 runs. Merging 4 at a time needs
+    // 3 passes (4, 16, 64 runs' worth); merging 2 at a time needs 5.
+    let (input, keys) = shuffled_long_keys(64);
+    let resources = SortResources::new(16 * 1024 * 1024, 8 * 1024 * 1024 * 1024);
+    let mut four_way = config(SortMode::Text, SortDirection::Ascending, 0);
+    four_way.merge_fan_in = 4;
+    let (rows, passes) = run_to_completion(&input, four_way, &resources)?;
+    assert_eq!(rows, oracle(&keys, SortDirection::Ascending));
+    assert_eq!(passes, 3);
+    let (rows, passes) = run_to_completion(
+        &input,
+        config(SortMode::Text, SortDirection::Ascending, 0),
+        &resources,
+    )?;
+    assert_eq!(rows, oracle(&keys, SortDirection::Ascending));
+    assert_eq!(passes, 5);
+    Ok(())
+}
+
+#[test]
+fn many_way_merge_matches_an_independent_oracle() -> Result<(), Box<dyn Error>> {
+    let resources = SortResources::new(16 * 1024 * 1024, 8 * 1024 * 1024 * 1024);
+    for count in [1, 2, 3, 7, 50, 301] {
+        let (input, keys) = shuffled_long_keys(count);
+        for fan_in in [2, 3, 5, 8, 64] {
+            for batch_capacity in [1, 3, 16] {
+                for direction in [SortDirection::Ascending, SortDirection::Descending] {
+                    let mut config = config(SortMode::Text, direction, 0);
+                    config.merge_fan_in = fan_in;
+                    config.batch_capacity = batch_capacity;
+                    let (rows, _) = run_to_completion(&input, config, &resources)?;
+                    assert_eq!(
+                        rows,
+                        oracle(&keys, direction),
+                        "{count} rows, fan-in {fan_in}, batch {batch_capacity}, {direction:?}"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn merge_buffers_count_against_the_memory_limit() -> Result<(), Box<dyn Error>> {
+    // Each merged run needs its own 64 KiB read buffer, so 1,000 runs at a
+    // time cannot fit in 16 MiB and the sort must refuse before it starts.
+    let scratch = Scratch::new()?;
+    let resources = SortResources::new(16 * 1024 * 1024, 8 * 1024 * 1024 * 1024);
+    let mut wide = config(SortMode::Text, SortDirection::Ascending, 0);
+    wide.merge_fan_in = 1_000;
+    let refused = SortSession::new(
+        Fixture(b"b\na\n".to_vec()),
+        wide,
+        resources.clone(),
+        &scratch.0,
+    );
+    assert!(matches!(refused, Err(leanrows_core::SortError::Allocation)));
+    assert_eq!(resources.memory_bytes(), 0);
+    assert_eq!(resources.disk_bytes(), 0);
+    let mut fits = config(SortMode::Text, SortDirection::Ascending, 0);
+    fits.merge_fan_in = 64;
+    let session = SortSession::new(
+        Fixture(b"b\na\n".to_vec()),
+        fits,
+        resources.clone(),
+        &scratch.0,
+    )?;
+    assert!(resources.memory_bytes() >= 64 * 64 * 1024);
+    drop(session);
+    assert_eq!(resources.memory_bytes(), 0);
+    Ok(())
+}
