@@ -266,6 +266,8 @@ qualification records full process-tree memory independently; see
 - `Ctrl+C` copies selected cached rows as tab-delimited Unicode text. One
   operation is limited to 4,096 rows and 1 MiB, including the terminator.
 - `F5` reloads the active path as a new snapshot.
+- `Ctrl+Shift+T` changes the theme, as the theme button does. The button shows
+  a coloured dot for the current theme, and its tooltip names the theme.
 - `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+PgDn` and `Ctrl+PgUp`) move between
   tabs. `Ctrl+1` to `Ctrl+8` pick a tab by position and `Ctrl+9` picks the last
   one. `Ctrl+W` or `Ctrl+F4` closes the current tab; a middle click closes any

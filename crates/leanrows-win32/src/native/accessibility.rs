@@ -87,11 +87,29 @@ impl AccessibilityBridge {
         Ok(())
     }
 
-    /// Clears the two persistent self-name annotations before HWND teardown.
-    pub(super) fn clear_shell(&self, window: HWND, list: HWND) -> Result<(), ShellError> {
-        let window_result = self.clear_self_name(window);
-        let list_result = self.clear_self_name(list);
-        window_result.and(list_result)
+    /// Clears the persistent self-name annotations before HWND teardown:
+    /// the window, the grid, and any named controls.
+    pub(super) fn clear_shell(
+        &self,
+        window: HWND,
+        list: HWND,
+        controls: &[HWND],
+    ) -> Result<(), ShellError> {
+        let mut result = self.clear_self_name(window);
+        result = result.and(self.clear_self_name(list));
+        for control in controls {
+            if !control.0.is_null() {
+                result = result.and(self.clear_self_name(*control));
+            }
+        }
+        result
+    }
+
+    /// Names a control whose visible text is shorter than what it does, such
+    /// as the theme button, which shows only the theme. The name is copied.
+    pub(super) fn name_control(&self, control: HWND, name: &str) -> Result<(), ShellError> {
+        let text: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+        self.set_self_name(control, PCWSTR(text.as_ptr()))
     }
 
     /// Annotates the intersection of immutable cached and currently realized rows.
@@ -162,7 +180,8 @@ impl AccessibilityBridge {
 
     fn set_self_name(&self, window: HWND, name: PCWSTR) -> Result<(), ShellError> {
         // SAFETY: The HWND is live, the documented client/self identity is used,
-        // and `name` points to immutable, statically retained UTF-16 storage.
+        // and `name` is NUL-terminated UTF-16 that outlives this call; the
+        // annotation service copies it.
         unsafe {
             self.services.SetHwndPropStr(
                 window,

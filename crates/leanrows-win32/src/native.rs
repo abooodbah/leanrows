@@ -19,13 +19,14 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    COLOR_WINDOW, CreateRoundRectRgn, DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE,
-    DT_VCENTER, DeleteObject, DrawFocusRect, DrawTextW, FillRect, FillRgn, FrameRgn, GetDC,
-    GetPixel, GetSysColorBrush, HBRUSH, HDC, HGDIOBJ, InvalidateRect, RDW_ALLCHILDREN, RDW_ERASE,
-    RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow, ReleaseDC, SelectObject, SetBkColor, SetBkMode,
-    SetTextColor, TRANSPARENT, UpdateWindow,
+    COLOR_WINDOW, CombineRgn, CreateEllipticRgn, CreateRectRgn, CreateRoundRectRgn, DT_CENTER,
+    DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawFocusRect, DrawTextW,
+    FillRect, FillRgn, FrameRgn, GetDC, GetPixel, GetSysColorBrush, GetTextExtentPoint32W, HBRUSH,
+    HDC, HGDIOBJ, InvalidateRect, RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW,
+    RGN_AND, RedrawWindow, ReleaseDC, SelectObject, SetBkColor, SetBkMode, SetTextColor,
+    TRANSPARENT, UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::{FindResourceW, GetModuleHandleW};
 use windows::Win32::System::SystemServices::{
@@ -49,7 +50,8 @@ use windows::Win32::UI::Controls::{
     LVSICF_NOINVALIDATEALL, LVSICF_NOSCROLL, NM_CUSTOMDRAW, NMCUSTOMDRAW, NMHDR, NMLVCACHEHINT,
     NMLVDISPINFOW, ODS_DISABLED, ODS_FOCUS, ODS_NOFOCUSRECT, ODS_SELECTED, ODT_BUTTON, ODT_STATIC,
     PBM_GETPOS, PBM_SETRANGE32, PBS_MARQUEE, PROGRESS_CLASSW, SetWindowTheme, TCN_SELCHANGE,
-    TCS_FIXEDWIDTH, WC_LISTVIEWW, WC_TABCONTROLW,
+    TCS_FIXEDWIDTH, TOOLTIPS_CLASSW, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_GETTEXTW,
+    TTM_UPDATETIPTEXTW, TTS_ALWAYSTIP, TTS_NOPREFIX, TTTOOLINFOW, WC_LISTVIEWW, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -78,7 +80,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_INITDIALOG, WM_KEYDOWN, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT, WM_SETFONT,
     WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW,
     WS_BORDER, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW,
-    WS_OVERLAPPEDWINDOW, WS_TABSTOP,
+    WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -208,6 +210,8 @@ struct ChromeHandles {
     empty_body: HWND,
     empty_open: HWND,
     status_backdrop: HWND,
+    /// Tooltips for the toolbar buttons that show less than they do.
+    tooltip: HWND,
 }
 
 #[allow(
@@ -429,7 +433,9 @@ impl WindowState {
         let item_result =
             self.accessibility
                 .clear_cached_items(self.list, self.rows, self.cache.as_ref());
-        let shell_result = self.accessibility.clear_shell(self.window, self.list);
+        let shell_result =
+            self.accessibility
+                .clear_shell(self.window, self.list, &[self.chrome.theme]);
         item_result.and(shell_result)
     }
 }
@@ -1032,6 +1038,8 @@ fn verify_theme_runtime_state(window: HWND, expected: ThemeMode) -> Result<(), S
         )));
     }
     verify_control_text(state.chrome.theme, expected.label(), "theme button")?;
+    verify_theme_tooltip(state)?;
+    verify_theme_dot(state)?;
     // SAFETY: LVM_GETBKCOLOR is a pointer-free read of the live list-view palette.
     let list_background = unsafe { SendMessageW(state.list, LVM_GETBKCOLOR, None, None) }.0;
     let expected_background =
@@ -1044,6 +1052,101 @@ fn verify_theme_runtime_state(window: HWND, expected: ThemeMode) -> Result<(), S
     // SAFETY: The top-level window and children repaint synchronously here.
     let _ = unsafe { UpdateWindow(window) };
     Ok(())
+}
+
+/// The theme button's tooltip names the theme and its shortcut.
+fn verify_theme_tooltip(state: &WindowState) -> Result<(), ShellError> {
+    let mut text = [0_u16; 128];
+    let mut tool = TTTOOLINFOW {
+        cbSize: u32::try_from(size_of::<TTTOOLINFOW>()).unwrap_or_default(),
+        uFlags: TTF_IDISHWND,
+        hwnd: state.window,
+        uId: state.chrome.theme.0.addr(),
+        lpszText: PWSTR(text.as_mut_ptr()),
+        ..Default::default()
+    };
+    // SAFETY: The tooltip is live; TTM_GETTEXTW copies at most the WPARAM
+    // count of units into the writable local buffer.
+    unsafe {
+        SendMessageW(
+            state.chrome.tooltip,
+            TTM_GETTEXTW,
+            Some(WPARAM(text.len())),
+            Some(LPARAM((&raw mut tool) as isize)),
+        );
+    }
+    let length = text
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(text.len());
+    let expected = theme::theme_tooltip(state.theme.preference, state.theme.effective);
+    if String::from_utf16_lossy(&text[..length]) != expected {
+        return Err(ShellError::new(format!(
+            "theme tooltip does not read \"{expected}\""
+        )));
+    }
+    Ok(())
+}
+
+/// Samples the painted dot: its centre, or both halves for System.
+fn verify_theme_dot(state: &WindowState) -> Result<(), ShellError> {
+    let button = state.chrome.theme;
+    // SAFETY: Reading the visibility of a live child.
+    if !unsafe { IsWindowVisible(button) }.as_bool() {
+        return Ok(());
+    }
+    // SAFETY: The button repaints synchronously before its pixels are read.
+    let _ = unsafe { UpdateWindow(button) };
+    let mut client = RECT::default();
+    // SAFETY: The button is live and RECT is writable.
+    unsafe { GetClientRect(button, &raw mut client) }
+        .map_err(|error| ShellError::new(format!("theme button geometry failed: {error}")))?;
+    // SAFETY: The button owns this DC until the paired ReleaseDC below.
+    let device = unsafe { GetDC(Some(button)) };
+    if device.0.is_null() {
+        return Err(ShellError::new("theme dot check could not acquire a DC"));
+    }
+    let dot = theme_dot_rect(state, device, client);
+    // The dot must show its ring and its fill: for System, white left of
+    // black. Searching the dot's box keeps the check free of off-by-one
+    // pixel positions in GDI's elliptic regions.
+    let ring = state.theme.brushes.swatch_ring_color().colorref().0;
+    let (fill_left, fill_right) = match state.theme.preference.swatch() {
+        theme::Swatch::Solid(color) => (color.colorref().0, color.colorref().0),
+        theme::Swatch::Split { left, right } => (left.colorref().0, right.colorref().0),
+    };
+    let mut seen_ring = false;
+    let mut first_left = None;
+    let mut last_right = None;
+    let mut found = Vec::new();
+    for y in dot.top..dot.bottom {
+        for x in dot.left..dot.right {
+            // SAFETY: The DC is live and the point lies inside the button.
+            let pixel = unsafe { GetPixel(device, x, y) }.0;
+            if !found.contains(&pixel) && found.len() < 8 {
+                found.push(pixel);
+            }
+            seen_ring |= pixel == ring;
+            if pixel == fill_left && first_left.is_none() {
+                first_left = Some(x);
+            }
+            if pixel == fill_right {
+                last_right = Some(last_right.map_or(x, |last: i32| last.max(x)));
+            }
+        }
+    }
+    let ordered = matches!((first_left, last_right), (Some(left), Some(right)) if left <= right);
+    let result = if seen_ring && ordered {
+        Ok(())
+    } else {
+        Err(ShellError::new(format!(
+            "theme dot for {:?} at ({}, {})-({}, {}) shows {found:06x?}",
+            state.theme.preference, dot.left, dot.top, dot.right, dot.bottom
+        )))
+    };
+    // SAFETY: Releases the exact HWND/DC pair acquired above.
+    let _ = unsafe { ReleaseDC(Some(button), device) };
+    result
 }
 
 fn verify_control_text(handle: HWND, expected: &str, name: &str) -> Result<(), ShellError> {
@@ -2297,9 +2400,25 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
         let _ = SetWindowTheme(state.chrome.match_case, visual_class, visual_subclass);
     }
     let _ = state.theme.apply_window_chrome(state.window);
-    set_control_text(state.chrome.theme, state.theme.preference.label())?;
+    apply_theme_button_text(state)?;
     invalidate_native_presentation(state);
     Ok(())
+}
+
+/// The theme button shows the theme's name; its tooltip and accessible name
+/// add what System resolves to and how to change it.
+fn apply_theme_button_text(state: &WindowState) -> Result<(), ShellError> {
+    set_control_text(state.chrome.theme, state.theme.preference.label())?;
+    set_tool_text(
+        state.chrome.tooltip,
+        state.window,
+        state.chrome.theme,
+        &theme::theme_tooltip(state.theme.preference, state.theme.effective),
+    );
+    state.accessibility.name_control(
+        state.chrome.theme,
+        &theme::theme_accessible_name(state.theme.preference, state.theme.effective),
+    )
 }
 
 fn invalidate_native_presentation(state: &WindowState) {
@@ -2976,12 +3095,16 @@ fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bo
         let mut text = [0_u16; 64];
         let length = GetWindowTextW(item.hwndItem, &mut text);
         let length = usize::try_from(length).unwrap_or_default().min(text.len());
-        let _ = DrawTextW(
-            item.hDC,
-            &mut text[..length],
-            &raw mut bounds,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
-        );
+        if item.hwndItem == state.chrome.theme {
+            paint_theme_label(state, item.hDC, bounds, &mut text[..length]);
+        } else {
+            let _ = DrawTextW(
+                item.hDC,
+                &mut text[..length],
+                &raw mut bounds,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
         if !previous_font.is_invalid() {
             let _ = SelectObject(item.hDC, previous_font);
         }
@@ -2997,6 +3120,114 @@ fn paint_shell_button(state: &WindowState, item: &DRAWITEMSTRUCT, is_primary: bo
         }
     }
     true
+}
+
+/// Places the theme dot and its label side by side, centred together in the
+/// button, as `LeanMark`'s flex button with an 8 DIP gap.
+fn swatch_layout(bounds: RECT, text_width: i32, dot: i32, gap: i32) -> (RECT, RECT) {
+    let width = bounds.right.saturating_sub(bounds.left);
+    let height = bounds.bottom.saturating_sub(bounds.top);
+    let content = dot.saturating_add(gap).saturating_add(text_width.max(0));
+    let left = bounds
+        .left
+        .saturating_add(width.saturating_sub(content).max(0) / 2);
+    let top = bounds
+        .top
+        .saturating_add(height.saturating_sub(dot).max(0) / 2);
+    let dot_rect = RECT {
+        left,
+        top,
+        right: left.saturating_add(dot),
+        bottom: top.saturating_add(dot),
+    };
+    let text_rect = RECT {
+        left: dot_rect.right.saturating_add(gap),
+        ..bounds
+    };
+    (dot_rect, text_rect)
+}
+
+/// Where the dot is painted in the theme button, measured with the font the
+/// button paints its label in. The caller owns `device`.
+fn theme_dot_rect(state: &WindowState, device: HDC, client: RECT) -> RECT {
+    let label: Vec<u16> = state.theme.preference.label().encode_utf16().collect();
+    let mut size = SIZE::default();
+    // SAFETY: The theme owns the font; the previous font is restored below.
+    unsafe {
+        let previous = SelectObject(device, HGDIOBJ(state.theme.fonts.semibold().0));
+        let _ = GetTextExtentPoint32W(device, &label, &raw mut size);
+        if !previous.is_invalid() {
+            let _ = SelectObject(device, previous);
+        }
+    }
+    swatch_layout(
+        client,
+        size.cx,
+        state.theme.metrics.swatch_size,
+        state.theme.metrics.space_2,
+    )
+    .0
+}
+
+/// Draws the theme's dot and then its name. The font is already selected.
+fn paint_theme_label(state: &WindowState, device: HDC, bounds: RECT, text: &mut [u16]) {
+    let mut size = SIZE::default();
+    // SAFETY: The device and the selected font are live for this paint.
+    let _ = unsafe { GetTextExtentPoint32W(device, text, &raw mut size) };
+    let (dot, mut label) = swatch_layout(
+        bounds,
+        size.cx,
+        state.theme.metrics.swatch_size,
+        state.theme.metrics.space_2,
+    );
+    draw_swatch(
+        device,
+        dot,
+        state.theme.preference.swatch(),
+        state.theme.brushes.swatch_ring(),
+    );
+    // SAFETY: As above; the text slice and rectangle are local.
+    unsafe {
+        let _ = DrawTextW(
+            device,
+            text,
+            &raw mut label,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+    }
+}
+
+/// Fills an elliptic dot with one colour, or System's two halves, and rings
+/// it. GDI regions are not antialiased, so the edge is stepped.
+fn draw_swatch(device: HDC, dot: RECT, swatch: theme::Swatch, ring: HBRUSH) {
+    // SAFETY: Every region and brush created here is deleted before return;
+    // the device is live for this paint.
+    unsafe {
+        let region = CreateEllipticRgn(dot.left, dot.top, dot.right, dot.bottom);
+        if region.is_invalid() {
+            return;
+        }
+        let (first, second) = match swatch {
+            theme::Swatch::Solid(color) => (color, None),
+            theme::Swatch::Split { left, right } => (left, Some(right)),
+        };
+        if let Ok(brush) = theme::OwnedBrush::new(first) {
+            let _ = FillRgn(device, region, brush.handle());
+        }
+        if let Some(color) = second {
+            let middle = i32::midpoint(dot.left, dot.right);
+            let half = CreateRectRgn(middle, dot.top, dot.right, dot.bottom);
+            if !half.is_invalid() {
+                let _ = CombineRgn(Some(half), Some(half), Some(region), RGN_AND);
+                if let Ok(brush) = theme::OwnedBrush::new(color) {
+                    let _ = FillRgn(device, half, brush.handle());
+                }
+                let _ = DeleteObject(HGDIOBJ(half.0));
+            }
+        }
+        let _ = FrameRgn(device, region, ring, 1, 1);
+        let _ = DeleteObject(HGDIOBJ(region.0));
+    }
 }
 
 fn handle_custom_draw(window: HWND, lparam: LPARAM) -> Option<LRESULT> {
@@ -3279,6 +3510,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         empty_body,
         empty_open,
         status_backdrop,
+        tooltip: create_tooltip(instance, window, theme)?,
     };
     // Workers start with their first file, so an empty window runs no
     // background thread.
@@ -3346,6 +3578,76 @@ fn create_children(window: HWND) -> Result<(), ()> {
     }
     layout_children(window);
     Ok(())
+}
+
+/// One tooltip window for the toolbar, with the theme button as its first
+/// tool. Its text is set whenever the theme changes.
+fn create_tooltip(instance: HINSTANCE, window: HWND, theme_button: HWND) -> Result<HWND, ()> {
+    // SAFETY: The class is a common-control class registered by
+    // InitCommonControlsEx; the owner and module belong to this UI thread.
+    let tooltip = unsafe {
+        CreateWindowExW(
+            WS_EX_TOPMOST,
+            TOOLTIPS_CLASSW,
+            None,
+            WS_POPUP | WINDOW_STYLE(TTS_ALWAYSTIP | TTS_NOPREFIX),
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            Some(window),
+            None,
+            Some(instance),
+            None,
+        )
+    }
+    .map_err(|_| ())?;
+    add_tool(tooltip, window, theme_button, "Theme")?;
+    Ok(tooltip)
+}
+
+fn tool_info(window: HWND, control: HWND, text: &mut [u16]) -> TTTOOLINFOW {
+    TTTOOLINFOW {
+        cbSize: u32::try_from(size_of::<TTTOOLINFOW>()).unwrap_or_default(),
+        uFlags: TTF_IDISHWND | TTF_SUBCLASS,
+        hwnd: window,
+        uId: control.0.addr(),
+        lpszText: PWSTR(text.as_mut_ptr()),
+        ..Default::default()
+    }
+}
+
+fn add_tool(tooltip: HWND, window: HWND, control: HWND, text: &str) -> Result<(), ()> {
+    let mut units: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+    let tool = tool_info(window, control, &mut units);
+    // SAFETY: The tool info and its text outlive this synchronous message,
+    // which copies the text.
+    let added = unsafe {
+        SendMessageW(
+            tooltip,
+            TTM_ADDTOOLW,
+            None,
+            Some(LPARAM((&raw const tool) as isize)),
+        )
+    };
+    (added.0 != 0).then_some(()).ok_or(())
+}
+
+fn set_tool_text(tooltip: HWND, window: HWND, control: HWND, text: &str) {
+    if tooltip.0.is_null() {
+        return;
+    }
+    let mut units: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+    let tool = tool_info(window, control, &mut units);
+    // SAFETY: As in add_tool; the tooltip copies the new text.
+    unsafe {
+        SendMessageW(
+            tooltip,
+            TTM_UPDATETIPTEXTW,
+            None,
+            Some(LPARAM((&raw const tool) as isize)),
+        );
+    }
 }
 
 fn create_child(
@@ -5234,6 +5536,24 @@ mod tests {
             escaped_non_utf8_rows: 0,
             sheets: None,
         }
+    }
+
+    #[test]
+    fn theme_dot_and_label_are_centred_together() {
+        use windows::Win32::Foundation::RECT;
+        let button = RECT {
+            left: 0,
+            top: 0,
+            right: 100,
+            bottom: 40,
+        };
+        // 10 dot + 8 gap + 45 text = 63, so the pair starts at 18.
+        let (dot, text) = super::swatch_layout(button, 45, 10, 8);
+        assert_eq!((dot.left, dot.top, dot.right, dot.bottom), (18, 15, 28, 25));
+        assert_eq!((text.left, text.right), (36, 100));
+        // A label wider than the button still keeps the dot inside it.
+        let (dot, _) = super::swatch_layout(button, 200, 10, 8);
+        assert_eq!(dot.left, 0);
     }
 
     #[test]
