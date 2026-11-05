@@ -3920,7 +3920,18 @@ fn open_settings(window: HWND) {
         return;
     };
     if state.settings.panel.0.is_null() {
-        return;
+        // SAFETY: The module belongs to this process.
+        let Ok(module) = (unsafe { GetModuleHandleW(None) }) else {
+            return;
+        };
+        let Ok(handles) = settings::create(HINSTANCE(module.0), window) else {
+            set_status(window, "The settings panel could not be created");
+            return;
+        };
+        state.settings = handles;
+        if let Err(error) = apply_settings_presentation(state) {
+            set_status(window, &format!("Settings panel failed: {error}"));
+        }
     }
     // SAFETY: GetFocus reads this thread's focus window.
     let focus = unsafe { GetFocus() };
@@ -4274,7 +4285,8 @@ fn create_children(window: HWND) -> Result<(), ()> {
         settings_button,
         "Settings and shortcuts (Ctrl+/)",
     )?;
-    state.settings = settings::create(instance, window)?;
+    // The settings panel is built the first time it opens, so starting
+    // LeanRows does not pay for its controls and its shortcut list.
     // Workers start with their first file, so an empty window runs no
     // background thread.
     let count = state.rows.visible_rows();
