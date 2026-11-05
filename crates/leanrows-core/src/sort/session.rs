@@ -1,5 +1,5 @@
 use super::inverse::{BUCKET_BUFFER_BYTES, BUCKET_ROWS, InverseBuilder};
-use super::key::{Builder, Comparison, Descriptor, Locator, checked_read};
+use super::key::{Builder, Comparison, Descriptor, Locator, checked_read, decide};
 use super::storage::{DiskFile, Owner, ReadPage, Reservation, encode, map_header};
 use super::{SortConfig, SortError, SortPhase, SortResources, SortStep, SortedOrder};
 use crate::{
@@ -382,6 +382,33 @@ impl<R: PositionedRead> SortSession<R> {
         }
         Ok(())
     }
+    /// Orders two descriptors. The stored fields decide nearly every pair;
+    /// readers for the full keys, with their 4 KiB buffers, are set up only
+    /// when they cannot. `None` means the budget ran out mid-comparison; the
+    /// same pair is compared again on the next call.
+    fn compare(
+        &mut self,
+        a: Descriptor,
+        b: Descriptor,
+        budget: &mut usize,
+    ) -> Result<Option<Ordering>, SortError> {
+        if self.comparison.is_none() {
+            if let Some(order) = decide(a, b, self.config.request) {
+                return Ok(Some(order));
+            }
+            self.resources.count_key_readers();
+            self.comparison = Some(Comparison::new(a, b, self.config.request, self.quote()));
+        }
+        let order = self
+            .comparison
+            .as_mut()
+            .ok_or(SortError::InvalidScratch)?
+            .advance(&self.source, budget)?;
+        if order.is_some() {
+            self.comparison = None;
+        }
+        Ok(order)
+    }
     fn sort_batch(&mut self, budget: &mut usize) -> Result<(), SortError> {
         let n = self.batch.len();
         if self.merge.width >= n {
@@ -422,24 +449,10 @@ impl<R: PositionedRead> SortSession<R> {
         } else if self.merge.right == self.merge.end {
             true
         } else {
-            if self.comparison.is_none() {
-                self.resources.count_key_readers();
-                self.comparison = Some(Comparison::new(
-                    self.batch[self.merge.left],
-                    self.batch[self.merge.right],
-                    self.config.request,
-                    self.quote(),
-                ));
-            }
-            let Some(order) = self
-                .comparison
-                .as_mut()
-                .ok_or(SortError::InvalidScratch)?
-                .advance(&self.source, budget)?
-            else {
+            let (a, b) = (self.batch[self.merge.left], self.batch[self.merge.right]);
+            let Some(order) = self.compare(a, b, budget)? else {
                 return Ok(());
             };
-            self.comparison = None;
             order != Ordering::Greater
         };
         let index = if take_left {
@@ -607,19 +620,9 @@ impl<R: PositionedRead> SortSession<R> {
         }
         let a = self.tree.heads[left as usize].ok_or(SortError::InvalidScratch)?;
         let b = self.tree.heads[right as usize].ok_or(SortError::InvalidScratch)?;
-        if self.comparison.is_none() {
-            self.resources.count_key_readers();
-            self.comparison = Some(Comparison::new(a, b, self.config.request, self.quote()));
-        }
-        let Some(order) = self
-            .comparison
-            .as_mut()
-            .ok_or(SortError::InvalidScratch)?
-            .advance(&self.source, budget)?
-        else {
+        let Some(order) = self.compare(a, b, budget)? else {
             return Ok(None);
         };
-        self.comparison = None;
         Ok(Some(if order == Ordering::Greater {
             right
         } else {
