@@ -441,6 +441,71 @@ impl Digits {
         }
     }
 }
+/// Orders two keys from their stored prefix and number fields alone, or
+/// returns `None` when the full keys must be read from the source. Keys of
+/// up to 32 bytes, and numbers whose sign or magnitude differ, never need it.
+pub(super) fn decide(a: Descriptor, b: Descriptor, request: SortRequest) -> Option<Ordering> {
+    if request.mode == SortMode::Numeric {
+        let group = a.group.cmp(&b.group);
+        if group != Ordering::Equal {
+            return Some(group);
+        }
+        if a.group == 2 {
+            return Some(a.row.cmp(&b.row));
+        }
+    }
+    if request.mode == SortMode::Numeric && a.group == 0 {
+        let sign = a.sign.cmp(&b.sign);
+        if sign != Ordering::Equal {
+            return Some(finish(request, a, b, sign));
+        }
+        if a.sign == 0 {
+            return Some(a.row.cmp(&b.row));
+        }
+        let magnitude = a.magnitude.cmp(&b.magnitude);
+        if magnitude != Ordering::Equal {
+            return Some(finish(
+                request,
+                a,
+                b,
+                if a.sign < 0 {
+                    magnitude.reverse()
+                } else {
+                    magnitude
+                },
+            ));
+        }
+        if a.len <= PREFIX as u64 && b.len <= PREFIX as u64 {
+            let value = short_number_order(a, b);
+            return Some(finish(
+                request,
+                a,
+                b,
+                if a.sign < 0 { value.reverse() } else { value },
+            ));
+        }
+    } else {
+        let pa = &a.prefix[..usize::try_from(a.len.min(PREFIX as u64)).unwrap_or(PREFIX)];
+        let pb = &b.prefix[..usize::try_from(b.len.min(PREFIX as u64)).unwrap_or(PREFIX)];
+        let prefix = pa.cmp(pb);
+        if prefix != Ordering::Equal {
+            return Some(finish(request, a, b, prefix));
+        }
+        if a.len <= PREFIX as u64 && b.len <= PREFIX as u64 {
+            return Some(a.row.cmp(&b.row));
+        }
+    }
+    None
+}
+/// Applies the direction; equal keys keep source order in both directions.
+fn finish(request: SortRequest, a: Descriptor, b: Descriptor, value: Ordering) -> Ordering {
+    let value = if request.direction == SortDirection::Descending {
+        value.reverse()
+    } else {
+        value
+    };
+    value.then(a.row.cmp(&b.row))
+}
 // None means not read, Some(None) means EOF; preserves one side across a yield.
 #[allow(clippy::option_option)]
 pub(super) struct Comparison {
@@ -470,14 +535,6 @@ impl Comparison {
             left: None,
         }
     }
-    fn finish(&self, value: Ordering) -> Ordering {
-        let value = if self.request.direction == SortDirection::Descending {
-            value.reverse()
-        } else {
-            value
-        };
-        value.then(self.a.row.cmp(&self.b.row))
-    }
     pub fn advance<R: PositionedRead>(
         &mut self,
         source: &R,
@@ -485,51 +542,8 @@ impl Comparison {
     ) -> Result<Option<Ordering>, SortError> {
         if self.first {
             self.first = false;
-            if self.request.mode == SortMode::Numeric {
-                let group = self.a.group.cmp(&self.b.group);
-                if group != Ordering::Equal {
-                    return Ok(Some(group));
-                }
-                if self.a.group == 2 {
-                    return Ok(Some(self.a.row.cmp(&self.b.row)));
-                }
-            }
-            if self.numeric {
-                let sign = self.a.sign.cmp(&self.b.sign);
-                if sign != Ordering::Equal {
-                    return Ok(Some(self.finish(sign)));
-                }
-                if self.a.sign == 0 {
-                    return Ok(Some(self.a.row.cmp(&self.b.row)));
-                }
-                let magnitude = self.a.magnitude.cmp(&self.b.magnitude);
-                if magnitude != Ordering::Equal {
-                    return Ok(Some(self.finish(if self.a.sign < 0 {
-                        magnitude.reverse()
-                    } else {
-                        magnitude
-                    })));
-                }
-                if self.a.len <= PREFIX as u64 && self.b.len <= PREFIX as u64 {
-                    let value = short_number_order(self.a, self.b);
-                    return Ok(Some(self.finish(if self.a.sign < 0 {
-                        value.reverse()
-                    } else {
-                        value
-                    })));
-                }
-            } else {
-                let pa = &self.a.prefix
-                    [..usize::try_from(self.a.len.min(PREFIX as u64)).unwrap_or(PREFIX)];
-                let pb = &self.b.prefix
-                    [..usize::try_from(self.b.len.min(PREFIX as u64)).unwrap_or(PREFIX)];
-                let prefix = pa.cmp(pb);
-                if prefix != Ordering::Equal {
-                    return Ok(Some(self.finish(prefix)));
-                }
-                if self.a.len <= PREFIX as u64 && self.b.len <= PREFIX as u64 {
-                    return Ok(Some(self.a.row.cmp(&self.b.row)));
-                }
+            if let Some(order) = decide(self.a, self.b, self.request) {
+                return Ok(Some(order));
             }
         }
         loop {
@@ -565,11 +579,16 @@ impl Comparison {
                 left.cmp(&right)
             };
             if value != Ordering::Equal {
-                return Ok(Some(self.finish(if self.numeric && self.a.sign < 0 {
-                    value.reverse()
-                } else {
-                    value
-                })));
+                return Ok(Some(finish(
+                    self.request,
+                    self.a,
+                    self.b,
+                    if self.numeric && self.a.sign < 0 {
+                        value.reverse()
+                    } else {
+                        value
+                    },
+                )));
             }
         }
     }

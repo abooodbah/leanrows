@@ -613,3 +613,39 @@ fn building_the_maps_releases_the_merge_buffers() -> Result<(), Box<dyn Error>> 
     while session.advance(&token, token.snapshot())?.phase != SortPhase::Complete {}
     Ok(())
 }
+
+#[test]
+fn short_keys_are_compared_without_reading_the_source() -> Result<(), Box<dyn Error>> {
+    // Keys of up to 32 bytes are stored whole, and numbers keep their sign,
+    // magnitude and digits, so no comparison needs to read the full keys.
+    let resources = SortResources::new(16 * 1024 * 1024, 8 * 1024 * 1024 * 1024);
+    let (input, keys) = shuffled_short_keys(300);
+    let mut text = config(SortMode::Text, SortDirection::Ascending, 0);
+    text.merge_fan_in = 4;
+    text.batch_capacity = 7;
+    let (rows, _) = run_to_completion(&input, text, &resources)?;
+    assert_eq!(rows, oracle(&keys, SortDirection::Ascending));
+    let mut numeric = text;
+    numeric.request.mode = SortMode::Numeric;
+    numeric.request.direction = SortDirection::Descending;
+    run_to_completion(&input, numeric, &resources)?;
+    assert_eq!(resources.key_readers_built(), 0);
+    // Long keys that share their first 32 bytes still read the source.
+    let (input, keys) = shuffled_long_keys(64);
+    let (rows, _) = run_to_completion(&input, text, &resources)?;
+    assert_eq!(rows, oracle(&keys, SortDirection::Ascending));
+    assert!(resources.key_readers_built() > 0);
+    Ok(())
+}
+
+fn shuffled_short_keys(count: u64) -> (Vec<u8>, Vec<Vec<u8>>) {
+    let mut input = Vec::new();
+    let mut keys = Vec::new();
+    for row in 0..count {
+        let key = format!("{}", (row * 37 + 11) % (count / 3 + 1));
+        input.extend_from_slice(key.as_bytes());
+        input.extend_from_slice(format!(",row {row}\n").as_bytes());
+        keys.push(key.into_bytes());
+    }
+    (input, keys)
+}

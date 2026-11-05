@@ -27,6 +27,7 @@ pub struct SortResources {
     peak: AtomicU64,
     disk_peak: AtomicU64,
     writes: AtomicU64,
+    key_readers: AtomicU64,
     pending: Mutex<[Option<PendingCleanup>; 64]>,
 }
 impl SortResources {
@@ -49,6 +50,7 @@ impl SortResources {
             peak: AtomicU64::new(0),
             disk_peak: AtomicU64::new(0),
             writes: AtomicU64::new(0),
+            key_readers: AtomicU64::new(0),
             pending: Mutex::new(std::array::from_fn(|_| None)),
         })
     }
@@ -113,6 +115,15 @@ impl SortResources {
     #[must_use]
     pub fn scratch_write_calls(&self) -> u64 {
         self.writes.load(Ordering::Relaxed)
+    }
+    /// Comparisons that set up readers for the full keys in the source,
+    /// because the stored prefix and number fields did not decide them.
+    #[must_use]
+    pub fn key_readers_built(&self) -> u64 {
+        self.key_readers.load(Ordering::Relaxed)
+    }
+    pub(super) fn count_key_readers(&self) {
+        self.key_readers.fetch_add(1, Ordering::Relaxed);
     }
     pub(super) fn count_write(&self) {
         self.writes.fetch_add(1, Ordering::Relaxed);
