@@ -423,6 +423,7 @@ impl<R: PositionedRead> SortSession<R> {
             true
         } else {
             if self.comparison.is_none() {
+                self.resources.count_key_readers();
                 self.comparison = Some(Comparison::new(
                     self.batch[self.merge.left],
                     self.batch[self.merge.right],
@@ -607,6 +608,7 @@ impl<R: PositionedRead> SortSession<R> {
         let a = self.tree.heads[left as usize].ok_or(SortError::InvalidScratch)?;
         let b = self.tree.heads[right as usize].ok_or(SortError::InvalidScratch)?;
         if self.comparison.is_none() {
+            self.resources.count_key_readers();
             self.comparison = Some(Comparison::new(a, b, self.config.request, self.quote()));
         }
         let Some(order) = self
