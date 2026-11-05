@@ -203,8 +203,11 @@ letters only. The 0.4 query path does not implement regular expressions.
 Sorting extracts one selected full field into a bounded descriptor (raw spans,
 32-byte decoded prefix and exact decimal metadata). Full long keys are streamed
 only when the prefix cannot decide comparison. Fixed-size batches use resumable
-bottom-up merge sorting; sorted runs share one aggregate file per pass. A
-two-way external merge needs constant handles and buffers, even for many runs.
+bottom-up merge sorting; sorted runs share one aggregate file per pass. The
+external merge takes up to 64 runs at a time through a winner tree, with one
+64 KiB read page per run, so it needs one handle and at most 4 MiB of pages
+however many runs there are. Runs hold 8,192 rows, so any file up to the
+33.5-million-row sort limit is merged in at most 2 passes.
 
 The final disk maps contain 24 bytes per row for source row/start/end and 8 bytes
 per row for inverse source-row-to-display-rank lookup, plus versioned headers.

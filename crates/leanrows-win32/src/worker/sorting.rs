@@ -213,7 +213,7 @@ pub(super) fn advance_sort(runtime: &WorkerRuntime, document: &mut ActiveDocumen
                     format,
                     request: active.request,
                     batch_capacity: 8192,
-                    merge_fan_in: 2,
+                    merge_fan_in: 64,
                     step_bytes: 64 * 1024,
                 },
                 runtime.coordinator.resources(),
