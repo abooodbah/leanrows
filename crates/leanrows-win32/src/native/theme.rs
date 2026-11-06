@@ -165,6 +165,24 @@ pub(super) fn theme_accessible_name(preference: ThemeMode, effective: EffectiveT
     )
 }
 
+/// `LeanMark`'s `.wordmark` square: its fill and its letters' colour. Under
+/// high contrast it is the surface with primary text and a border.
+#[must_use]
+pub(super) fn wordmark_colors(effective: EffectiveTheme, palette: Palette) -> (UiColor, UiColor) {
+    match effective {
+        EffectiveTheme::Light => (
+            UiColor::rgb(0x1a, 0x19, 0x17),
+            UiColor::rgb(0xff, 0xff, 0xff),
+        ),
+        EffectiveTheme::Dark => (
+            UiColor::rgb(0xfa, 0xf9, 0xf7),
+            UiColor::rgb(0x0e, 0x0d, 0x0b),
+        ),
+        EffectiveTheme::Dim | EffectiveTheme::Dusk => (palette.text_primary, palette.canvas),
+        EffectiveTheme::HighContrast => (palette.surface, palette.text_primary),
+    }
+}
+
 /// Palette selected after system preference and high contrast are applied.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum EffectiveTheme {
@@ -972,7 +990,7 @@ mod tests {
     use super::{
         EffectiveTheme, Palette, SWATCH_RING, Swatch, ThemeMode, UiColor, UiMetrics,
         parse_apps_use_light_theme, parse_theme_mode, select_effective_theme,
-        theme_accessible_name, theme_display_name, theme_tooltip,
+        theme_accessible_name, theme_display_name, theme_tooltip, wordmark_colors,
     };
 
     #[test]
@@ -1099,6 +1117,45 @@ mod tests {
         assert_eq!(
             theme_accessible_name(ThemeMode::Dusk, Dusk),
             "Theme: Dusk. Activate to change theme."
+        );
+    }
+
+    #[test]
+    fn wordmark_follows_leanmarks_colours() {
+        // .wordmark: neutral-900 on white in Light, neutral-50 with
+        // neutral-950 text in Dark, and text-primary with canvas text in
+        // Dim and Dusk.
+        let pair = |theme| {
+            let palette = Palette::for_theme(theme);
+            wordmark_colors(theme, palette)
+        };
+        assert_eq!(
+            pair(EffectiveTheme::Light),
+            (
+                UiColor::rgb(0x1a, 0x19, 0x17),
+                UiColor::rgb(0xff, 0xff, 0xff)
+            )
+        );
+        assert_eq!(
+            pair(EffectiveTheme::Dark),
+            (
+                UiColor::rgb(0xfa, 0xf9, 0xf7),
+                UiColor::rgb(0x0e, 0x0d, 0x0b)
+            )
+        );
+        assert_eq!(
+            pair(EffectiveTheme::Dim),
+            (
+                UiColor::rgb(0xc8, 0xcc, 0xd2),
+                UiColor::rgb(0x1e, 0x20, 0x23)
+            )
+        );
+        assert_eq!(
+            pair(EffectiveTheme::Dusk),
+            (
+                UiColor::rgb(0xd4, 0xc8, 0xb4),
+                UiColor::rgb(0x22, 0x1e, 0x19)
+            )
         );
     }
 
