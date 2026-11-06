@@ -17,7 +17,9 @@ use windows::Win32::Graphics::Gdi::{
     MapWindowPoints, PAINTSTRUCT, RoundRect, SelectObject, SetDCBrushColor, SetDCPenColor,
 };
 use windows::Win32::UI::Controls::{
-    LVIR_BOUNDS, LVM_GETHEADER, LVM_GETITEMRECT, LVM_GETTOPINDEX, LVM_SCROLL, WM_MOUSELEAVE,
+    LVIR_BOUNDS, LVM_DELETEALLITEMS, LVM_DELETECOLUMN, LVM_ENSUREVISIBLE, LVM_GETHEADER,
+    LVM_GETITEMRECT, LVM_GETTOPINDEX, LVM_INSERTCOLUMNW, LVM_SCROLL, LVM_SETCOLUMNWIDTH,
+    LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETIMAGELIST, LVM_SETITEMCOUNT, WM_MOUSELEAVE,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -264,6 +266,10 @@ fn refit(list: HWND) {
     };
 }
 
+/// The messages after which the bars may need to move or show a new range:
+/// paints, size and scroll changes, and the list messages that change its
+/// rows, columns or scroll position. List queries are left out; the list
+/// gets dozens of them on every paint.
 fn is_sync_message(message: u32) -> bool {
     matches!(
         message,
@@ -276,7 +282,16 @@ fn is_sync_message(message: u32) -> bool {
             | WM_MOUSEHWHEEL
             | WM_KEYDOWN
             | WM_SETREDRAW
-    ) || matches!(message, 0x1000..=0x10ff)
+            | LVM_SETITEMCOUNT
+            | LVM_SCROLL
+            | LVM_ENSUREVISIBLE
+            | LVM_SETCOLUMNWIDTH
+            | LVM_INSERTCOLUMNW
+            | LVM_DELETECOLUMN
+            | LVM_DELETEALLITEMS
+            | LVM_SETIMAGELIST
+            | LVM_SETEXTENDEDLISTVIEWSTYLE
+    )
 }
 
 unsafe extern "system" fn list_proc(
