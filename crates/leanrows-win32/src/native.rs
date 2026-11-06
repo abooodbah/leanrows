@@ -1862,6 +1862,10 @@ fn verify_thin_scroll_bars(window: HWND) -> Result<(), ShellError> {
 /// The settings panel's shortcut list is no wider than its client area,
 /// has no horizontal bar, and every action fits whole in its row beside its
 /// keys, on as many lines as it needs.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one check run at two DPIs reads best as one pass"
+)]
 fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
     use windows::Win32::Graphics::Gdi::{DT_CALCRECT, DT_NOPREFIX, DT_WORDBREAK};
     use windows::Win32::UI::Controls::{LVIR_BOUNDS, LVM_GETITEMRECT};
@@ -1876,7 +1880,7 @@ fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
         );
     }
     let pointer = state_pointer_for(window);
-    let verification = (|| {
+    let check = |at: &str| -> Result<(), ShellError> {
         // SAFETY: As above.
         let state = unsafe { pointer.as_ref() }
             .ok_or_else(|| ShellError::new("shortcut smoke state is unavailable"))?;
@@ -1915,6 +1919,7 @@ fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
         // SAFETY: The list is live; the DC is released below.
         let device = unsafe { GetDC(Some(list)) };
         let mut problem = None;
+        let mut tallest = m.table_row_height;
         for entry in &crate::shortcuts::SHORTCUTS {
             let keys: Vec<u16> = entry.keys.encode_utf16().collect();
             let mut action: Vec<u16> = entry.action.encode_utf16().collect();
@@ -1936,6 +1941,7 @@ fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
             }
             let fits_across = wrapped.right <= room - size.cx;
             let fits_down = wrapped.bottom - wrapped.top + m.space_2 * 2 <= row.bottom - row.top;
+            tallest = tallest.max(wrapped.bottom - wrapped.top + m.space_2 * 2);
             if !(fits_across && fits_down) && problem.is_none() {
                 problem = Some(format!(
                     "\"{}\" needs {} x {} px beside \"{}\" in a row with {} x {} px",
@@ -1950,8 +1956,27 @@ fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
         }
         // SAFETY: Releases the DC taken above.
         unsafe { ReleaseDC(Some(list), device) };
-        problem.map_or(Ok(()), |problem| Err(ShellError::new(problem)))
-    })();
+        // A report list makes a row one pixel taller than its image list.
+        if problem.is_none() && row.bottom - row.top > tallest + 1 {
+            problem = Some(format!(
+                "the shortcut rows are {} px high, but the tallest action needs {tallest} px",
+                row.bottom - row.top
+            ));
+        }
+        problem.map_or(Ok(()), |problem| {
+            Err(ShellError::new(format!("{at}{problem}")))
+        })
+    };
+    // A DPI change gives the panel a new width and new fonts; the rows
+    // must be fitted again to the width the panel gets.
+    // SAFETY: As above.
+    let dpi = unsafe { pointer.as_ref() }.map_or(96, |state| state.theme.metrics.dpi);
+    let verification = check("").and_then(|()| {
+        rescale_for_smoke(window, dpi.saturating_mul(3) / 2)?;
+        let scaled = check("after a change to 150% DPI, ");
+        rescale_for_smoke(window, dpi)?;
+        scaled
+    });
     // SAFETY: As above.
     unsafe {
         SendMessageW(
@@ -1962,6 +1987,22 @@ fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
         );
     }
     verification
+}
+
+/// Rebuilds the theme at `dpi` and lays the window out again, in the order
+/// a `WM_DPICHANGED` refresh uses: presentation first, then layout.
+fn rescale_for_smoke(window: HWND, dpi: u32) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke checks run on the window's UI thread.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("rescale smoke state is unavailable"))?;
+    let next = ThemeResources::new(state.theme.preference, dpi, state.theme.zoom)?;
+    let previous = std::mem::replace(&mut state.theme, next);
+    let result = apply_native_presentation(state);
+    drop(previous);
+    result?;
+    layout_children(window);
+    Ok(())
 }
 
 fn font_height(font: windows::Win32::Graphics::Gdi::HFONT) -> Option<i32> {
