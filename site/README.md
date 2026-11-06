@@ -63,11 +63,11 @@ or accessibility testing.
 - The application capture is still the v0.2.0 capture above, and its copy and
   alternative text say so. It was taken before `.xlsx` support; replace it only
   with a new real capture of a released executable.
-- The v0.4.0 working-set figures in the evidence section (18 to 19 MiB peak
-  with a 1,000,000-row CSV open, 20.6 MiB while sorting it in about 28 s) were
-  measured on the maintainer's laptop with a local release build of the v0.4.0
-  code (918,528 bytes). No QA receipt was recorded for them.
-- Current interface copy must retain the v0.4.0 boundaries: tabs in one window, a responsive top
+- The v0.5.0 figures in the evidence section (16.3 MiB peak working set with
+  a 10,000,000-row CSV open, a sort of it in about 14 s) were measured on a
+  `windows-2022` GitHub Actions runner in run 42051703441 with the v0.5.0
+  code (986,624 bytes). No QA receipt was recorded for them.
+- Current interface copy must retain the v0.5.0 boundaries: tabs in one window, a responsive top
   bar, inline search, the owner-data grid, System/Light/Dark appearance, System
   resolution from the active Windows app theme, a flat two-DIP progress rule,
   and the Windows high-contrast system-color fallback.
