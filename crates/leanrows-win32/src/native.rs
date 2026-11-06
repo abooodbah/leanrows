@@ -8,6 +8,7 @@ mod hover;
 mod layout;
 mod process;
 mod progress;
+mod scrollbar;
 mod settings;
 mod sort_smoke;
 mod sorting;
@@ -545,6 +546,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let instance = HINSTANCE(module.0);
     register_window_class(instance)?;
     settings::register_class(instance)?;
+    scrollbar::register_class(instance)?;
     let accelerators = load_accelerators(instance)?;
     let smoke_verified = Arc::new(AtomicBool::new(false));
     let document_smoke_observed = Arc::new(AtomicU64::new(0));
@@ -1797,6 +1799,31 @@ fn verify_thin_scroll_bars(window: HWND) -> Result<(), ShellError> {
             return Err(ShellError::new(
                 "the wheel over the thin bar did not scroll the rows",
             ));
+        }
+        // With the thin bars off, as in high contrast, the system bar and its
+        // width come back.
+        scrollbar::set_enabled(list, false);
+        let mut frame = RECT::default();
+        let mut client = RECT::default();
+        // SAFETY: The list is live and both rectangles are writable.
+        unsafe {
+            let _ = GetWindowRect(list, &raw mut frame);
+            let _ = GetClientRect(list, &raw mut client);
+        }
+        let system_kept = (frame.right - frame.left) - (client.right - client.left);
+        let bar_left = thin_bar_over(list, true).is_some();
+        scrollbar::set_enabled(list, true);
+        // SAFETY: A metric query.
+        let system = unsafe {
+            windows::Win32::UI::HiDpi::GetSystemMetricsForDpi(
+                windows::Win32::UI::WindowsAndMessaging::SM_CXVSCROLL,
+                dpi,
+            )
+        };
+        if system_kept != system || bar_left {
+            return Err(ShellError::new(format!(
+                "with the thin bars off the rows keep {system_kept} px, not the system bar's {system} px, and a thin bar shows: {bar_left}"
+            )));
         }
         Ok(())
     })();
@@ -3414,6 +3441,7 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
         let _ = SetWindowTheme(state.chrome.search_edit, visual_class, visual_subclass);
         let _ = SetWindowTheme(state.chrome.match_case, visual_class, visual_subclass);
     }
+    scrollbar::set_enabled(state.list, thin_scroll_bars(state.theme.effective));
     let _ = state.theme.apply_window_chrome(state.window);
     apply_theme_button_text(state)?;
     invalidate_native_presentation(state);
@@ -3456,7 +3484,8 @@ fn apply_settings_presentation(state: &WindowState) -> Result<(), ShellError> {
         set_control_text(panel.zoom_value, &format!("{}%", state.theme.zoom))?;
     }
     if !panel.shortcuts.0.is_null() {
-        settings::apply_row_height(panel.shortcuts, state.theme.metrics.table_row_height);
+        settings::fit_rows(panel.shortcuts, &state.theme);
+        scrollbar::set_enabled(panel.shortcuts, thin_scroll_bars(state.theme.effective));
         let light = matches!(state.theme.effective, EffectiveTheme::Light);
         // SAFETY: The list is live; an empty class turns visual styles off so
         // a dark theme's colours are not covered by light chrome.
@@ -3475,6 +3504,12 @@ fn apply_settings_presentation(state: &WindowState) -> Result<(), ShellError> {
         )?;
     }
     Ok(())
+}
+
+/// The lists draw thin bars in the theme's colours, except in high contrast,
+/// where the system's own bars keep the system's colours.
+const fn thin_scroll_bars(theme: EffectiveTheme) -> bool {
+    !matches!(theme, EffectiveTheme::HighContrast)
 }
 
 /// The theme button shows the theme's name; its tooltip and accessible name
@@ -3701,7 +3736,10 @@ fn handle_zoom_wheel(window: HWND, message: &MSG) -> bool {
 fn is_zoom_wheel(state: &WindowState, message: &MSG) -> bool {
     message.message == WM_MOUSEWHEEL
         && message.wParam.0 & 0xffff & MK_CONTROL.0 as usize != 0
-        && (message.hwnd == state.list || Some(message.hwnd) == list_header(state.list))
+        && (message.hwnd == state.list
+            || Some(message.hwnd) == list_header(state.list)
+            || scrollbar::bar_windows(state.list)
+                .is_some_and(|(down, across)| message.hwnd == down || message.hwnd == across))
 }
 
 fn wheel_delta(message: &MSG) -> i32 {
@@ -4814,6 +4852,18 @@ fn open_settings(window: HWND) {
             return;
         };
         state.settings = handles;
+        if scrollbar::install(
+            state.settings.shortcuts,
+            window,
+            thin_scroll_bars(state.theme.effective),
+        )
+        .is_err()
+        {
+            set_status(
+                window,
+                "The settings panel's scroll bar could not be created",
+            );
+        }
         for button in state.settings.buttons() {
             let _ = hover::install(button, window);
         }
@@ -5236,6 +5286,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
     progress::install_subclass(progress, window).map_err(|_| ())?;
     let header = list_header(list).ok_or(())?;
     header::install_subclass(header, window).map_err(|_| ())?;
+    scrollbar::install(list, window, thin_scroll_bars(state.theme.effective)).map_err(|_| ())?;
     tabs::install_subclass(tab_strip, window).map_err(|_| ())?;
     // A new child goes below its older siblings; the bar was created first,
     // so it goes to the bottom, under the controls it holds.
@@ -7329,6 +7380,21 @@ mod tests {
             display_truncated_rows: 0,
             escaped_non_utf8_rows: 0,
             sheets: None,
+        }
+    }
+
+    #[test]
+    fn high_contrast_keeps_the_system_scroll_bars() {
+        assert!(!super::thin_scroll_bars(
+            super::EffectiveTheme::HighContrast
+        ));
+        for theme in [
+            super::EffectiveTheme::Light,
+            super::EffectiveTheme::Dark,
+            super::EffectiveTheme::Dim,
+            super::EffectiveTheme::Dusk,
+        ] {
+            assert!(super::thin_scroll_bars(theme), "{theme:?}");
         }
     }
 

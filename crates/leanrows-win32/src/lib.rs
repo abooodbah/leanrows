@@ -15,7 +15,7 @@ mod model;
 mod native;
 #[cfg(not(windows))]
 mod native_stub;
-#[allow(dead_code, reason = "the thin scroll bars use it in the next commit")]
+#[cfg_attr(not(windows), allow(dead_code))]
 mod scroll;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod shortcuts;

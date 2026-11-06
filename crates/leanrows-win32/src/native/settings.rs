@@ -432,8 +432,8 @@ pub(super) fn layout(handles: &SettingsHandles, bounds: UiRect, theme: &ThemeRes
     y = y.saturating_add(label_height).saturating_add(m.space_1);
     let list_height = bounds.height.saturating_sub(y).saturating_sub(m.space_6);
     place(handles.shortcuts, left, y, width, list_height);
-    let keys_width = width.saturating_mul(9) / 20;
-    for (column, column_width) in [(0, keys_width), (1, width.saturating_sub(keys_width))] {
+    let row_width = shortcut_row_width(width, m.dpi);
+    for (column, column_width) in [(0, row_width), (1, 0)] {
         // SAFETY: LVM_SETCOLUMNWIDTH carries a column index and a width.
         unsafe {
             SendMessageW(
@@ -444,6 +444,7 @@ pub(super) fn layout(handles: &SettingsHandles, bounds: UiRect, theme: &ThemeRes
             );
         }
     }
+    fit_rows(handles.shortcuts, theme);
     // SAFETY: The list colour message carries a COLORREF value only.
     unsafe {
         SendMessageW(
@@ -556,15 +557,20 @@ pub(super) fn draw_shortcut(theme: &ThemeResources, list: HWND, lparam: LPARAM) 
             );
             SelectObject(device, HGDIOBJ(theme.fonts.body().0));
             SetTextColor(device, palette.text_secondary.colorref());
+            let left = key_box.right.saturating_add(m.space_3);
+            let height = action_height(device, &mut action[..action_length], row.right - left);
+            let top = row.top + (row.bottom - row.top - height) / 2;
             let mut action_rect = RECT {
-                left: key_box.right.saturating_add(m.space_3),
-                ..row
+                left,
+                top,
+                right: row.right,
+                bottom: top + height,
             };
             DrawTextW(
                 device,
                 &mut action[..action_length],
                 &raw mut action_rect,
-                DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS,
+                ACTION_FORMAT,
             );
             let rule = RECT {
                 top: row.bottom.saturating_sub(m.border_width.max(1)),
@@ -576,6 +582,136 @@ pub(super) fn draw_shortcut(theme: &ThemeResources, list: HWND, lparam: LPARAM) 
     Some(LRESULT(
         isize::try_from(CDRF_SKIPDEFAULT).unwrap_or_default(),
     ))
+}
+
+/// The shortcut rows' width in a list `width` pixels wide: all of it but the
+/// room a vertical bar takes, so no row runs under the bar and none needs a
+/// horizontal bar. The list decides on a horizontal bar as if its vertical
+/// bar were the system's width, so the rows leave that much, which is more
+/// than the thin bar's strip.
+#[must_use]
+pub(super) fn shortcut_row_width(width: i32, dpi: u32) -> i32 {
+    // SAFETY: A metric query.
+    let system = unsafe {
+        windows::Win32::UI::HiDpi::GetSystemMetricsForDpi(
+            windows::Win32::UI::WindowsAndMessaging::SM_CXVSCROLL,
+            dpi,
+        )
+    };
+    let strip = super::scrollbar::pixels(super::scrollbar::STRIP_DIP, dpi);
+    width.saturating_sub(system.max(strip)).max(0)
+}
+
+const ACTION_FORMAT: windows::Win32::Graphics::Gdi::DRAW_TEXT_FORMAT =
+    windows::Win32::Graphics::Gdi::DRAW_TEXT_FORMAT(
+        DT_RIGHT.0 | windows::Win32::Graphics::Gdi::DT_WORDBREAK.0 | DT_NOPREFIX.0,
+    );
+
+/// The height `text` takes wrapped at `width` pixels in the font selected
+/// into `device`.
+fn action_height(device: HDC, text: &mut [u16], width: i32) -> i32 {
+    let mut rect = RECT {
+        right: width.max(1),
+        ..Default::default()
+    };
+    // SAFETY: The rectangle and the text are writable for the call.
+    unsafe {
+        DrawTextW(
+            device,
+            text,
+            &raw mut rect,
+            ACTION_FORMAT | windows::Win32::Graphics::Gdi::DT_CALCRECT,
+        );
+    }
+    rect.bottom - rect.top
+}
+
+/// The height each shortcut's row needs, in reading order, when rows are
+/// `row_width` pixels wide: the action wrapped beside its keys' box, with
+/// the usual padding above and below, and never less than a table row.
+pub(super) fn shortcut_row_heights(list: HWND, theme: &ThemeResources, row_width: i32) -> Vec<i32> {
+    let m = theme.metrics;
+    // SAFETY: The list is live; the screen-compatible DC is released below.
+    let device = unsafe { windows::Win32::Graphics::Gdi::GetDC(Some(list)) };
+    if device.0.is_null() {
+        return Vec::new();
+    }
+    let mut fits = Vec::with_capacity(SHORTCUTS.len());
+    for entry in &SHORTCUTS {
+        let keys: Vec<u16> = entry.keys.encode_utf16().collect();
+        let mut action: Vec<u16> = entry.action.encode_utf16().collect();
+        let mut size = windows::Win32::Foundation::SIZE::default();
+        // SAFETY: The fonts outlive the DC; the buffers are local.
+        unsafe {
+            SelectObject(device, HGDIOBJ(theme.fonts.caption().0));
+            let _ =
+                windows::Win32::Graphics::Gdi::GetTextExtentPoint32W(device, &keys, &raw mut size);
+            SelectObject(device, HGDIOBJ(theme.fonts.body().0));
+        }
+        let keys_box = size.cx.saturating_add(m.space_1.saturating_mul(2));
+        let action_room = row_width - keys_box - m.space_3;
+        let mut rect = RECT {
+            right: action_room.max(1),
+            ..Default::default()
+        };
+        // SAFETY: As in `action_height`.
+        unsafe {
+            DrawTextW(
+                device,
+                &mut action,
+                &raw mut rect,
+                ACTION_FORMAT | windows::Win32::Graphics::Gdi::DT_CALCRECT,
+            );
+        }
+        fits.push(
+            m.table_row_height
+                .max((rect.bottom - rect.top).saturating_add(m.space_2.saturating_mul(2))),
+        );
+    }
+    // SAFETY: Releases the DC taken above.
+    unsafe {
+        windows::Win32::Graphics::Gdi::ReleaseDC(Some(list), device);
+    }
+    fits
+}
+
+/// Gives every row the height the tallest wrapped action needs, and leaves
+/// the rows alone when they already have it.
+pub(super) fn fit_rows(list: HWND, theme: &ThemeResources) {
+    let mut rect = RECT::default();
+    // SAFETY: The list is live and the rectangle writable.
+    if unsafe { windows::Win32::UI::WindowsAndMessaging::GetWindowRect(list, &raw mut rect) }
+        .is_err()
+    {
+        return;
+    }
+    let row_width = shortcut_row_width(rect.right - rect.left, theme.metrics.dpi);
+    let height = shortcut_row_heights(list, theme, row_width)
+        .into_iter()
+        .max()
+        .unwrap_or(theme.metrics.table_row_height);
+    if row_height(list) != height {
+        apply_row_height(list, height);
+    }
+}
+
+/// The height of the list's rows now.
+#[must_use]
+pub(super) fn row_height(list: HWND) -> i32 {
+    let mut rect = RECT {
+        left: i32::try_from(windows::Win32::UI::Controls::LVIR_BOUNDS).unwrap_or_default(),
+        ..Default::default()
+    };
+    // SAFETY: The rectangle outlives the synchronous call.
+    unsafe {
+        SendMessageW(
+            list,
+            windows::Win32::UI::Controls::LVM_GETITEMRECT,
+            Some(WPARAM(0)),
+            Some(LPARAM((&raw mut rect) as isize)),
+        );
+    }
+    rect.bottom - rect.top
 }
 
 /// Reads one cell's text and returns the row's item data.
