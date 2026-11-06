@@ -11,6 +11,18 @@ that file through the core engine (`leanrows-spike --sort`) and through the
 app's worker (the ignored test `sort_benchmark_from_environment`). The table
 is in the job log and the run summary.
 
+## Zoom measurements
+
+`tools/Measure-LeanRowsZoom.ps1 -BinaryPath target/release/leanrows.exe
+-DocumentPath FILE` opens FILE, then times zoom from outside the process. A
+step is a zoom command until the list shows the header and row height a
+settled window has at that level, with any pending paint flushed. It also
+times eight Ctrl+wheel notches posted at once, twelve notches down at once,
+and eight zoom-in commands 33 ms apart (a held Ctrl+Plus), and samples the
+working set every 2 ms while it zooms. The saved zoom level is set to 100%
+for the run and put back afterwards. Run main and a branch the same way, one
+after the other, on an otherwise idle machine.
+
 ## External sort measurements
 
 `rtk proxy pwsh -NoProfile -File tools/Measure-LeanRowsSort.ps1` writes nonsparse

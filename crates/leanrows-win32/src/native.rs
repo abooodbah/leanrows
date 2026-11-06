@@ -26,10 +26,10 @@ use windows::Win32::Graphics::Gdi::{
     BS_SOLID, COLOR_WINDOW, CombineRgn, CreateEllipticRgn, CreateRectRgn, CreateRoundRectRgn,
     DT_CENTER, DT_END_ELLIPSIS, DT_LEFT, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawFocusRect,
     DrawTextW, Ellipse, ExtCreatePen, FillRect, FillRgn, FrameRgn, GetDC, GetPixel, GetStockObject,
-    GetSysColorBrush, GetTextExtentPoint32W, HBRUSH, HDC, HGDIOBJ, InvalidateRect, LOGBRUSH,
-    LineTo, MoveToEx, NULL_BRUSH, PS_ENDCAP_ROUND, PS_GEOMETRIC, PS_SOLID, RDW_ALLCHILDREN,
-    RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW, RGN_AND, RedrawWindow, ReleaseDC, SelectObject,
-    SetBkColor, SetBkMode, SetTextColor, TRANSPARENT, UpdateWindow,
+    GetSysColorBrush, GetTextExtentPoint32W, GetUpdateRect, HBRUSH, HDC, HGDIOBJ, InvalidateRect,
+    LOGBRUSH, LineTo, MoveToEx, NULL_BRUSH, PS_ENDCAP_ROUND, PS_GEOMETRIC, PS_SOLID,
+    RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW, RGN_AND, RedrawWindow, ReleaseDC,
+    SelectObject, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT, UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::{FindResourceW, GetModuleHandleW};
 use windows::Win32::System::SystemServices::{
@@ -73,19 +73,19 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IDCANCEL, IDOK, IMAGE_ICON, IsIconic, IsWindow, IsWindowVisible, KillTimer, LR_SHARED,
     LoadAcceleratorsW, LoadCursorW, LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING,
     MB_OK, MB_TASKMODAL, MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MINMAXINFO,
-    MSG, MessageBoxW, MoveWindow, PostMessageW, PostQuitMessage, RT_DIALOG, RegisterClassExW,
-    SIZE_MINIMIZED, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW,
-    SW_SHOWDEFAULT, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW,
-    SetDlgItemTextW, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowWindow, TPM_RETURNCMD, TPM_RIGHTALIGN, TrackPopupMenuEx,
-    TranslateAcceleratorW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE,
-    WM_APP, WM_CLOSE, WM_COMMAND, WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLOREDIT,
-    WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM, WM_DROPFILES, WM_ERASEBKGND,
-    WM_GETFONT, WM_GETMINMAXINFO, WM_INITDIALOG, WM_KEYDOWN, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
-    WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN,
-    WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW,
-    WS_POPUP, WS_TABSTOP,
+    MSG, MessageBoxW, MoveWindow, PM_NOREMOVE, PM_REMOVE, PeekMessageW, PostMessageW,
+    PostQuitMessage, RT_DIALOG, RegisterClassExW, SIZE_MINIMIZED, SM_CXICON, SM_CXSMICON,
+    SM_CYICON, SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWDEFAULT, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW, SetDlgItemTextW, SetForegroundWindow,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, TPM_RETURNCMD,
+    TPM_RIGHTALIGN, TrackPopupMenuEx, TranslateAcceleratorW, TranslateMessage, WINDOW_EX_STYLE,
+    WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_COPYDATA, WM_CREATE,
+    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM,
+    WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETMINMAXINFO, WM_INITDIALOG, WM_KEYDOWN,
+    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PRINTCLIENT, WM_SETFONT, WM_SETREDRAW,
+    WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_CHILD,
+    WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_TOPMOST,
+    WS_OVERLAPPEDWINDOW, WS_POPUP, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -262,6 +262,8 @@ struct WindowState {
     tab_hover: TabHover,
     /// Ctrl+wheel movement not yet a whole notch.
     zoom_wheel: i32,
+    /// The active tab's column widths across zoom changes.
+    column_zoom: crate::zoom::ColumnZoom,
     /// The toolbar or panel button under the mouse, painted hovered.
     hover_button: HWND,
     /// The search field's frame, painted on the top bar.
@@ -277,6 +279,9 @@ struct WindowState {
     closing: bool,
     document_smoke: bool,
     document_smoke_observed: Arc<AtomicU64>,
+    /// Cells the list asked for during the document smoke, so it can tell
+    /// whether a zoom step painted rows before it returned.
+    document_smoke_cells: AtomicU64,
     document_smoke_evidence: Arc<Mutex<Option<DocumentSmokeEvidence>>>,
     reclaimed: Arc<AtomicBool>,
 }
@@ -345,6 +350,7 @@ struct BackgroundTab {
     sheets: Option<Arc<WorkerSheets>>,
     columns: NativeColumns,
     column_widths: Vec<i32>,
+    column_zoom: crate::zoom::ColumnZoom,
     rows: SlidingRowWindow,
     cache: Arc<ImmutableRowCache>,
     top_row: Option<u64>,
@@ -577,6 +583,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         tab_labels: Vec::new(),
         tab_hover: TabHover::default(),
         zoom_wheel: 0,
+        column_zoom: crate::zoom::ColumnZoom::default(),
         hover_button: HWND::default(),
         search_frame: None,
         settings: settings::SettingsHandles::default(),
@@ -586,6 +593,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         closing: false,
         document_smoke: options.document_smoke_test,
         document_smoke_observed: Arc::clone(&document_smoke_observed),
+        document_smoke_cells: AtomicU64::new(0),
         document_smoke_evidence: Arc::clone(&document_smoke_evidence),
         reclaimed: Arc::clone(&reclaimed),
     });
@@ -1156,6 +1164,10 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
         .zoom;
     let verification = (|| {
         set_grid_zoom(window, crate::zoom::DEFAULT_ZOOM)?;
+        verify_zoom_column_widths(window)?;
+        verify_zoom_repaints_only_rows(window)?;
+        verify_zoom_background_tab(window)?;
+        verify_zoom_wheel_burst(window)?;
         for (command, expected) in [
             (ID_VIEW_ZOOM_IN, 110),
             (ID_VIEW_ZOOM_IN, 125),
@@ -1189,6 +1201,14 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
                 )));
             }
             // SAFETY: WM_GETFONT carries no pointers.
+            let titles = list_header(state.list)
+                .map(|header| unsafe { SendMessageW(header, WM_GETFONT, None, None) }.0);
+            if titles != Some(state.theme.fonts.grid_header().0 as isize) {
+                return Err(ShellError::new(format!(
+                    "the column titles do not have the {expected}% title font"
+                )));
+            }
+            // SAFETY: WM_GETFONT carries no pointers.
             let search =
                 unsafe { SendMessageW(state.chrome.search_edit, WM_GETFONT, None, None) }.0;
             if search != state.theme.fonts.body().0 as isize {
@@ -1204,6 +1224,306 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
         )));
     }
     verification
+}
+
+/// Zooming 100% to 300%, down to 50% and back gives the widths it started
+/// with, and at every level each column is as wide as one opened at that
+/// level: the Row column 112 px and the Preview column 720 px at 100%.
+fn verify_zoom_column_widths(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    let widths = || {
+        // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+        unsafe { pointer.as_ref() }
+            .map(|state| column_widths(state.list, state.columns))
+            .ok_or_else(|| ShellError::new("zoom width smoke state was detached"))
+    };
+    let start = widths()?;
+    if start != [112, 720] {
+        return Err(ShellError::new(format!(
+            "zoom width smoke expected Row and Preview at 112 and 720 px, found {start:?}"
+        )));
+    }
+    let up = crate::zoom::ZOOM_LEVELS
+        .iter()
+        .filter(|level| **level > 100);
+    let down = crate::zoom::ZOOM_LEVELS.iter().rev().skip(1);
+    let back = crate::zoom::ZOOM_LEVELS
+        .iter()
+        .filter(|level| **level > 50 && **level <= 100);
+    let mut previous = crate::zoom::DEFAULT_ZOOM;
+    let mut header_at = [0; 2];
+    for &level in up.chain(down).chain(back) {
+        let command = if level > previous {
+            ID_VIEW_ZOOM_IN
+        } else {
+            ID_VIEW_ZOOM_OUT
+        };
+        // SAFETY: The command is routed synchronously through the window.
+        unsafe {
+            SendMessageW(
+                window,
+                WM_COMMAND,
+                Some(WPARAM(usize::from(command))),
+                Some(LPARAM(0)),
+            );
+        }
+        previous = level;
+        let cold = [
+            crate::zoom::scale_by_zoom(112, level),
+            crate::zoom::scale_by_zoom(720, level),
+        ];
+        let shown = widths()?;
+        if shown != cold {
+            return Err(ShellError::new(format!(
+                "at {level}% the columns are {shown:?} px, not {cold:?} as when opened there"
+            )));
+        }
+        // SAFETY: As above.
+        let (shown, fitted) = unsafe { pointer.as_ref() }
+            .and_then(|state| header_heights(state.list))
+            .ok_or_else(|| ShellError::new("zoom smoke could not measure the column titles"))?;
+        if shown != fitted {
+            return Err(ShellError::new(format!(
+                "at {level}% the column titles are {shown} px high, not the {fitted} px their font needs"
+            )));
+        }
+        match level {
+            50 => header_at[0] = shown,
+            300 => header_at[1] = shown,
+            _ => {}
+        }
+    }
+    if header_at[1] <= header_at[0] {
+        return Err(ShellError::new(format!(
+            "the column titles are {} px high at 300% and {} px at 50%",
+            header_at[1], header_at[0]
+        )));
+    }
+    if widths()? != start {
+        return Err(ShellError::new(
+            "zooming out and back did not return the starting column widths",
+        ));
+    }
+    Ok(())
+}
+
+/// The next level in, or the next level out from the largest one.
+fn other_zoom_level(zoom: u32) -> u32 {
+    let next = crate::zoom::step_zoom(zoom, 1);
+    if next == zoom {
+        crate::zoom::step_zoom(zoom, -1)
+    } else {
+        next
+    }
+}
+
+/// The header's height and the height `HDM_LAYOUT` gives for its font.
+fn header_heights(list: HWND) -> Option<(i32, i32)> {
+    let header = list_header(list)?;
+    let mut shown = RECT::default();
+    let mut bounds = RECT::default();
+    // SAFETY: Both handles are live and the RECTs are writable.
+    unsafe {
+        GetWindowRect(header, &raw mut shown).ok()?;
+        GetClientRect(list, &raw mut bounds).ok()?;
+    }
+    let mut position = windows::Win32::UI::WindowsAndMessaging::WINDOWPOS::default();
+    let mut layout = windows::Win32::UI::Controls::HDLAYOUT {
+        prc: &raw mut bounds,
+        pwpos: &raw mut position,
+    };
+    // SAFETY: HDM_LAYOUT fills `position` from `bounds`; both outlive the call.
+    let laid_out = unsafe {
+        SendMessageW(
+            header,
+            windows::Win32::UI::Controls::HDM_LAYOUT,
+            None,
+            Some(LPARAM((&raw mut layout) as isize)),
+        )
+    };
+    (laid_out.0 != 0).then_some((shown.bottom - shown.top, position.cy))
+}
+
+/// A zoom step changes only the rows, so it leaves only the list to repaint,
+/// and it paints nothing before it returns: the paint comes once, after the
+/// step and any steps queued behind it.
+fn verify_zoom_repaints_only_rows(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let (list, topbar, original) = unsafe { pointer.as_ref() }
+        .map(|state| (state.list, state.chrome.topbar, state.theme.zoom))
+        .ok_or_else(|| ShellError::new("zoom paint smoke state is unavailable"))?;
+    // SAFETY: Painting what is pending clears every update region first.
+    unsafe {
+        let _ = RedrawWindow(Some(window), None, None, RDW_UPDATENOW | RDW_ALLCHILDREN);
+    }
+    let result = set_grid_zoom(window, other_zoom_level(original));
+    // SAFETY: Both are live children; a null rectangle only asks whether
+    // part of the window waits to be painted.
+    let (rows_pending, titles_pending, bar_pending) = unsafe {
+        (
+            GetUpdateRect(list, None, false).as_bool(),
+            list_header(list).is_some_and(|header| GetUpdateRect(header, None, false).as_bool()),
+            GetUpdateRect(topbar, None, false).as_bool(),
+        )
+    };
+    let restore = set_grid_zoom(window, original);
+    result?;
+    restore?;
+    if !rows_pending {
+        return Err(ShellError::new(
+            "a zoom step painted the rows before it returned",
+        ));
+    }
+    if !titles_pending {
+        return Err(ShellError::new(
+            "a zoom step did not leave the column titles to repaint",
+        ));
+    }
+    if bar_pending {
+        return Err(ShellError::new("a zoom step invalidated the toolbar"));
+    }
+    Ok(())
+}
+
+/// A tab in the background zooms with the one showing. After two steps to
+/// 125% its columns are 140 and 900 px, as when opened at 125%, and the list
+/// shows those widths when the tab comes back.
+fn verify_zoom_background_tab(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("zoom tab smoke state is unavailable"))?;
+    let tab = stash_active(state)?;
+    state.background_tabs.push(tab);
+    for _ in 0..2 {
+        // SAFETY: The command is routed synchronously through the window.
+        unsafe {
+            SendMessageW(
+                window,
+                WM_COMMAND,
+                Some(WPARAM(usize::from(ID_VIEW_ZOOM_IN))),
+                Some(LPARAM(0)),
+            );
+        }
+    }
+    // SAFETY: As above; the zoom commands leave the state attached.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("zoom tab smoke state was detached"))?;
+    let tab = state
+        .background_tabs
+        .pop()
+        .ok_or_else(|| ShellError::new("zoom tab smoke lost its background tab"))?;
+    let stored = tab.column_widths.clone();
+    let restored = restore_tab(window, state, tab);
+    let shown = column_widths(state.list, state.columns);
+    let back = set_grid_zoom(window, crate::zoom::DEFAULT_ZOOM);
+    restored?;
+    back?;
+    let cold = [
+        crate::zoom::scale_by_zoom(112, 125),
+        crate::zoom::scale_by_zoom(720, 125),
+    ];
+    if stored != cold || shown != cold {
+        return Err(ShellError::new(format!(
+            "a background tab zoomed to 125% kept {stored:?} px and showed {shown:?}, not {cold:?}"
+        )));
+    }
+    Ok(())
+}
+
+/// Ctrl+wheel notches queued behind the first one join it: three queued
+/// notches from 100% are one change to 150%, and none is left queued.
+fn verify_zoom_wheel_burst(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let (list, original) = unsafe { pointer.as_ref() }
+        .map(|state| (state.list, state.theme.zoom))
+        .ok_or_else(|| ShellError::new("zoom wheel smoke state is unavailable"))?;
+    let notch = WPARAM((120_usize << 16) | MK_CONTROL.0 as usize);
+    for _ in 0..3 {
+        // SAFETY: A pointer-free wheel message for this thread's live list.
+        unsafe { PostMessageW(Some(list), WM_MOUSEWHEEL, notch, LPARAM(0)) }
+            .map_err(|error| ShellError::new(format!("zoom wheel smoke post failed: {error}")))?;
+    }
+    let mut message = MSG::default();
+    // SAFETY: `message` is writable; this takes the first queued notch.
+    let first = unsafe {
+        PeekMessageW(
+            &raw mut message,
+            Some(list),
+            WM_MOUSEWHEEL,
+            WM_MOUSEWHEEL,
+            PM_REMOVE,
+        )
+    }
+    .as_bool();
+    let handled = first && handle_zoom_wheel(window, &message);
+    let mut left = 0;
+    // SAFETY: As above; this empties the queue of any notch left over.
+    while unsafe {
+        PeekMessageW(
+            &raw mut message,
+            Some(list),
+            WM_MOUSEWHEEL,
+            WM_MOUSEWHEEL,
+            PM_REMOVE,
+        )
+    }
+    .as_bool()
+    {
+        left += 1;
+    }
+    // SAFETY: As above.
+    let zoom = unsafe { pointer.as_ref() }.map_or(0, |state| state.theme.zoom);
+    set_grid_zoom(window, original)?;
+    let expected = crate::zoom::zoom_after_notches(original, 3);
+    if !handled || left != 0 || zoom != expected {
+        return Err(ShellError::new(format!(
+            "three queued notches from {original}% gave {zoom}% with {left} left queued, not {expected}%"
+        )));
+    }
+    Ok(())
+}
+
+/// With rows on screen, a zoom step asks the list for no cell before it
+/// returns, and the list paints its rows once afterwards.
+fn verify_zoom_with_rows(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    let cells = || {
+        // SAFETY: The document smoke runs on the window's owning UI thread.
+        unsafe { pointer.as_ref() }
+            .map(|state| state.document_smoke_cells.load(Ordering::Relaxed))
+            .unwrap_or_default()
+    };
+    // SAFETY: As above; only handles and the level are copied.
+    let (list, original) = unsafe { pointer.as_ref() }
+        .map(|state| (state.list, state.theme.zoom))
+        .ok_or_else(|| ShellError::new("zoom row smoke state is unavailable"))?;
+    // SAFETY: Painting what is pending clears every update region first.
+    unsafe {
+        let _ = RedrawWindow(Some(window), None, None, RDW_UPDATENOW | RDW_ALLCHILDREN);
+    }
+    let before = cells();
+    let result = set_grid_zoom(window, other_zoom_level(original));
+    let during = cells().saturating_sub(before);
+    // SAFETY: The list is live; this paints what the step left pending.
+    let _ = unsafe { UpdateWindow(list) };
+    let after = cells().saturating_sub(before).saturating_sub(during);
+    let restore = set_grid_zoom(window, original);
+    result?;
+    restore?;
+    if during != 0 {
+        return Err(ShellError::new(format!(
+            "a zoom step painted {during} cells before it returned"
+        )));
+    }
+    if after == 0 {
+        return Err(ShellError::new(
+            "the rows did not repaint after a zoom step",
+        ));
+    }
+    Ok(())
 }
 
 /// The settings panel opens from its command, takes the right edge, focuses
@@ -2056,75 +2376,74 @@ fn zoom_grid(window: HWND, direction: i32) {
     }
 }
 
-/// Rebuilds the fonts at `zoom` percent, scales the column widths by the same
-/// ratio in every tab, and saves the level.
+/// Sets the rows' zoom: new grid fonts, column widths scaled from their
+/// bases in every tab, and the saved level.
+///
+/// Only the rows change, so nothing else is touched. The list's redraw is
+/// off while it takes the fonts and widths, because each column width set
+/// with redraw on repaints every visible row before it returns. The step
+/// paints nothing itself: it leaves the list invalid, and Windows paints it
+/// once the message queue is empty, so a burst of steps paints once.
 fn set_grid_zoom(window: HWND, zoom: u32) -> Result<(), ShellError> {
-    // SAFETY: The live HWND provides its current monitor DPI.
-    let dpi = unsafe { GetDpiForWindow(window) }.max(96);
     let pointer = state_pointer_for(window);
     // SAFETY: Zoom changes run on the window's UI thread.
     let state = unsafe { pointer.as_mut() }
         .ok_or_else(|| ShellError::new("window state is unavailable"))?;
     let previous_zoom = state.theme.zoom;
+    let zoom = crate::zoom::normalize_zoom(zoom);
     if zoom == previous_zoom {
         return Ok(());
     }
-    let next = ThemeResources::new(state.theme.preference, dpi, zoom)?;
-    let zoom = next.zoom;
-    let previous = std::mem::replace(&mut state.theme, next);
-    let result = apply_native_presentation(state);
-    drop(previous);
-    result?;
-    let rescale = |width: i32| {
-        i32::try_from(i64::from(width) * i64::from(zoom) / i64::from(previous_zoom.max(1)))
-            .unwrap_or(width)
-            .max(1)
-    };
-    let widths: Vec<i32> = column_widths(state.list, state.columns)
-        .into_iter()
-        .map(rescale)
-        .collect();
-    set_column_widths(state.list, &widths);
-    for tab in &mut state.background_tabs {
-        for width in &mut tab.column_widths {
-            *width = rescale(*width);
+    let fonts = theme::GridFonts::new(state.theme.metrics.dpi, zoom)?;
+    let previous_fonts = state.theme.fonts.replace_grid(fonts);
+    state.theme.zoom = zoom;
+    let list = state.list;
+    let current = column_widths(list, state.columns);
+    let widths = state.column_zoom.rescale(&current, previous_zoom, zoom);
+    with_list_redraw_off(list, || {
+        set_font_quietly(list, state.theme.fonts.grid());
+        if let Some(header) = list_header(list) {
+            set_font_quietly(header, state.theme.fonts.grid_header());
         }
+        set_column_widths(list, &widths);
+    });
+    // The list and its header no longer use the previous fonts.
+    drop(previous_fonts);
+    for tab in &mut state.background_tabs {
+        tab.column_widths = tab
+            .column_zoom
+            .rescale(&tab.column_widths, previous_zoom, zoom);
     }
-    refit_list_header(state.list);
+    if !state.settings.zoom_value.0.is_null() {
+        set_control_text(state.settings.zoom_value, &format!("{zoom}%"))?;
+    }
     let _ = theme::save_zoom_percent(zoom);
-    layout_children(window);
-    redraw_shell_children(window)
+    Ok(())
 }
 
-/// The list sizes its header from the header font only when it lays itself
-/// out, so a one-pixel resize makes it measure the zoomed font.
-fn refit_list_header(list: HWND) {
-    let mut bounds = RECT::default();
-    // SAFETY: The list is a live child; its rectangle is read and restored.
-    if unsafe { GetClientRect(list, &raw mut bounds) }.is_err() {
+/// Runs `change` with the list's redraw off, then turns it back on. Turning
+/// it on lays the list and its header out again for the new font and marks
+/// both for repainting; it paints nothing before it returns.
+fn with_list_redraw_off(list: HWND, change: impl FnOnce()) {
+    // SAFETY: WM_SETREDRAW carries a flag and no pointers.
+    unsafe { SendMessageW(list, WM_SETREDRAW, Some(WPARAM(0)), Some(LPARAM(0))) };
+    change();
+    // SAFETY: As above.
+    unsafe { SendMessageW(list, WM_SETREDRAW, Some(WPARAM(1)), Some(LPARAM(0))) };
+}
+
+/// Gives a control a font without asking it to repaint.
+fn set_font_quietly(handle: HWND, font: windows::Win32::Graphics::Gdi::HFONT) {
+    if handle.0.is_null() {
         return;
     }
-    let width = bounds.right.saturating_sub(bounds.left);
-    let height = bounds.bottom.saturating_sub(bounds.top);
-    // SAFETY: Both resizes keep the list's position and z-order.
+    // SAFETY: ThemeResources owns the font longer than every child control.
     unsafe {
-        let _ = SetWindowPos(
-            list,
-            None,
-            0,
-            0,
-            width,
-            height.saturating_add(1),
-            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
-        );
-        let _ = SetWindowPos(
-            list,
-            None,
-            0,
-            0,
-            width,
-            height,
-            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+        SendMessageW(
+            handle,
+            WM_SETFONT,
+            Some(WPARAM(font.0.addr())),
+            Some(LPARAM(0)),
         );
     }
 }
@@ -3064,36 +3383,70 @@ fn message_loop(window: HWND, accelerators: HACCEL) -> Result<(), ShellError> {
 /// Ctrl+wheel over the rows zooms them one level per notch, as in
 /// `LeanMark`. Precision touchpads send smaller steps, which add up.
 fn handle_zoom_wheel(window: HWND, message: &MSG) -> bool {
-    if message.message != WM_MOUSEWHEEL {
-        return false;
-    }
-    let keys = message.wParam.0 & 0xffff;
-    if keys & MK_CONTROL.0 as usize == 0 {
-        return false;
-    }
     let pointer = state_pointer_for(window);
     // SAFETY: Message dispatch and state access are serialized on this thread.
     let Some(state) = (unsafe { pointer.as_mut() }) else {
         return false;
     };
-    if message.hwnd != state.list && Some(message.hwnd) != list_header(state.list) {
+    if !is_zoom_wheel(state, message) {
         return false;
     }
-    let delta = i32::from(i16::from_le_bytes(
-        u16::try_from((message.wParam.0 >> 16) & 0xffff)
-            .unwrap_or_default()
-            .to_le_bytes(),
-    ));
-    state.zoom_wheel = state.zoom_wheel.saturating_add(delta);
-    let notches = state.zoom_wheel / 120;
+    let mut notches = crate::zoom::wheel_notches(&mut state.zoom_wheel, wheel_delta(message));
+    let mut target = crate::zoom::zoom_after_notches(state.theme.zoom, notches);
+    // Notches already queued behind this one join it, so a fast spin of
+    // the wheel lays the rows out once, at the level it ends on.
+    let mut queued = MSG::default();
+    // SAFETY: `queued` is writable; peeking leaves the message in place.
+    while unsafe {
+        PeekMessageW(
+            &raw mut queued,
+            None,
+            WM_MOUSEWHEEL,
+            WM_MOUSEWHEEL,
+            PM_NOREMOVE,
+        )
+    }
+    .as_bool()
+        && is_zoom_wheel(state, &queued)
+    {
+        // SAFETY: As above; this removes the message just peeked, the first
+        // wheel message in the queue.
+        let _ = unsafe {
+            PeekMessageW(
+                &raw mut queued,
+                None,
+                WM_MOUSEWHEEL,
+                WM_MOUSEWHEEL,
+                PM_REMOVE,
+            )
+        };
+        let more = crate::zoom::wheel_notches(&mut state.zoom_wheel, wheel_delta(&queued));
+        target = crate::zoom::zoom_after_notches(target, more);
+        notches = notches.saturating_add(more.abs());
+    }
     if notches == 0 {
         return true;
     }
-    state.zoom_wheel -= notches * 120;
-    for _ in 0..notches.unsigned_abs() {
-        zoom_grid(window, notches.signum());
+    match set_grid_zoom(window, target) {
+        Ok(()) => set_status(window, &format!("Zoom {target}%")),
+        Err(error) => set_status(window, &format!("Zoom failed: {error}")),
     }
     true
+}
+
+/// Ctrl+wheel over the rows or their column titles.
+fn is_zoom_wheel(state: &WindowState, message: &MSG) -> bool {
+    message.message == WM_MOUSEWHEEL
+        && message.wParam.0 & 0xffff & MK_CONTROL.0 as usize != 0
+        && (message.hwnd == state.list || Some(message.hwnd) == list_header(state.list))
+}
+
+fn wheel_delta(message: &MSG) -> i32 {
+    i32::from(i16::from_le_bytes(
+        u16::try_from((message.wParam.0 >> 16) & 0xffff)
+            .unwrap_or_default()
+            .to_le_bytes(),
+    ))
 }
 
 fn handle_shell_keyboard(window: HWND, message: &MSG) -> bool {
@@ -4582,8 +4935,16 @@ fn create_children(window: HWND) -> Result<(), ()> {
     // background thread.
     let count = state.rows.visible_rows();
 
-    insert_column(list, 0, w!("Row"), 112)?;
-    insert_existing_data_columns(list, state.columns)?;
+    let row_width = state
+        .column_zoom
+        .insert(0, ROW_COLUMN_WIDTH, state.theme.zoom);
+    insert_column(list, 0, w!("Row"), row_width)?;
+    insert_existing_data_columns(
+        list,
+        state.columns,
+        state.theme.zoom,
+        &mut state.column_zoom,
+    )?;
     let style = LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER;
     let style_parameter = isize::try_from(style).unwrap_or_default();
     // SAFETY: These control messages are synchronous and use bounded values or
@@ -4813,31 +5174,58 @@ fn insert_column(
     (result.0 != -1).then_some(()).ok_or(())
 }
 
-fn insert_existing_data_columns(list: HWND, columns: NativeColumns) -> Result<(), ()> {
+fn insert_existing_data_columns(
+    list: HWND,
+    columns: NativeColumns,
+    zoom: u32,
+    column_zoom: &mut crate::zoom::ColumnZoom,
+) -> Result<(), ()> {
     let Some(kind) = columns.kind else {
         return (columns.data_columns == 0).then_some(()).ok_or(());
     };
     for data_index in 1..=columns.data_columns {
-        insert_data_column(list, kind, data_index)?;
+        insert_data_column(list, kind, data_index, zoom, column_zoom)?;
     }
     Ok(())
 }
 
-fn insert_data_column(list: HWND, kind: UiColumnKind, data_index: u8) -> Result<(), ()> {
-    let index = usize::from(data_index);
+/// The Row column's width at 100%.
+const ROW_COLUMN_WIDTH: i32 = 112;
+
+/// A data column's width at 100%.
+const fn data_column_width(kind: UiColumnKind) -> i32 {
     match kind {
-        UiColumnKind::Preview if data_index == 1 => insert_column(list, index, w!("Preview"), 720),
-        UiColumnKind::Preview => Err(()),
+        UiColumnKind::Preview => 720,
+        UiColumnKind::Fields => 220,
+        UiColumnKind::Cells => 160,
+    }
+}
+
+/// Inserts a data column as wide as its kind's width at `zoom`.
+fn insert_data_column(
+    list: HWND,
+    kind: UiColumnKind,
+    data_index: u8,
+    zoom: u32,
+    column_zoom: &mut crate::zoom::ColumnZoom,
+) -> Result<(), ()> {
+    let index = usize::from(data_index);
+    if matches!(kind, UiColumnKind::Preview) && data_index != 1 {
+        return Err(());
+    }
+    let width = column_zoom.insert(index, data_column_width(kind), zoom);
+    match kind {
+        UiColumnKind::Preview => insert_column(list, index, w!("Preview"), width),
         UiColumnKind::Fields => {
             let title = format!("Column {data_index}");
             let mut encoded: Vec<u16> = title.encode_utf16().collect();
             encoded.push(0);
-            insert_column(list, index, PCWSTR(encoded.as_ptr()), 220)
+            insert_column(list, index, PCWSTR(encoded.as_ptr()), width)
         }
         UiColumnKind::Cells => {
             let mut encoded: Vec<u16> = sheet_column_letters(data_index).encode_utf16().collect();
             encoded.push(0);
-            insert_column(list, index, PCWSTR(encoded.as_ptr()), 160)
+            insert_column(list, index, PCWSTR(encoded.as_ptr()), width)
         }
     }
 }
@@ -4894,8 +5282,14 @@ fn synchronize_data_columns(
     }
     while state.columns.data_columns < layout.data_columns() {
         let next = state.columns.data_columns.saturating_add(1);
-        insert_data_column(state.list, layout.kind(), next)
-            .map_err(|()| ShellError::new("native data-column creation failed"))?;
+        insert_data_column(
+            state.list,
+            layout.kind(),
+            next,
+            state.theme.zoom,
+            &mut state.column_zoom,
+        )
+        .map_err(|()| ShellError::new("native data-column creation failed"))?;
         state.columns.data_columns = next;
     }
     Ok(())
@@ -5219,6 +5613,9 @@ fn serve_display_text(state: &WindowState, notification: &mut NMLVDISPINFOW) {
     // immutable cache storage or the static loading string. Smoke attestation is
     // one bounded comparison plus an atomic store.
     notification.item.pszText = PWSTR(text.as_ptr().cast_mut());
+    if state.document_smoke {
+        state.document_smoke_cells.fetch_add(1, Ordering::Relaxed);
+    }
     if state.document_smoke
         && state.active_serial.is_some()
         && absolute_row == 0
@@ -5482,6 +5879,7 @@ fn stash_active(state: &mut WindowState) -> Result<BackgroundTab, ShellError> {
         sheets: state.sheets.take(),
         columns: state.columns,
         column_widths,
+        column_zoom: state.column_zoom.clone(),
         rows,
         cache,
         top_row,
@@ -5512,8 +5910,13 @@ fn restore_tab(
     state.pending_reveal = None;
 
     reset_data_columns(state)?;
-    insert_existing_data_columns(state.list, tab.columns)
-        .map_err(|()| ShellError::new("native data-column restore failed"))?;
+    insert_existing_data_columns(
+        state.list,
+        tab.columns,
+        state.theme.zoom,
+        &mut state.column_zoom,
+    )
+    .map_err(|()| ShellError::new("native data-column restore failed"))?;
     state.columns = tab.columns;
     sorting::update_header(state);
     set_column_widths(state.list, &tab.column_widths);
@@ -6174,6 +6577,10 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
         return true;
     };
     if state.document_smoke_observed.load(Ordering::Acquire) & required_mask != required_mask {
+        return true;
+    }
+    if let Err(error) = verify_zoom_with_rows(window) {
+        eprintln!("document smoke zoom check failed: {error}");
         return true;
     }
     let Some(evidence) = document_smoke_evidence(event) else {
