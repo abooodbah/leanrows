@@ -10,8 +10,9 @@ param(
 # Drives a running LeanRows window from outside and times zoom. The saved
 # zoom level is set to 100% for the run and put back afterwards.
 # One step: WM_COMMAND zoom in/out, then wait until the list shows the state a
-# settled window has at that level (header height and row height), then flush
-# any pending paint with RedrawWindow(RDW_UPDATENOW | RDW_ALLCHILDREN).
+# settled window has at that level (header height and row height), then until
+# the list and its column titles have painted it: no update region is left and
+# a no-op message sent to the list has been answered.
 # Bursts post the input at once (Ctrl+wheel notches) or every 33 ms (a held
 # Ctrl+Plus at the keyboard repeat rate) and time until the final level is
 # shown and painted. A sampler thread records the working set every 2 ms.
@@ -62,6 +63,16 @@ public static class ZoomProbe {
         int viewHeight = (int)((view >> 16) & 0xffff);
         return ((long)(r.Bottom - r.Top) << 32) | (uint)viewHeight;
     }
+    [DllImport("user32.dll")] public static extern bool GetUpdateRect(IntPtr h, IntPtr r, bool erase);
+    // Waits until the list and its titles have nothing left to paint, then
+    // sends a no-op message, which the UI thread answers only once it has
+    // finished the paint it is in.
+    public static void Painted(IntPtr list) {
+        IntPtr header = SendMessageW(list, LVM_GETHEADER, IntPtr.Zero, IntPtr.Zero);
+        var clock = Stopwatch.StartNew();
+        while ((GetUpdateRect(list, IntPtr.Zero, false) || GetUpdateRect(header, IntPtr.Zero, false)) && clock.ElapsedMilliseconds < 5000) { Thread.Sleep(0); }
+        SendMessageW(list, 0, IntPtr.Zero, IntPtr.Zero);
+    }
     public static void Flush(IntPtr window) { RedrawWindow(window, IntPtr.Zero, IntPtr.Zero, RDW_UPDATENOW | RDW_ALLCHILDREN); }
     public static void Command(IntPtr window, int id) { SendMessageW(window, WM_COMMAND, (IntPtr)id, IntPtr.Zero); }
     public static void PostCommand(IntPtr window, int id) { PostMessageW(window, WM_COMMAND, (IntPtr)id, IntPtr.Zero); }
@@ -70,10 +81,10 @@ public static class ZoomProbe {
         long w = ((long)(delta & 0xffff) << 16) | 0x0008;
         PostMessageW(list, WM_MOUSEWHEEL, (IntPtr)w, IntPtr.Zero);
     }
-    // Waits until the list shows `expected`, then flushes paint. Returns ms.
+    // Waits until the list shows `expected` and has painted it. Returns ms.
     public static double WaitFor(IntPtr window, IntPtr list, long expected, Stopwatch clock, int timeoutMs) {
         while (clock.ElapsedMilliseconds < timeoutMs) {
-            if (State(list) == expected) { Flush(window); return clock.Elapsed.TotalMilliseconds; }
+            if (State(list) == expected) { Painted(list); Flush(window); return clock.Elapsed.TotalMilliseconds; }
             Thread.Sleep(0);
         }
         return -1;
