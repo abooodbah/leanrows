@@ -4,6 +4,62 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-05
+
+LeanRows takes on LeanMark's look, and sorting a large file is several times
+faster.
+
+### Added
+
+- LeanMark's Dim and Dusk themes, so the theme button cycles System, Light,
+  Dark, Dim and Dusk with LeanMark 0.6.0's colours. Windows high contrast still
+  replaces every theme with system colours.
+- The theme button shows the current theme as LeanMark's coloured dot, and its
+  tooltip names the theme, such as "System (Dark)". `Ctrl+Shift+T` changes the
+  theme.
+- A settings button and panel, opened with `Ctrl+/` or `F1` and closed with
+  `Escape`: the five themes, the zoom, and the list of every keyboard shortcut
+  and mouse action, sorting included.
+- Zoom for the rows with LeanMark's steps from 50% to 300%: `Ctrl+Plus`,
+  `Ctrl+Minus`, `Ctrl+0`, or `Ctrl` with the mouse wheel. Only the rows and
+  their column titles zoom. The level is remembered.
+
+### Changed
+
+- The toolbar and tabs follow LeanMark: ghost buttons that show a hover, a
+  bordered Open, a rounded search field with a focus ring, the "LR" wordmark,
+  a border below the bar, and tabs without separators whose close mark shows
+  on the selected or hovered tab.
+- Sorting merges up to 64 sorted runs at a time instead of two.
+- Sorting builds its row-to-rank map with sequential writes instead of a seek
+  and a small write for every row.
+- Sorting decides most comparisons from the stored key prefix without setting
+  up readers for the full keys.
+- Dark's focus ring uses LeanMark's colour.
+
+### Measured
+
+On one `windows-2022` GitHub Actions runner, 0.4.0 and 0.5.0 built and measured
+the same way ([run 42051703441](https://github.com/abooodbah/leanrows/actions/runs/42051703441)),
+with a 10,000,000-row, 250,000,000-byte CSV sorted by its first column in text
+order:
+
+| Measure | 0.4.0 | 0.5.0 |
+| --- | --- | --- |
+| Sort, core engine | 102.1 s | 16.1 s |
+| Sort, the app's worker | not measured | 14.1 s |
+| Sort, memory charged to its 16 MiB limit | 2.6 MiB | 6.6 MiB |
+| Sort, temporary disk at its peak | 2,441 MiB | 2,441 MiB |
+| Start to input idle, no file | 59 ms | 62 ms |
+| Start to input idle, the CSV open | 91 ms | 104 ms |
+| Peak working set, the CSV open | 16.2 MiB | 16.3 MiB |
+| Executable size | 918,528 bytes | 986,624 bytes |
+
+The sort uses 4 MiB more memory while it merges, for the 64 read pages. The
+earlier maintainer's-laptop figure of about 6 minutes for 10 million rows was
+measured in the app; this runner is faster, so compare the two columns, not
+the laptop.
+
 ## [0.4.0] - 2026-11-02
 
 Column sorting, contributed by @w3bgr3p in #9.
@@ -184,6 +240,7 @@ Column sorting, contributed by @w3bgr3p in #9.
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.5.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.5.0
 [0.4.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.4.0
 [0.3.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.3.0
 [0.2.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.2.0
