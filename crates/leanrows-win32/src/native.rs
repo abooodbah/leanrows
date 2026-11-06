@@ -1201,6 +1201,14 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
                 )));
             }
             // SAFETY: WM_GETFONT carries no pointers.
+            let titles = list_header(state.list)
+                .map(|header| unsafe { SendMessageW(header, WM_GETFONT, None, None) }.0);
+            if titles != Some(state.theme.fonts.grid_header().0 as isize) {
+                return Err(ShellError::new(format!(
+                    "the column titles do not have the {expected}% title font"
+                )));
+            }
+            // SAFETY: WM_GETFONT carries no pointers.
             let search =
                 unsafe { SendMessageW(state.chrome.search_edit, WM_GETFONT, None, None) }.0;
             if search != state.theme.fonts.body().0 as isize {
