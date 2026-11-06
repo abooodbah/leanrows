@@ -8,6 +8,7 @@ mod hover;
 mod layout;
 mod process;
 mod progress;
+mod scrollbar;
 mod settings;
 mod sort_smoke;
 mod sorting;
@@ -545,6 +546,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let instance = HINSTANCE(module.0);
     register_window_class(instance)?;
     settings::register_class(instance)?;
+    scrollbar::register_class(instance)?;
     let accelerators = load_accelerators(instance)?;
     let smoke_verified = Arc::new(AtomicBool::new(false));
     let document_smoke_observed = Arc::new(AtomicU64::new(0));
@@ -1017,6 +1019,7 @@ fn verify_shell_smoke(
             verify_theme_button_cycle(window)?;
             verify_grid_zoom(window)?;
             verify_settings_panel(window)?;
+            verify_thin_scroll_bars(window)?;
             verify_progress_indicator(state)?;
             verify_tab_strip(window)?;
             verify_native_presentation(window, state)?;
@@ -1647,6 +1650,366 @@ fn verify_settings_panel(window: HWND) -> Result<(), ShellError> {
         ));
     }
     verification
+}
+
+/// The thin bars that stand in for a list's system scroll bars: the strip
+/// beside or below the rows that one of them covers, or `None`.
+fn thin_bar_over(list: HWND, vertical: bool) -> Option<(HWND, RECT)> {
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetParent};
+    // SAFETY: The list is live; its parent's children are only read.
+    let parent = unsafe { GetParent(list) }.ok()?;
+    let mut edge = RECT::default();
+    // SAFETY: As above; the rectangle is writable.
+    unsafe { GetWindowRect(list, &raw mut edge) }.ok()?;
+    let mut child = None;
+    loop {
+        // SAFETY: Walks the parent's children of the bar class.
+        let next =
+            unsafe { FindWindowExW(Some(parent), child, w!("LeanRowsScrollBar"), None) }.ok()?;
+        let mut rect = RECT::default();
+        // SAFETY: As above.
+        let _ = unsafe { GetWindowRect(next, &raw mut rect) };
+        // SAFETY: As above.
+        let shown = unsafe { IsWindowVisible(next) }.as_bool();
+        let fits = if vertical {
+            rect.right == edge.right && rect.top == edge.top
+        } else {
+            rect.left == edge.left && rect.bottom == edge.bottom
+        };
+        if shown && fits {
+            return Some((next, rect));
+        }
+        child = Some(next);
+    }
+}
+
+fn top_row(list: HWND) -> isize {
+    // SAFETY: LVM_GETTOPINDEX carries no pointers.
+    unsafe { SendMessageW(list, LVM_GETTOPINDEX, None, None) }.0
+}
+
+/// Thin, theme-coloured bars stand in for the rows' scroll bars: the list
+/// keeps a 10 px strip, not the system bar's width, a bar covers that strip,
+/// and its thumb drags, its track pages and the wheel over it scrolls. The
+/// settings panel's shortcut list fits its width, needs no horizontal bar
+/// and shows every action whole.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one smoke walks the bars through every way to scroll"
+)]
+fn verify_thin_scroll_bars(window: HWND) -> Result<(), ShellError> {
+    use windows::Win32::UI::WindowsAndMessaging::{WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE};
+    let pointer = state_pointer_for(window);
+    // SAFETY: The smoke runs synchronously on the window's UI thread.
+    let (list, dpi, rows) = unsafe { pointer.as_ref() }
+        .map(|state| {
+            (
+                state.list,
+                state.theme.metrics.dpi,
+                // SAFETY: LVM_GETITEMCOUNT carries no pointers.
+                unsafe { SendMessageW(state.list, LVM_GETITEMCOUNT, None, None) }.0,
+            )
+        })
+        .ok_or_else(|| ShellError::new("scroll bar smoke state is unavailable"))?;
+    let strip = i32::try_from((10 * u64::from(dpi.max(96)) + 48) / 96).unwrap_or(10);
+    let set_rows = |count: isize| {
+        // SAFETY: The owner-data list takes a row count and no pointers.
+        unsafe {
+            SendMessageW(
+                list,
+                LVM_SETITEMCOUNT,
+                Some(WPARAM(count.unsigned_abs())),
+                Some(LPARAM(0)),
+            );
+            let _ = UpdateWindow(list);
+        }
+    };
+    set_rows(5_000);
+    let verification = (|| {
+        let mut frame = RECT::default();
+        let mut client = RECT::default();
+        // SAFETY: The list is live and both rectangles are writable.
+        unsafe {
+            let _ = GetWindowRect(list, &raw mut frame);
+            let _ = GetClientRect(list, &raw mut client);
+        }
+        let kept = (frame.right - frame.left) - (client.right - client.left);
+        if kept != strip {
+            return Err(ShellError::new(format!(
+                "the rows keep {kept} px for their vertical scroll bar, not a {strip} px strip"
+            )));
+        }
+        let (bar, place) = thin_bar_over(list, true)
+            .ok_or_else(|| ShellError::new("no thin bar covers the strip beside the rows"))?;
+        if place.left != frame.right - strip || place.bottom != frame.bottom {
+            return Err(ShellError::new(format!(
+                "the thin bar covers x {}..{}, y to {}, not the strip x {}..{}, y to {}",
+                place.left,
+                place.right,
+                place.bottom,
+                frame.right - strip,
+                frame.right,
+                frame.bottom
+            )));
+        }
+        // SAFETY: LVM_GETCOUNTPERPAGE carries no pointers.
+        let page = unsafe { SendMessageW(list, LVM_GETCOUNTPERPAGE, None, None) }.0;
+        let height = place.bottom - place.top;
+        let at = |y: i32| LPARAM(isize::try_from((y & 0xffff) << 16 | (strip / 2)).unwrap_or(0));
+        // SAFETY: Mouse messages carry client coordinates and no pointers.
+        let mouse = |message: u32, y: i32| unsafe {
+            SendMessageW(bar, message, Some(WPARAM(0)), Some(at(y)));
+        };
+        // A press on the track below the thumb pages down once.
+        mouse(WM_LBUTTONDOWN, height - 2);
+        mouse(WM_LBUTTONUP, height - 2);
+        if top_row(list) != page {
+            return Err(ShellError::new(format!(
+                "a press below the thumb showed row {} first, not row {page}",
+                top_row(list)
+            )));
+        }
+        // The thumb at the top, caught and dragged to the end, shows the
+        // last page.
+        // SAFETY: LVM_ENSUREVISIBLE carries a row index.
+        unsafe { SendMessageW(list, LVM_ENSUREVISIBLE, Some(WPARAM(0)), Some(LPARAM(0))) };
+        let mut header = RECT::default();
+        if let Some(titles) = list_header(list) {
+            // SAFETY: The header is live and the rectangle writable.
+            let _ = unsafe { GetWindowRect(titles, &raw mut header) };
+        }
+        let thumb_top = (header.bottom - header.top) + strip / 2;
+        mouse(WM_LBUTTONDOWN, thumb_top);
+        mouse(WM_MOUSEMOVE, height + strip * 4);
+        mouse(WM_LBUTTONUP, height + strip * 4);
+        let end_row = 5_000 - page;
+        if top_row(list) != end_row {
+            return Err(ShellError::new(format!(
+                "dragging the thumb to the end showed row {} first, not row {end_row}",
+                top_row(list)
+            )));
+        }
+        // The wheel over the bar scrolls the rows as it does over them.
+        // SAFETY: As above.
+        unsafe { SendMessageW(list, LVM_ENSUREVISIBLE, Some(WPARAM(0)), Some(LPARAM(0))) };
+        let down = WPARAM(usize::from(0xff88_u16) << 16);
+        // SAFETY: The wheel message carries a delta and screen coordinates.
+        unsafe { SendMessageW(bar, WM_MOUSEWHEEL, Some(down), Some(LPARAM(0))) };
+        if top_row(list) <= 0 {
+            return Err(ShellError::new(
+                "the wheel over the thin bar did not scroll the rows",
+            ));
+        }
+        // The rows do not paint over the bars that lie on them.
+        // SAFETY: The list is live; its style is only read.
+        let style = unsafe { GetWindowLongPtrW(list, GWL_STYLE) };
+        if style & isize::try_from(WS_CLIPSIBLINGS.0).unwrap_or_default() == 0 {
+            return Err(ShellError::new("the rows paint over their thin bars"));
+        }
+        // The rows' messages reach the bars' code directly. Common controls'
+        // subclass dispatcher in between made a 10M-row Page Down 1 ms slower.
+        if !scrollbar::is_direct_procedure(list) {
+            return Err(ShellError::new(
+                "the rows' messages go through the common controls subclass dispatcher",
+            ));
+        }
+        // Ctrl+wheel over the bar zooms the rows, as it does over them.
+        // SAFETY: As above.
+        let original = unsafe { pointer.as_ref() }.map_or(0, |state| state.theme.zoom);
+        let notch = MSG {
+            hwnd: bar,
+            message: WM_MOUSEWHEEL,
+            wParam: WPARAM((120_usize << 16) | usize::try_from(MK_CONTROL.0).unwrap_or_default()),
+            ..Default::default()
+        };
+        let handled = handle_zoom_wheel(window, &notch);
+        // SAFETY: As above.
+        let zoomed = unsafe { pointer.as_ref() }.map_or(0, |state| state.theme.zoom);
+        set_grid_zoom(window, original)?;
+        if !handled || zoomed != crate::zoom::step_zoom(original, 1) {
+            return Err(ShellError::new(format!(
+                "Ctrl+wheel over the thin bar left the rows at {zoomed}%, not {}%",
+                crate::zoom::step_zoom(original, 1)
+            )));
+        }
+        // With the thin bars off, as in high contrast, the system bar and its
+        // width come back.
+        scrollbar::set_enabled(list, false);
+        let mut frame = RECT::default();
+        let mut client = RECT::default();
+        // SAFETY: The list is live and both rectangles are writable.
+        unsafe {
+            let _ = GetWindowRect(list, &raw mut frame);
+            let _ = GetClientRect(list, &raw mut client);
+        }
+        let system_kept = (frame.right - frame.left) - (client.right - client.left);
+        let bar_left = thin_bar_over(list, true).is_some();
+        scrollbar::set_enabled(list, true);
+        // SAFETY: A metric query.
+        let system = unsafe {
+            windows::Win32::UI::HiDpi::GetSystemMetricsForDpi(
+                windows::Win32::UI::WindowsAndMessaging::SM_CXVSCROLL,
+                dpi,
+            )
+        };
+        if system_kept != system || bar_left {
+            return Err(ShellError::new(format!(
+                "with the thin bars off the rows keep {system_kept} px, not the system bar's {system} px, and a thin bar shows: {bar_left}"
+            )));
+        }
+        Ok(())
+    })();
+    set_rows(rows);
+    // SAFETY: As above.
+    unsafe { SendMessageW(list, LVM_ENSUREVISIBLE, Some(WPARAM(0)), Some(LPARAM(0))) };
+    verification?;
+    verify_shortcut_list_fits(window)
+}
+
+/// The settings panel's shortcut list is no wider than its client area,
+/// has no horizontal bar, and every action fits whole in its row beside its
+/// keys, on as many lines as it needs.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one check run at two DPIs reads best as one pass"
+)]
+fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
+    use windows::Win32::Graphics::Gdi::{DT_CALCRECT, DT_NOPREFIX, DT_WORDBREAK};
+    use windows::Win32::UI::Controls::{LVIR_BOUNDS, LVM_GETITEMRECT};
+    use windows::Win32::UI::WindowsAndMessaging::WS_HSCROLL;
+    // SAFETY: The command is routed synchronously through the window.
+    unsafe {
+        SendMessageW(
+            window,
+            WM_COMMAND,
+            Some(WPARAM(usize::from(ID_VIEW_SETTINGS))),
+            Some(LPARAM(0)),
+        );
+    }
+    let pointer = state_pointer_for(window);
+    let check = |at: &str| -> Result<(), ShellError> {
+        // SAFETY: As above.
+        let state = unsafe { pointer.as_ref() }
+            .ok_or_else(|| ShellError::new("shortcut smoke state is unavailable"))?;
+        let list = state.settings.shortcuts;
+        // SAFETY: The list is live; style and rectangles are only read.
+        let style = unsafe { GetWindowLongPtrW(list, GWL_STYLE) };
+        if style & isize::try_from(WS_HSCROLL.0).unwrap_or_default() != 0 {
+            return Err(ShellError::new(
+                "the shortcut list has a horizontal scroll bar",
+            ));
+        }
+        let mut client = RECT::default();
+        // SAFETY: As above.
+        let _ = unsafe { GetClientRect(list, &raw mut client) };
+        let mut row = RECT {
+            left: i32::try_from(LVIR_BOUNDS).unwrap_or_default(),
+            ..Default::default()
+        };
+        // SAFETY: The rectangle outlives the synchronous call.
+        unsafe {
+            SendMessageW(
+                list,
+                LVM_GETITEMRECT,
+                Some(WPARAM(1)),
+                Some(LPARAM((&raw mut row) as isize)),
+            );
+        }
+        if row.right > client.right {
+            return Err(ShellError::new(format!(
+                "the shortcut rows are {} px wide in a {} px list",
+                row.right - row.left,
+                client.right
+            )));
+        }
+        let m = state.theme.metrics;
+        // SAFETY: The list is live; the DC is released below.
+        let device = unsafe { GetDC(Some(list)) };
+        let mut problem = None;
+        let mut tallest = m.table_row_height;
+        for entry in &crate::shortcuts::SHORTCUTS {
+            let keys: Vec<u16> = entry.keys.encode_utf16().collect();
+            let mut action: Vec<u16> = entry.action.encode_utf16().collect();
+            let mut size = windows::Win32::Foundation::SIZE::default();
+            let mut wrapped = RECT::default();
+            let room = (row.right - row.left) - m.space_1 * 2 - m.space_3;
+            // SAFETY: The theme's fonts outlive the DC; buffers are local.
+            unsafe {
+                SelectObject(device, HGDIOBJ(state.theme.fonts.caption().0));
+                let _ = GetTextExtentPoint32W(device, &keys, &raw mut size);
+                SelectObject(device, HGDIOBJ(state.theme.fonts.body().0));
+                wrapped.right = room - size.cx;
+                DrawTextW(
+                    device,
+                    &mut action,
+                    &raw mut wrapped,
+                    DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX,
+                );
+            }
+            let fits_across = wrapped.right <= room - size.cx;
+            let fits_down = wrapped.bottom - wrapped.top + m.space_2 * 2 <= row.bottom - row.top;
+            tallest = tallest.max(wrapped.bottom - wrapped.top + m.space_2 * 2);
+            if !(fits_across && fits_down) && problem.is_none() {
+                problem = Some(format!(
+                    "\"{}\" needs {} x {} px beside \"{}\" in a row with {} x {} px",
+                    entry.action,
+                    wrapped.right,
+                    wrapped.bottom - wrapped.top + m.space_2 * 2,
+                    entry.keys,
+                    room - size.cx,
+                    row.bottom - row.top
+                ));
+            }
+        }
+        // SAFETY: Releases the DC taken above.
+        unsafe { ReleaseDC(Some(list), device) };
+        // A report list makes a row one pixel taller than its image list.
+        if problem.is_none() && row.bottom - row.top > tallest + 1 {
+            problem = Some(format!(
+                "the shortcut rows are {} px high, but the tallest action needs {tallest} px",
+                row.bottom - row.top
+            ));
+        }
+        problem.map_or(Ok(()), |problem| {
+            Err(ShellError::new(format!("{at}{problem}")))
+        })
+    };
+    // A DPI change gives the panel a new width and new fonts; the rows
+    // must be fitted again to the width the panel gets.
+    // SAFETY: As above.
+    let dpi = unsafe { pointer.as_ref() }.map_or(96, |state| state.theme.metrics.dpi);
+    let verification = check("").and_then(|()| {
+        rescale_for_smoke(window, dpi.saturating_mul(3) / 2)?;
+        let scaled = check("after a change to 150% DPI, ");
+        rescale_for_smoke(window, dpi)?;
+        scaled
+    });
+    // SAFETY: As above.
+    unsafe {
+        SendMessageW(
+            window,
+            WM_COMMAND,
+            Some(WPARAM(usize::from(settings::ID_SETTINGS_CLOSE))),
+            Some(LPARAM(0)),
+        );
+    }
+    verification
+}
+
+/// Rebuilds the theme at `dpi` and lays the window out again, in the order
+/// a `WM_DPICHANGED` refresh uses: presentation first, then layout.
+fn rescale_for_smoke(window: HWND, dpi: u32) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke checks run on the window's UI thread.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("rescale smoke state is unavailable"))?;
+    let next = ThemeResources::new(state.theme.preference, dpi, state.theme.zoom)?;
+    let previous = std::mem::replace(&mut state.theme, next);
+    let result = apply_native_presentation(state);
+    drop(previous);
+    result?;
+    layout_children(window);
+    Ok(())
 }
 
 fn font_height(font: windows::Win32::Graphics::Gdi::HFONT) -> Option<i32> {
@@ -3151,6 +3514,7 @@ fn apply_native_presentation(state: &WindowState) -> Result<(), ShellError> {
         let _ = SetWindowTheme(state.chrome.search_edit, visual_class, visual_subclass);
         let _ = SetWindowTheme(state.chrome.match_case, visual_class, visual_subclass);
     }
+    scrollbar::set_enabled(state.list, thin_scroll_bars(state.theme.effective));
     let _ = state.theme.apply_window_chrome(state.window);
     apply_theme_button_text(state)?;
     invalidate_native_presentation(state);
@@ -3193,7 +3557,8 @@ fn apply_settings_presentation(state: &WindowState) -> Result<(), ShellError> {
         set_control_text(panel.zoom_value, &format!("{}%", state.theme.zoom))?;
     }
     if !panel.shortcuts.0.is_null() {
-        settings::apply_row_height(panel.shortcuts, state.theme.metrics.table_row_height);
+        settings::fit_rows(panel.shortcuts, &state.theme);
+        scrollbar::set_enabled(panel.shortcuts, thin_scroll_bars(state.theme.effective));
         let light = matches!(state.theme.effective, EffectiveTheme::Light);
         // SAFETY: The list is live; an empty class turns visual styles off so
         // a dark theme's colours are not covered by light chrome.
@@ -3212,6 +3577,12 @@ fn apply_settings_presentation(state: &WindowState) -> Result<(), ShellError> {
         )?;
     }
     Ok(())
+}
+
+/// The lists draw thin bars in the theme's colours, except in high contrast,
+/// where the system's own bars keep the system's colours.
+const fn thin_scroll_bars(theme: EffectiveTheme) -> bool {
+    !matches!(theme, EffectiveTheme::HighContrast)
 }
 
 /// The theme button shows the theme's name; its tooltip and accessible name
@@ -3438,7 +3809,10 @@ fn handle_zoom_wheel(window: HWND, message: &MSG) -> bool {
 fn is_zoom_wheel(state: &WindowState, message: &MSG) -> bool {
     message.message == WM_MOUSEWHEEL
         && message.wParam.0 & 0xffff & MK_CONTROL.0 as usize != 0
-        && (message.hwnd == state.list || Some(message.hwnd) == list_header(state.list))
+        && (message.hwnd == state.list
+            || Some(message.hwnd) == list_header(state.list)
+            || scrollbar::bar_windows(state.list)
+                .is_some_and(|(down, across)| message.hwnd == down || message.hwnd == across))
 }
 
 fn wheel_delta(message: &MSG) -> i32 {
@@ -4551,6 +4925,18 @@ fn open_settings(window: HWND) {
             return;
         };
         state.settings = handles;
+        if scrollbar::install(
+            state.settings.shortcuts,
+            window,
+            thin_scroll_bars(state.theme.effective),
+        )
+        .is_err()
+        {
+            set_status(
+                window,
+                "The settings panel's scroll bar could not be created",
+            );
+        }
         for button in state.settings.buttons() {
             let _ = hover::install(button, window);
         }
@@ -4973,6 +5359,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
     progress::install_subclass(progress, window).map_err(|_| ())?;
     let header = list_header(list).ok_or(())?;
     header::install_subclass(header, window).map_err(|_| ())?;
+    scrollbar::install(list, window, thin_scroll_bars(state.theme.effective)).map_err(|_| ())?;
     tabs::install_subclass(tab_strip, window).map_err(|_| ())?;
     // A new child goes below its older siblings; the bar was created first,
     // so it goes to the bottom, under the controls it holds.
@@ -7066,6 +7453,21 @@ mod tests {
             display_truncated_rows: 0,
             escaped_non_utf8_rows: 0,
             sheets: None,
+        }
+    }
+
+    #[test]
+    fn high_contrast_keeps_the_system_scroll_bars() {
+        assert!(!super::thin_scroll_bars(
+            super::EffectiveTheme::HighContrast
+        ));
+        for theme in [
+            super::EffectiveTheme::Light,
+            super::EffectiveTheme::Dark,
+            super::EffectiveTheme::Dim,
+            super::EffectiveTheme::Dusk,
+        ] {
+            assert!(super::thin_scroll_bars(theme), "{theme:?}");
         }
     }
 
