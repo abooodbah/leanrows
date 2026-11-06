@@ -1,12 +1,42 @@
 # Validation status
 
-**Status date:** 2026-11-02<br>
-**Scope:** LeanRows 0.4.0 published release, Windows x64; tagged-CI,
-public-package and maintainer working-set checks. The full local QA receipt
-recorded for 0.2.0 was not repeated for 0.4.0.<br>
-**Current public release:** LeanRows 0.4.0
+**Status date:** 2026-11-06<br>
+**Scope:** LeanRows 0.5.0 published release, Windows x64; tagged-CI,
+public-package and CI-runner measurements. The full local QA receipt
+recorded for 0.2.0 was not repeated for 0.5.0.<br>
+**Current public release:** LeanRows 0.5.0
 
-## Published v0.4.0 verification
+## Published v0.5.0 verification
+
+LeanRows 0.5.0 adds LeanMark's five themes, a settings panel with the
+shortcut list, zoom, a restyled toolbar and tabs, and a faster sort. It is
+published on
+[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.5.0).
+
+The release is anchored to commit `830c7cabea5a96f8f5ff244ede33026d956be8f3`
+(the merge of #40) and annotated tag `v0.5.0`. Tagged workflow
+[run 42229632315](https://github.com/abooodbah/leanrows/actions/runs/42229632315)
+published the release. The Store package workflow
+([run 42229632710](https://github.com/abooodbah/leanrows/actions/runs/42229632710))
+built the MSIX from the published ZIP.
+
+| Published evidence field | v0.5.0 result |
+| --- | --- |
+| Release | [LeanRows v0.5.0](https://github.com/abooodbah/leanrows/releases/tag/v0.5.0) contains exactly the unsigned Windows x64 ZIP and its checksum sidecar. |
+| Public package | The sidecar records ZIP SHA-256 `584101EEE1522C8B5C80327AA93853B4A8912940F58907673F896B0BCD2DA97E`, and the downloaded 487,192-byte ZIP matched it. |
+| Public executable | The extracted `leanrows.exe` is 986,624 bytes, reports file version `0.5.0.0`, and has SHA-256 `681355FBE326563C61B42AE656A9222A434C8EE6587B344006B7C151F26274EF`. |
+| Measurements | On a `windows-2022` runner ([run 42051703441](https://github.com/abooodbah/leanrows/actions/runs/42051703441)), with a 10,000,000-row CSV: peak working set 16.3 MiB open (0.4.0: 16.2), sort 14.1 s in the app's worker and 16.1 s in the core engine (0.4.0 engine: 102.1 s). Not measured on the maintainer's laptop. |
+| Distribution | Scoop was moved to 0.5.0, the open winget submission was moved from 0.4.0 to 0.5.0, and the Chocolatey package was pushed and is in moderation. |
+
+Not repeated for 0.5.0: the aggregate local QA receipt, the live installer
+cycle, and the installed-association checks. The tests and mutation results
+are recorded in the pull requests of this release and the
+[0.5.0 release notes](releases/v0.5.0.md).
+
+This status update is a post-release documentation change on `main`; it is
+not part of the `v0.5.0` tag.
+
+## Earlier release: v0.4.0
 
 LeanRows 0.4.0 adds whole-file column sorting, contributed in pull request #9
 with follow-ups in #24. It is published on
