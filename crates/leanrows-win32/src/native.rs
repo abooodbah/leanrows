@@ -277,6 +277,9 @@ struct WindowState {
     closing: bool,
     document_smoke: bool,
     document_smoke_observed: Arc<AtomicU64>,
+    /// Cells the list asked for during the document smoke, so it can tell
+    /// whether a zoom step painted rows before it returned.
+    document_smoke_cells: AtomicU64,
     document_smoke_evidence: Arc<Mutex<Option<DocumentSmokeEvidence>>>,
     reclaimed: Arc<AtomicBool>,
 }
@@ -586,6 +589,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         closing: false,
         document_smoke: options.document_smoke_test,
         document_smoke_observed: Arc::clone(&document_smoke_observed),
+        document_smoke_cells: AtomicU64::new(0),
         document_smoke_evidence: Arc::clone(&document_smoke_evidence),
         reclaimed: Arc::clone(&reclaimed),
     });
@@ -1156,6 +1160,9 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
         .zoom;
     let verification = (|| {
         set_grid_zoom(window, crate::zoom::DEFAULT_ZOOM)?;
+        verify_zoom_column_widths(window)?;
+        verify_zoom_repaints_only_rows(window)?;
+        verify_zoom_background_tab(window)?;
         for (command, expected) in [
             (ID_VIEW_ZOOM_IN, 110),
             (ID_VIEW_ZOOM_IN, 125),
@@ -1204,6 +1211,208 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
         )));
     }
     verification
+}
+
+/// Zooming 100% to 300%, down to 50% and back gives the widths it started
+/// with, and at every level each column is as wide as one opened at that
+/// level: the Row column 112 px and the Preview column 720 px at 100%.
+fn verify_zoom_column_widths(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    let widths = || {
+        // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+        unsafe { pointer.as_ref() }
+            .map(|state| column_widths(state.list, state.columns))
+            .ok_or_else(|| ShellError::new("zoom width smoke state was detached"))
+    };
+    let start = widths()?;
+    if start != [112, 720] {
+        return Err(ShellError::new(format!(
+            "zoom width smoke expected Row and Preview at 112 and 720 px, found {start:?}"
+        )));
+    }
+    let up = crate::zoom::ZOOM_LEVELS
+        .iter()
+        .filter(|level| **level > 100);
+    let down = crate::zoom::ZOOM_LEVELS.iter().rev().skip(1);
+    let back = crate::zoom::ZOOM_LEVELS
+        .iter()
+        .filter(|level| **level > 50 && **level <= 100);
+    let mut previous = crate::zoom::DEFAULT_ZOOM;
+    for &level in up.chain(down).chain(back) {
+        let command = if level > previous {
+            ID_VIEW_ZOOM_IN
+        } else {
+            ID_VIEW_ZOOM_OUT
+        };
+        // SAFETY: The command is routed synchronously through the window.
+        unsafe {
+            SendMessageW(
+                window,
+                WM_COMMAND,
+                Some(WPARAM(usize::from(command))),
+                Some(LPARAM(0)),
+            );
+        }
+        previous = level;
+        let cold = [
+            crate::zoom::scale_by_zoom(112, level),
+            crate::zoom::scale_by_zoom(720, level),
+        ];
+        let shown = widths()?;
+        if shown != cold {
+            return Err(ShellError::new(format!(
+                "at {level}% the columns are {shown:?} px, not {cold:?} as when opened there"
+            )));
+        }
+    }
+    if widths()? != start {
+        return Err(ShellError::new(
+            "zooming out and back did not return the starting column widths",
+        ));
+    }
+    Ok(())
+}
+
+/// The next level in, or the next level out from the largest one.
+fn other_zoom_level(zoom: u32) -> u32 {
+    let next = crate::zoom::step_zoom(zoom, 1);
+    if next == zoom {
+        crate::zoom::step_zoom(zoom, -1)
+    } else {
+        next
+    }
+}
+
+/// A zoom step changes only the rows, so it leaves only the list to repaint,
+/// and it paints nothing before it returns: the paint comes once, after the
+/// step and any steps queued behind it.
+fn verify_zoom_repaints_only_rows(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let (list, topbar, original) = unsafe { pointer.as_ref() }
+        .map(|state| (state.list, state.chrome.topbar, state.theme.zoom))
+        .ok_or_else(|| ShellError::new("zoom paint smoke state is unavailable"))?;
+    // SAFETY: Painting what is pending clears every update region first.
+    unsafe {
+        let _ = RedrawWindow(
+            Some(window),
+            None,
+            None,
+            RDW_UPDATENOW | windows::Win32::Graphics::Gdi::RDW_ALLCHILDREN,
+        );
+    }
+    let result = set_grid_zoom(window, other_zoom_level(original));
+    // SAFETY: Both are live children; a null rectangle only asks whether
+    // part of the window waits to be painted.
+    let (rows_pending, bar_pending) = unsafe {
+        (
+            windows::Win32::Graphics::Gdi::GetUpdateRect(list, None, false).as_bool(),
+            windows::Win32::Graphics::Gdi::GetUpdateRect(topbar, None, false).as_bool(),
+        )
+    };
+    let restore = set_grid_zoom(window, original);
+    result?;
+    restore?;
+    if !rows_pending {
+        return Err(ShellError::new(
+            "a zoom step painted the rows before it returned",
+        ));
+    }
+    if bar_pending {
+        return Err(ShellError::new("a zoom step invalidated the toolbar"));
+    }
+    Ok(())
+}
+
+/// A tab in the background zooms with the one showing. After two steps to
+/// 125% its columns are 140 and 900 px, as when opened at 125%, and the list
+/// shows those widths when the tab comes back.
+fn verify_zoom_background_tab(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("zoom tab smoke state is unavailable"))?;
+    let tab = stash_active(state)?;
+    state.background_tabs.push(tab);
+    for _ in 0..2 {
+        // SAFETY: The command is routed synchronously through the window.
+        unsafe {
+            SendMessageW(
+                window,
+                WM_COMMAND,
+                Some(WPARAM(usize::from(ID_VIEW_ZOOM_IN))),
+                Some(LPARAM(0)),
+            );
+        }
+    }
+    // SAFETY: As above; the zoom commands leave the state attached.
+    let state = unsafe { pointer.as_mut() }
+        .ok_or_else(|| ShellError::new("zoom tab smoke state was detached"))?;
+    let tab = state
+        .background_tabs
+        .pop()
+        .ok_or_else(|| ShellError::new("zoom tab smoke lost its background tab"))?;
+    let stored = tab.column_widths.clone();
+    let restored = restore_tab(window, state, tab);
+    let shown = column_widths(state.list, state.columns);
+    let back = set_grid_zoom(window, crate::zoom::DEFAULT_ZOOM);
+    restored?;
+    back?;
+    let cold = [
+        crate::zoom::scale_by_zoom(112, 125),
+        crate::zoom::scale_by_zoom(720, 125),
+    ];
+    if stored != cold || shown != cold {
+        return Err(ShellError::new(format!(
+            "a background tab zoomed to 125% kept {stored:?} px and showed {shown:?}, not {cold:?}"
+        )));
+    }
+    Ok(())
+}
+
+/// With rows on screen, a zoom step asks the list for no cell before it
+/// returns, and the list paints its rows once afterwards.
+fn verify_zoom_with_rows(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    let cells = || {
+        // SAFETY: The document smoke runs on the window's owning UI thread.
+        unsafe { pointer.as_ref() }
+            .map(|state| state.document_smoke_cells.load(Ordering::Relaxed))
+            .unwrap_or_default()
+    };
+    // SAFETY: As above; only handles and the level are copied.
+    let (list, original) = unsafe { pointer.as_ref() }
+        .map(|state| (state.list, state.theme.zoom))
+        .ok_or_else(|| ShellError::new("zoom row smoke state is unavailable"))?;
+    // SAFETY: Painting what is pending clears every update region first.
+    unsafe {
+        let _ = RedrawWindow(
+            Some(window),
+            None,
+            None,
+            RDW_UPDATENOW | windows::Win32::Graphics::Gdi::RDW_ALLCHILDREN,
+        );
+    }
+    let before = cells();
+    let result = set_grid_zoom(window, other_zoom_level(original));
+    let during = cells().saturating_sub(before);
+    // SAFETY: The list is live; this paints what the step left pending.
+    let _ = unsafe { UpdateWindow(list) };
+    let after = cells().saturating_sub(before).saturating_sub(during);
+    let restore = set_grid_zoom(window, original);
+    result?;
+    restore?;
+    if during != 0 {
+        return Err(ShellError::new(format!(
+            "a zoom step painted {during} cells before it returned"
+        )));
+    }
+    if after == 0 {
+        return Err(ShellError::new(
+            "the rows did not repaint after a zoom step",
+        ));
+    }
+    Ok(())
 }
 
 /// The settings panel opens from its command, takes the right edge, focuses
@@ -5219,6 +5428,9 @@ fn serve_display_text(state: &WindowState, notification: &mut NMLVDISPINFOW) {
     // immutable cache storage or the static loading string. Smoke attestation is
     // one bounded comparison plus an atomic store.
     notification.item.pszText = PWSTR(text.as_ptr().cast_mut());
+    if state.document_smoke {
+        state.document_smoke_cells.fetch_add(1, Ordering::Relaxed);
+    }
     if state.document_smoke
         && state.active_serial.is_some()
         && absolute_row == 0
@@ -6174,6 +6386,10 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
         return true;
     };
     if state.document_smoke_observed.load(Ordering::Acquire) & required_mask != required_mask {
+        return true;
+    }
+    if let Err(error) = verify_zoom_with_rows(window) {
+        eprintln!("document smoke zoom check failed: {error}");
         return true;
     }
     let Some(evidence) = document_smoke_evidence(event) else {
