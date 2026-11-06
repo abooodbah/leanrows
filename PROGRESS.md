@@ -98,18 +98,26 @@ measured the same way.
 | 6. The sort's source check every 32 steps | [#36](https://github.com/abooodbah/leanrows/pull/36) | 10M-row sort through the app's worker on Windows CI: 65.1 s to 49.0 s; the core engine alone took 49.9 s. |
 | 10. Settings panel | [#37](https://github.com/abooodbah/leanrows/pull/37) | LeanMark's settings button and 300 DIP panel: the five themes, the zoom, and 39 shortcuts in 7 groups, sorting included. Ctrl+/ or F1 opens it, Escape closes it. |
 | 11. Toolbar and tabs restyle | [#38](https://github.com/abooodbah/leanrows/pull/38) | LeanMark's ghost, secondary and primary buttons with hover, the bordered search field with a focus ring, the "LR" wordmark, the bar's border, and tabs without separators. |
+| 12. Version 0.5.0 | [#40](https://github.com/abooodbah/leanrows/pull/40) | Merged as `830c7ca`. |
 | 7. Dim and Dusk themes | [#30](https://github.com/abooodbah/leanrows/pull/30) | Five themes with LeanMark 0.6.0's values; start time, memory and size unchanged. |
 
 ## In progress
 
-- 12. Version 0.5.0 (branch `release-0.5.0`).
+- 13. Tag `v0.5.0`: blocked in this session (see Known gaps).
 
 ## Remaining
 
-Items 13 and 14 of the plan.
+Items 13 and 14 of the plan: the tag, the release and Store workflows it starts, and the post-release update of `site/`, `store/listing.md` and `docs/VALIDATION_STATUS.md`.
 
 ## Known gaps
 
+- The tag could not be created here: this session's GitHub gateway refuses
+  writes to git refs (`git push` of the tag and the REST tag and ref calls
+  both returned 403). From a PC, on main at `830c7ca`: `git tag -a v0.5.0
+  830c7ca -m "LeanRows 0.5.0"` and `git push origin v0.5.0`. The tag starts
+  the release workflow (`windows.yml`, which publishes the GitHub release
+  with `docs/releases/v0.5.0.md`) and the Store package workflow
+  (`store-msix.yml`). The post-release update follows the published facts.
 - This machine has no Windows. The app, its tests and every Windows number
   come from CI. Nothing is run by hand on a Windows desktop. The Windows code
   is type-checked and linted here with the `x86_64-pc-windows-msvc` standard
