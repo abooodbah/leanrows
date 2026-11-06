@@ -30,15 +30,16 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_STYLE, GWLP_ID, GWLP_USERDATA,
-    GetClientRect, GetParent, GetScrollInfo, GetWindowLongPtrW, GetWindowRect, HMENU, HWND_TOP,
-    IDC_ARROW, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, MA_NOACTIVATE, RegisterClassExW,
-    SB_ENDSCROLL, SB_HORZ, SB_PAGEDOWN, SB_PAGEUP, SB_VERT, SCROLLINFO, SIF_ALL, SM_CXVSCROLL,
-    SM_CYHSCROLL, SWP_FRAMECHANGED, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SWP_SHOWWINDOW, SendMessageW, SetTimer, SetWindowLongPtrW, SetWindowPos,
-    WM_CAPTURECHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCALCSIZE,
-    WM_NCDESTROY, WM_PAINT, WM_SETREDRAW, WM_SIZE, WM_TIMER, WM_VSCROLL, WM_WINDOWPOSCHANGED,
-    WNDCLASSEXW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_HSCROLL, WS_VSCROLL,
+    GWLP_WNDPROC, GetClientRect, GetParent, GetScrollInfo, GetWindowLongPtrW, GetWindowRect, HMENU,
+    HWND_TOP, IDC_ARROW, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, MA_NOACTIVATE,
+    RegisterClassExW, SB_ENDSCROLL, SB_HORZ, SB_PAGEDOWN, SB_PAGEUP, SB_VERT, SCROLLINFO, SIF_ALL,
+    SM_CXVSCROLL, SM_CYHSCROLL, SWP_FRAMECHANGED, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SendMessageW, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_NCCALCSIZE, WM_NCDESTROY, WM_PAINT, WM_SETREDRAW, WM_SIZE, WM_TIMER, WM_VSCROLL,
+    WM_WINDOWPOSCHANGED, WNDCLASSEXW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_HSCROLL,
+    WS_VSCROLL,
 };
 use windows::core::{PCWSTR, w};
 
@@ -248,6 +249,15 @@ pub(super) fn bar_windows(list: HWND) -> Option<(HWND, HWND)> {
     // SAFETY: As in `set_enabled`.
     unsafe { overlay_for(list).as_ref() }
         .map(|overlay| (overlay.bars[0].window, overlay.bars[1].window))
+}
+
+/// Whether `list`'s window procedure is the overlay's own, with nothing in
+/// between, for the smoke checks.
+#[must_use]
+pub(super) fn is_direct_procedure(list: HWND) -> bool {
+    // SAFETY: Reads the live list's window procedure.
+    let current = unsafe { GetWindowLongPtrW(list, GWLP_WNDPROC) };
+    current.cast_unsigned() == (list_proc as *const ()).addr()
 }
 
 /// Asks Windows to measure the list's frame again.

@@ -1806,6 +1806,13 @@ fn verify_thin_scroll_bars(window: HWND) -> Result<(), ShellError> {
         if style & isize::try_from(WS_CLIPSIBLINGS.0).unwrap_or_default() == 0 {
             return Err(ShellError::new("the rows paint over their thin bars"));
         }
+        // The rows' messages reach the bars' code directly. Common controls'
+        // subclass dispatcher in between made a 10M-row Page Down 1 ms slower.
+        if !scrollbar::is_direct_procedure(list) {
+            return Err(ShellError::new(
+                "the rows' messages go through the common controls subclass dispatcher",
+            ));
+        }
         // Ctrl+wheel over the bar zooms the rows, as it does over them.
         // SAFETY: As above.
         let original = unsafe { pointer.as_ref() }.map_or(0, |state| state.theme.zoom);
