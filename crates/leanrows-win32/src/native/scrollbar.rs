@@ -874,7 +874,8 @@ mod tests {
     use windows::Win32::UI::Controls::{
         LVM_DELETEALLITEMS, LVM_DELETECOLUMN, LVM_ENSUREVISIBLE, LVM_GETCOUNTPERPAGE,
         LVM_GETHEADER, LVM_GETITEMCOUNT, LVM_GETITEMRECT, LVM_GETTOPINDEX, LVM_INSERTCOLUMNW,
-        LVM_SCROLL, LVM_SETCOLUMNWIDTH, LVM_SETITEMCOUNT,
+        LVM_SCROLL, LVM_SETCOLUMNWIDTH, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETIMAGELIST,
+        LVM_SETITEMCOUNT,
     };
 
     /// While a 10M-row file pages down, the list is asked for its header and
@@ -904,6 +905,8 @@ mod tests {
             LVM_INSERTCOLUMNW,
             LVM_DELETECOLUMN,
             LVM_DELETEALLITEMS,
+            LVM_SETIMAGELIST,
+            LVM_SETEXTENDEDLISTVIEWSTYLE,
         ] {
             assert!(
                 is_sync_message(change),
