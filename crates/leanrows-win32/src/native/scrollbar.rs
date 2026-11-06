@@ -345,17 +345,10 @@ unsafe extern "system" fn list_proc(
             result
         }
         WM_NCDESTROY => {
-            // SAFETY: The list's procedure goes back first, the overlay is
-            // freed after its bars, and the list still gets the message.
+            // No message follows WM_NCDESTROY, so the procedure is not put back.
+            // SAFETY: The overlay is freed after its bars, and the list still
+            // gets the message through the procedure read above.
             unsafe {
-                if let Some(original) = original {
-                    SetWindowLongPtrW(
-                        list,
-                        GWLP_WNDPROC,
-                        (original as *const ()).addr().cast_signed(),
-                    );
-                }
-                SetWindowLongPtrW(list, GWLP_USERDATA, 0);
                 if let Some(overlay) = pointer.as_mut() {
                     for bar in &mut overlay.bars {
                         if !bar.window.0.is_null() && IsWindow(Some(bar.window)).as_bool() {
