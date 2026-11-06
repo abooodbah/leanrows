@@ -1167,6 +1167,7 @@ fn verify_grid_zoom(window: HWND) -> Result<(), ShellError> {
         verify_zoom_column_widths(window)?;
         verify_zoom_repaints_only_rows(window)?;
         verify_zoom_background_tab(window)?;
+        verify_zoom_wheel_burst(window)?;
         for (command, expected) in [
             (ID_VIEW_ZOOM_IN, 110),
             (ID_VIEW_ZOOM_IN, 125),
@@ -1364,6 +1365,60 @@ fn verify_zoom_background_tab(window: HWND) -> Result<(), ShellError> {
     if stored != cold || shown != cold {
         return Err(ShellError::new(format!(
             "a background tab zoomed to 125% kept {stored:?} px and showed {shown:?}, not {cold:?}"
+        )));
+    }
+    Ok(())
+}
+
+/// Ctrl+wheel notches queued behind the first one join it: three queued
+/// notches from 100% are one change to 125%, and none is left queued.
+fn verify_zoom_wheel_burst(window: HWND) -> Result<(), ShellError> {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Smoke runs synchronously on the window's owning UI thread.
+    let (list, original) = unsafe { pointer.as_ref() }
+        .map(|state| (state.list, state.theme.zoom))
+        .ok_or_else(|| ShellError::new("zoom wheel smoke state is unavailable"))?;
+    let notch = WPARAM((120_usize << 16) | MK_CONTROL.0 as usize);
+    for _ in 0..3 {
+        // SAFETY: A pointer-free wheel message for this thread's live list.
+        unsafe { PostMessageW(Some(list), WM_MOUSEWHEEL, notch, LPARAM(0)) }
+            .map_err(|error| ShellError::new(format!("zoom wheel smoke post failed: {error}")))?;
+    }
+    let mut message = MSG::default();
+    // SAFETY: `message` is writable; this takes the first queued notch.
+    let first = unsafe {
+        PeekMessageW(
+            &raw mut message,
+            Some(list),
+            WM_MOUSEWHEEL,
+            WM_MOUSEWHEEL,
+            PM_REMOVE,
+        )
+    }
+    .as_bool();
+    let handled = first && handle_zoom_wheel(window, &message);
+    let mut left = 0;
+    // SAFETY: As above; this empties the queue of any notch left over.
+    while unsafe {
+        PeekMessageW(
+            &raw mut message,
+            Some(list),
+            WM_MOUSEWHEEL,
+            WM_MOUSEWHEEL,
+            PM_REMOVE,
+        )
+    }
+    .as_bool()
+    {
+        left += 1;
+    }
+    // SAFETY: As above.
+    let zoom = unsafe { pointer.as_ref() }.map_or(0, |state| state.theme.zoom);
+    set_grid_zoom(window, original)?;
+    let expected = crate::zoom::zoom_after_notches(original, 3);
+    if !handled || left != 0 || zoom != expected {
+        return Err(ShellError::new(format!(
+            "three queued notches from {original}% gave {zoom}% with {left} left queued, not {expected}%"
         )));
     }
     Ok(())
