@@ -4,6 +4,40 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-11-06
+
+Zooming is fast, and the lists have thin scroll bars.
+
+### Changed
+
+- A zoom step sets the column widths with the list's redraw off, gives the new
+  fonts to the rows and their titles only, and paints once. It no longer
+  rebuilds and repaints the whole window.
+- Ctrl+wheel notches already queued are taken as one zoom change.
+- Each column keeps the width it was designed at, so zooming in and out no
+  longer makes widths drift. A width set by hand becomes the new basis.
+- Columns of a file opened while zoomed are sized for that zoom.
+- The rows and the settings shortcut list have thin scroll bars in the theme's
+  colours, without arrow buttons, as in LeanMark. High contrast keeps the
+  system scroll bars.
+- The settings shortcut list fits its width: long actions wrap onto a second
+  line and the list has no horizontal scroll bar.
+
+### Measured
+
+On the maintainer's laptop, 0.5.0 and 0.5.1 built and measured the same way:
+
+| Measure | 0.5.0 | 0.5.1 |
+| --- | --- | --- |
+| Zoom step, six-column 2 MB file (median) | 285 ms | 31 ms |
+| Zoom step, 10M-row file (median) | 115 ms | 21 ms |
+| 8 Ctrl+wheel notches at once, 2 MB file | 1,234 ms | 22.5 ms |
+| Page Down, 10M-row file | 20.4 ms | 21.0 ms |
+| One wheel notch, 10M-row file | 2.45 ms | 2.07 ms |
+| Start to input idle, the 10M-row file | 428 ms | 425 ms |
+| Peak working set, the 10M-row file open | 18.0 MiB | 18.0 MiB |
+| Executable size, local build | 986,112 bytes | 1,024,512 bytes |
+
 ## [0.5.0] - 2026-11-05
 
 LeanRows takes on LeanMark's look, and sorting a large file is several times
@@ -240,6 +274,7 @@ Column sorting, contributed by @w3bgr3p in #9.
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.5.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.5.1
 [0.5.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.5.0
 [0.4.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.4.0
 [0.3.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.3.0

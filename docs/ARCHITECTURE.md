@@ -5,7 +5,7 @@ of row-oriented local files. The source file remains the primary backing store;
 the application does not import the document into a database or construct a
 whole-file in-memory model.
 
-This document describes the 0.5.0 implementation. Future candidates are kept
+This document describes the 0.5.1 implementation. Future candidates are kept
 in the [roadmap](../ROADMAP.md) rather than presented as current behavior.
 
 ## System boundary
@@ -40,7 +40,7 @@ The production interface uses Win32 common controls. It does not embed a
 browser engine, start a helper process, or use a GUI framework with a second
 runtime.
 
-The 0.5.0 shell uses warm, opaque light surfaces, coordinated dark surfaces, a
+The 0.5.1 shell uses warm, opaque light surfaces, coordinated dark surfaces, a
 single blue action accent, and restrained rules. Its top bar arranges file
 identity, inline search, and document commands in wide, default, or narrow
 layouts based on the DPI-scaled client width. Commands that do not fit remain
