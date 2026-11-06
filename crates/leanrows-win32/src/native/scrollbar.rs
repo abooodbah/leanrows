@@ -25,21 +25,18 @@ use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetCapture, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
 };
-use windows::Win32::UI::Shell::{
-    DefSubclassProc, GetWindowSubclass, RemoveWindowSubclass, SetWindowSubclass,
-};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_STYLE, GWLP_ID, GWLP_USERDATA,
-    GWLP_WNDPROC, GetClientRect, GetParent, GetScrollInfo, GetWindowLongPtrW, GetWindowRect, HMENU,
-    HWND_TOP, IDC_ARROW, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, MA_NOACTIVATE,
-    RegisterClassExW, SB_ENDSCROLL, SB_HORZ, SB_PAGEDOWN, SB_PAGEUP, SB_VERT, SCROLLINFO, SIF_ALL,
-    SM_CXVSCROLL, SM_CYHSCROLL, SWP_FRAMECHANGED, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SendMessageW, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCCALCSIZE, WM_NCDESTROY, WM_PAINT, WM_SETREDRAW, WM_SIZE, WM_TIMER, WM_VSCROLL,
-    WM_WINDOWPOSCHANGED, WNDCLASSEXW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_HSCROLL,
-    WS_VSCROLL,
+    CallWindowProcW, CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_STYLE, GWLP_ID,
+    GWLP_USERDATA, GWLP_WNDPROC, GetClientRect, GetParent, GetScrollInfo, GetWindowLongPtrW,
+    GetWindowRect, HMENU, HWND_TOP, IDC_ARROW, IsWindow, IsWindowVisible, KillTimer, LoadCursorW,
+    MA_NOACTIVATE, RegisterClassExW, SB_ENDSCROLL, SB_HORZ, SB_PAGEDOWN, SB_PAGEUP, SB_VERT,
+    SCROLLINFO, SIF_ALL, SM_CXVSCROLL, SM_CYHSCROLL, SWP_FRAMECHANGED, SWP_HIDEWINDOW,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SendMessageW, SetTimer,
+    SetWindowLongPtrW, SetWindowPos, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_KEYDOWN,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCDESTROY, WM_PAINT, WM_SETREDRAW, WM_SIZE, WM_TIMER,
+    WM_VSCROLL, WM_WINDOWPOSCHANGED, WNDCLASSEXW, WNDPROC, WS_CHILD, WS_CLIPSIBLINGS,
+    WS_EX_NOACTIVATE, WS_HSCROLL, WS_VSCROLL,
 };
 use windows::core::{PCWSTR, w};
 
@@ -47,7 +44,6 @@ use super::theme::ThemeResources;
 use crate::ShellError;
 use crate::scroll::{ScrollRange, Thumb, page_direction, position_at, thumb};
 
-const SUBCLASS_ID: usize = 0x4c52_5342;
 const CLASS_NAME: PCWSTR = w!("LeanRowsScrollBar");
 const VERTICAL_ID: isize = 1;
 const HORIZONTAL_ID: isize = 2;
@@ -118,6 +114,8 @@ struct Overlay {
     owner: HWND,
     enabled: bool,
     syncing: bool,
+    /// The list's own window procedure, which gets every message first.
+    original: WNDPROC,
     bars: [Bar; 2],
 }
 
@@ -188,40 +186,53 @@ pub(super) fn install(list: HWND, owner: HWND, enabled: bool) -> Result<(), Shel
         owner,
         enabled,
         syncing: false,
+        original: None,
         bars: [
             Bar::new(vertical, Axis::Vertical),
             Bar::new(horizontal, Axis::Horizontal),
         ],
     }));
-    // SAFETY: The overlay outlives both bars and the list's subclass: the
-    // list's WM_NCDESTROY destroys the bars, then frees it. Each bar clears
-    // its own handle from it if it goes first.
+    // The list's window procedure is swapped for `list_proc`, which passes
+    // every message on to the list's own. Common controls' SetWindowSubclass
+    // would do the same through a dispatcher that cost a 10M-row Page Down
+    // about 1 ms.
+    // SAFETY: The overlay outlives both bars and the list's procedure swap:
+    // the list's WM_NCDESTROY destroys the bars, then frees it. Each bar
+    // clears its own handle from it if it goes first. The list's user data
+    // slot is not used by the list itself or by any other code here.
     unsafe {
         SetWindowLongPtrW(vertical, GWLP_USERDATA, overlay as isize);
         SetWindowLongPtrW(horizontal, GWLP_USERDATA, overlay as isize);
         let style = GetWindowLongPtrW(list, GWL_STYLE);
         SetWindowLongPtrW(list, GWL_STYLE, style | style_bit(WS_CLIPSIBLINGS));
-        if !SetWindowSubclass(list, Some(list_proc), SUBCLASS_ID, overlay as usize).as_bool() {
+        SetWindowLongPtrW(list, GWLP_USERDATA, overlay as isize);
+        let original = SetWindowLongPtrW(
+            list,
+            GWLP_WNDPROC,
+            (list_proc as *const ()).addr().cast_signed(),
+        );
+        if original == 0 {
+            SetWindowLongPtrW(list, GWLP_USERDATA, 0);
             let _ = DestroyWindow(vertical);
             let _ = DestroyWindow(horizontal);
             drop(Box::from_raw(overlay));
-            return Err(ShellError::new("the list's scroll bar subclass failed"));
+            return Err(ShellError::new(
+                "the list's window procedure could not be replaced",
+            ));
         }
+        (*overlay).original = std::mem::transmute::<isize, WNDPROC>(original);
     }
     refit(list);
     Ok(())
 }
 
 fn overlay_for(list: HWND) -> *mut Overlay {
-    let mut data = 0_usize;
-    // SAFETY: The query only reads the subclass table of a live list.
-    let found =
-        unsafe { GetWindowSubclass(list, Some(list_proc), SUBCLASS_ID, Some(&raw mut data)) };
-    if found.as_bool() {
-        std::ptr::with_exposed_provenance_mut::<Overlay>(data)
-    } else {
-        std::ptr::null_mut()
+    if !is_direct_procedure(list) {
+        return std::ptr::null_mut();
     }
+    // SAFETY: A list whose procedure is `list_proc` holds its overlay in its
+    // user data slot (see `install`).
+    unsafe { GetWindowLongPtrW(list, GWLP_USERDATA) as *mut Overlay }
 }
 
 /// Turns the overlay on or off (off in high contrast) and repaints the bars
@@ -309,19 +320,23 @@ unsafe extern "system" fn list_proc(
     message: u32,
     wparam: WPARAM,
     lparam: LPARAM,
-    subclass_id: usize,
-    reference_data: usize,
 ) -> LRESULT {
-    let pointer = std::ptr::with_exposed_provenance_mut::<Overlay>(reference_data);
+    // SAFETY: `install` put the overlay in the slot before this procedure.
+    let pointer = unsafe { GetWindowLongPtrW(list, GWLP_USERDATA) } as *mut Overlay;
+    // SAFETY: As above; the overlay lives until WM_NCDESTROY below.
+    let original = unsafe { pointer.as_ref() }.and_then(|overlay| overlay.original);
+    // SAFETY: The list's own procedure handles the message as it would
+    // without the overlay.
+    let list_own = || unsafe { CallWindowProcW(original, list, message, wparam, lparam) };
     match message {
         WM_NCCALCSIZE => {
             // SAFETY: lparam carries the RECT or NCCALCSIZE_PARAMS of this
             // message; both start with the proposed window rectangle.
             let rect = lparam.0 as *mut RECT;
             let proposed = unsafe { rect.as_ref() }.copied();
-            // SAFETY: The list's own frame calculation runs first.
-            let result = unsafe { DefSubclassProc(list, message, wparam, lparam) };
-            // SAFETY: The overlay outlives the subclass.
+            // The list's own frame calculation runs first.
+            let result = list_own();
+            // SAFETY: The overlay outlives the procedure swap.
             let enabled = unsafe { pointer.as_ref() }.is_some_and(|overlay| overlay.enabled);
             if enabled && let (Some(proposed), Some(client)) = (proposed, unsafe { rect.as_mut() })
             {
@@ -330,10 +345,17 @@ unsafe extern "system" fn list_proc(
             result
         }
         WM_NCDESTROY => {
-            // SAFETY: This removes the exact pair being invoked; the overlay
-            // is freed after its bars, and the list still gets the message.
+            // SAFETY: The list's procedure goes back first, the overlay is
+            // freed after its bars, and the list still gets the message.
             unsafe {
-                let _ = RemoveWindowSubclass(list, Some(list_proc), subclass_id);
+                if let Some(original) = original {
+                    SetWindowLongPtrW(
+                        list,
+                        GWLP_WNDPROC,
+                        (original as *const ()).addr().cast_signed(),
+                    );
+                }
+                SetWindowLongPtrW(list, GWLP_USERDATA, 0);
                 if let Some(overlay) = pointer.as_mut() {
                     for bar in &mut overlay.bars {
                         if !bar.window.0.is_null() && IsWindow(Some(bar.window)).as_bool() {
@@ -344,12 +366,12 @@ unsafe extern "system" fn list_proc(
                     }
                     drop(Box::from_raw(pointer));
                 }
-                DefSubclassProc(list, message, wparam, lparam)
             }
+            list_own()
         }
         _ => {
-            // SAFETY: Everything else stays with the list's own procedure.
-            let result = unsafe { DefSubclassProc(list, message, wparam, lparam) };
+            // Everything else stays with the list's own procedure.
+            let result = list_own();
             if is_sync_message(message) {
                 // SAFETY: As above; `sync` guards against re-entry.
                 if let Some(overlay) = unsafe { pointer.as_mut() } {
