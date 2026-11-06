@@ -827,3 +827,48 @@ fn draw(device: windows::Win32::Graphics::Gdi::HDC, bar: &Bar, theme: &ThemeReso
         SelectObject(device, previous_brush);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_sync_message;
+    use windows::Win32::UI::Controls::{
+        LVM_DELETEALLITEMS, LVM_DELETECOLUMN, LVM_ENSUREVISIBLE, LVM_GETCOUNTPERPAGE,
+        LVM_GETHEADER, LVM_GETITEMCOUNT, LVM_GETITEMRECT, LVM_GETTOPINDEX, LVM_INSERTCOLUMNW,
+        LVM_SCROLL, LVM_SETCOLUMNWIDTH, LVM_SETITEMCOUNT,
+    };
+
+    /// While a 10M-row file pages down, the list is asked for its header and
+    /// sends itself the undocumented 0x10C1 about 35 and 32 times per page.
+    /// Queries change nothing the bars show, so they must not update them.
+    #[test]
+    fn list_queries_do_not_move_the_bars() {
+        for query in [
+            LVM_GETHEADER,
+            LVM_GETTOPINDEX,
+            LVM_GETITEMRECT,
+            LVM_GETITEMCOUNT,
+            LVM_GETCOUNTPERPAGE,
+            0x10c1,
+        ] {
+            assert!(!is_sync_message(query), "{query:#06x} moved the bars");
+        }
+    }
+
+    #[test]
+    fn list_changes_move_the_bars() {
+        for change in [
+            LVM_SETITEMCOUNT,
+            LVM_SCROLL,
+            LVM_ENSUREVISIBLE,
+            LVM_SETCOLUMNWIDTH,
+            LVM_INSERTCOLUMNW,
+            LVM_DELETECOLUMN,
+            LVM_DELETEALLITEMS,
+        ] {
+            assert!(
+                is_sync_message(change),
+                "{change:#06x} did not move the bars"
+            );
+        }
+    }
+}
