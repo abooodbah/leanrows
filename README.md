@@ -10,7 +10,7 @@ runtime, no admin rights.**
 *20,000,001 rows, 1,532,454,643 bytes, fully indexed. Peak working set: 18.4 MB.*
 
 Excel stops at about 1.05 million rows. Most tools that go further are paid, need
-an installer, or live in a terminal. LeanRows is a single 987 KB executable you
+an installer, or live in a terminal. LeanRows is a single 1,025 KB executable you
 can copy onto a locked-down work machine and run.
 
 It is strictly read-only, so it cannot alter the file it is inspecting. There is
@@ -124,15 +124,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.5.0-windows-x64-unsigned.zip
-LeanRows-v0.5.0-windows-x64-unsigned.sha256
+LeanRows-v0.5.1-windows-x64-unsigned.zip
+LeanRows-v0.5.1-windows-x64-unsigned.sha256
 ```
 
 LeanRows 0.5 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.5.0-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.5.1-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
