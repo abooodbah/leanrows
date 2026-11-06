@@ -102,10 +102,11 @@ measured the same way.
 
 ## In progress
 
+- 12. Version 0.5.0 (branch `release-0.5.0`).
 
 ## Remaining
 
-Items 12 to 14 of the plan.
+Items 13 and 14 of the plan.
 
 ## Known gaps
 
@@ -168,6 +169,8 @@ numbers within one run, not across runs.
 | Start to input idle, no file, #30 | 56 ms | 56 ms | same run |
 | Start to input idle, 250 MB CSV, #30 | 86 ms | 88 ms | same run |
 | Peak working set, 250 MB CSV open, #30 | 16.2 MiB | 16.2 MiB | same run |
+
+Release against 0.4.0 on one runner ([run 42051703441](https://github.com/abooodbah/leanrows/actions/runs/42051703441)): 10M-row sort 102.1 s to 16.1 s (core engine) and 14.1 s (app worker); start to input idle 59 to 62 ms without a file and 91 to 104 ms with the 250 MB CSV; peak working set 16.2 to 16.3 MiB; executable 918,528 to 986,624 bytes.
 
 Main before any change (0.4.0 code):
 

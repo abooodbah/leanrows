@@ -10,7 +10,7 @@ runtime, no admin rights.**
 *20,000,001 rows, 1,532,454,643 bytes, fully indexed. Peak working set: 18.4 MB.*
 
 Excel stops at about 1.05 million rows. Most tools that go further are paid, need
-an installer, or live in a terminal. LeanRows is a single 919 KB executable you
+an installer, or live in a terminal. LeanRows is a single 987 KB executable you
 can copy onto a locked-down work machine and run.
 
 It is strictly read-only, so it cannot alter the file it is inspecting. There is
