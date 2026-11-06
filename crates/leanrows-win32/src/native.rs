@@ -1800,6 +1800,31 @@ fn verify_thin_scroll_bars(window: HWND) -> Result<(), ShellError> {
                 "the wheel over the thin bar did not scroll the rows",
             ));
         }
+        // The rows do not paint over the bars that lie on them.
+        // SAFETY: The list is live; its style is only read.
+        let style = unsafe { GetWindowLongPtrW(list, GWL_STYLE) };
+        if style & isize::try_from(WS_CLIPSIBLINGS.0).unwrap_or_default() == 0 {
+            return Err(ShellError::new("the rows paint over their thin bars"));
+        }
+        // Ctrl+wheel over the bar zooms the rows, as it does over them.
+        // SAFETY: As above.
+        let original = unsafe { pointer.as_ref() }.map_or(0, |state| state.theme.zoom);
+        let notch = MSG {
+            hwnd: bar,
+            message: WM_MOUSEWHEEL,
+            wParam: WPARAM((120_usize << 16) | usize::try_from(MK_CONTROL.0).unwrap_or_default()),
+            ..Default::default()
+        };
+        let handled = handle_zoom_wheel(window, &notch);
+        // SAFETY: As above.
+        let zoomed = unsafe { pointer.as_ref() }.map_or(0, |state| state.theme.zoom);
+        set_grid_zoom(window, original)?;
+        if !handled || zoomed != crate::zoom::step_zoom(original, 1) {
+            return Err(ShellError::new(format!(
+                "Ctrl+wheel over the thin bar left the rows at {zoomed}%, not {}%",
+                crate::zoom::step_zoom(original, 1)
+            )));
+        }
         // With the thin bars off, as in high contrast, the system bar and its
         // width come back.
         scrollbar::set_enabled(list, false);
