@@ -28,8 +28,8 @@ use windows::Win32::Graphics::Gdi::{
     DrawTextW, Ellipse, ExtCreatePen, FillRect, FillRgn, FrameRgn, GetDC, GetPixel, GetStockObject,
     GetSysColorBrush, GetTextExtentPoint32W, GetUpdateRect, HBRUSH, HDC, HGDIOBJ, InvalidateRect,
     LOGBRUSH, LineTo, MoveToEx, NULL_BRUSH, PS_ENDCAP_ROUND, PS_GEOMETRIC, PS_SOLID,
-    RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RDW_UPDATENOW, RGN_AND, RedrawWindow,
-    ReleaseDC, SelectObject, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT, UpdateWindow,
+    RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW, RGN_AND, RedrawWindow, ReleaseDC,
+    SelectObject, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT, UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::{FindResourceW, GetModuleHandleW};
 use windows::Win32::System::SystemServices::{
@@ -1243,6 +1243,7 @@ fn verify_zoom_column_widths(window: HWND) -> Result<(), ShellError> {
         .iter()
         .filter(|level| **level > 50 && **level <= 100);
     let mut previous = crate::zoom::DEFAULT_ZOOM;
+    let mut header_at = [0; 2];
     for &level in up.chain(down).chain(back) {
         let command = if level > previous {
             ID_VIEW_ZOOM_IN
@@ -1269,6 +1270,26 @@ fn verify_zoom_column_widths(window: HWND) -> Result<(), ShellError> {
                 "at {level}% the columns are {shown:?} px, not {cold:?} as when opened there"
             )));
         }
+        // SAFETY: As above.
+        let (shown, fitted) = unsafe { pointer.as_ref() }
+            .and_then(|state| header_heights(state.list))
+            .ok_or_else(|| ShellError::new("zoom smoke could not measure the column titles"))?;
+        if shown != fitted {
+            return Err(ShellError::new(format!(
+                "at {level}% the column titles are {shown} px high, not the {fitted} px their font needs"
+            )));
+        }
+        match level {
+            50 => header_at[0] = shown,
+            300 => header_at[1] = shown,
+            _ => {}
+        }
+    }
+    if header_at[1] <= header_at[0] {
+        return Err(ShellError::new(format!(
+            "the column titles are {} px high at 300% and {} px at 50%",
+            header_at[1], header_at[0]
+        )));
     }
     if widths()? != start {
         return Err(ShellError::new(
@@ -1288,6 +1309,33 @@ fn other_zoom_level(zoom: u32) -> u32 {
     }
 }
 
+/// The header's height and the height `HDM_LAYOUT` gives for its font.
+fn header_heights(list: HWND) -> Option<(i32, i32)> {
+    let header = list_header(list)?;
+    let mut shown = RECT::default();
+    let mut bounds = RECT::default();
+    // SAFETY: Both handles are live and the RECTs are writable.
+    unsafe {
+        GetWindowRect(header, &raw mut shown).ok()?;
+        GetClientRect(list, &raw mut bounds).ok()?;
+    }
+    let mut position = windows::Win32::UI::WindowsAndMessaging::WINDOWPOS::default();
+    let mut layout = windows::Win32::UI::Controls::HDLAYOUT {
+        prc: &raw mut bounds,
+        pwpos: &raw mut position,
+    };
+    // SAFETY: HDM_LAYOUT fills `position` from `bounds`; both outlive the call.
+    let laid_out = unsafe {
+        SendMessageW(
+            header,
+            windows::Win32::UI::Controls::HDM_LAYOUT,
+            None,
+            Some(LPARAM((&raw mut layout) as isize)),
+        )
+    };
+    (laid_out.0 != 0).then_some((shown.bottom - shown.top, position.cy))
+}
+
 /// A zoom step changes only the rows, so it leaves only the list to repaint,
 /// and it paints nothing before it returns: the paint comes once, after the
 /// step and any steps queued behind it.
@@ -1304,9 +1352,10 @@ fn verify_zoom_repaints_only_rows(window: HWND) -> Result<(), ShellError> {
     let result = set_grid_zoom(window, other_zoom_level(original));
     // SAFETY: Both are live children; a null rectangle only asks whether
     // part of the window waits to be painted.
-    let (rows_pending, bar_pending) = unsafe {
+    let (rows_pending, titles_pending, bar_pending) = unsafe {
         (
             GetUpdateRect(list, None, false).as_bool(),
+            list_header(list).is_some_and(|header| GetUpdateRect(header, None, false).as_bool()),
             GetUpdateRect(topbar, None, false).as_bool(),
         )
     };
@@ -1316,6 +1365,11 @@ fn verify_zoom_repaints_only_rows(window: HWND) -> Result<(), ShellError> {
     if !rows_pending {
         return Err(ShellError::new(
             "a zoom step painted the rows before it returned",
+        ));
+    }
+    if !titles_pending {
+        return Err(ShellError::new(
+            "a zoom step did not leave the column titles to repaint",
         ));
     }
     if bar_pending {
@@ -1371,7 +1425,7 @@ fn verify_zoom_background_tab(window: HWND) -> Result<(), ShellError> {
 }
 
 /// Ctrl+wheel notches queued behind the first one join it: three queued
-/// notches from 100% are one change to 125%, and none is left queued.
+/// notches from 100% are one change to 150%, and none is left queued.
 fn verify_zoom_wheel_burst(window: HWND) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: Smoke runs synchronously on the window's owning UI thread.
@@ -2344,7 +2398,6 @@ fn set_grid_zoom(window: HWND, zoom: u32) -> Result<(), ShellError> {
             set_font_quietly(header, state.theme.fonts.grid_header());
         }
         set_column_widths(list, &widths);
-        refit_list_header(list);
     });
     // The list and its header no longer use the previous fonts.
     drop(previous_fonts);
@@ -2352,16 +2405,6 @@ fn set_grid_zoom(window: HWND, zoom: u32) -> Result<(), ShellError> {
         tab.column_widths = tab
             .column_zoom
             .rescale(&tab.column_widths, previous_zoom, zoom);
-    }
-    // SAFETY: The list is live; this only marks it and its header for the
-    // next paint, and lets the frame redraw its scroll bars.
-    unsafe {
-        let _ = RedrawWindow(
-            Some(list),
-            None,
-            None,
-            RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN,
-        );
     }
     if !state.settings.zoom_value.0.is_null() {
         set_control_text(state.settings.zoom_value, &format!("{zoom}%"))?;
@@ -2371,7 +2414,8 @@ fn set_grid_zoom(window: HWND, zoom: u32) -> Result<(), ShellError> {
 }
 
 /// Runs `change` with the list's redraw off, then turns it back on. Turning
-/// it on only marks the list for repainting.
+/// it on lays the list and its header out again for the new font and marks
+/// both for repainting; it paints nothing before it returns.
 fn with_list_redraw_off(list: HWND, change: impl FnOnce()) {
     // SAFETY: WM_SETREDRAW carries a flag and no pointers.
     unsafe { SendMessageW(list, WM_SETREDRAW, Some(WPARAM(0)), Some(LPARAM(0))) };
@@ -2392,39 +2436,6 @@ fn set_font_quietly(handle: HWND, font: windows::Win32::Graphics::Gdi::HFONT) {
             WM_SETFONT,
             Some(WPARAM(font.0.addr())),
             Some(LPARAM(0)),
-        );
-    }
-}
-
-/// The list sizes its header from the header font only when it lays itself
-/// out, so a one-pixel resize makes it measure the zoomed font.
-fn refit_list_header(list: HWND) {
-    let mut bounds = RECT::default();
-    // SAFETY: The list is a live child; its rectangle is read and restored.
-    if unsafe { GetClientRect(list, &raw mut bounds) }.is_err() {
-        return;
-    }
-    let width = bounds.right.saturating_sub(bounds.left);
-    let height = bounds.bottom.saturating_sub(bounds.top);
-    // SAFETY: Both resizes keep the list's position and z-order.
-    unsafe {
-        let _ = SetWindowPos(
-            list,
-            None,
-            0,
-            0,
-            width,
-            height.saturating_add(1),
-            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
-        );
-        let _ = SetWindowPos(
-            list,
-            None,
-            0,
-            0,
-            width,
-            height,
-            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
         );
     }
 }
@@ -5900,9 +5911,7 @@ fn restore_tab(
     .map_err(|()| ShellError::new("native data-column restore failed"))?;
     state.columns = tab.columns;
     sorting::update_header(state);
-    with_list_redraw_off(state.list, || {
-        set_column_widths(state.list, &tab.column_widths);
-    });
+    set_column_widths(state.list, &tab.column_widths);
     state.replace_cache(tab.rows, tab.cache)?;
     set_native_item_count(state.list, state.rows.visible_rows());
     apply_chrome(state, &tab.chrome)?;
