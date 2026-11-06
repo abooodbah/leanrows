@@ -384,21 +384,26 @@ impl ThemeFonts {
         title_definition.lfHeight = -scaled(16, normalized_dpi(dpi));
         let mut legend_definition = semibold_definition;
         legend_definition.lfHeight = caption_height(body_definition.lfHeight);
-        let mut grid_definition = body_definition;
-        grid_definition.lfHeight = crate::zoom::scale_by_zoom(body_definition.lfHeight, zoom);
-        let mut grid_header_definition = semibold_definition;
-        grid_header_definition.lfHeight =
-            crate::zoom::scale_by_zoom(semibold_definition.lfHeight, zoom);
+        let grid = GridFonts::from_body(body_definition, zoom)?;
         Ok(Self {
             body: OwnedFont::new(&body_definition)?,
             semibold: OwnedFont::new(&semibold_definition)?,
             caption: OwnedFont::new(&caption_definition)?,
             heading: OwnedFont::new(&heading_definition)?,
-            grid: OwnedFont::new(&grid_definition)?,
-            grid_header: OwnedFont::new(&grid_header_definition)?,
+            grid: grid.grid,
+            grid_header: grid.grid_header,
             title: OwnedFont::new(&title_definition)?,
             legend: OwnedFont::new(&legend_definition)?,
         })
+    }
+
+    /// Puts zoomed grid fonts in place and returns the previous ones, which
+    /// must outlive every control still using them.
+    pub(super) fn replace_grid(&mut self, next: GridFonts) -> GridFonts {
+        GridFonts {
+            grid: std::mem::replace(&mut self.grid, next.grid),
+            grid_header: std::mem::replace(&mut self.grid_header, next.grid_header),
+        }
     }
 
     /// The settings panel's heading.
@@ -444,6 +449,41 @@ impl ThemeFonts {
     pub(super) const fn heading(&self) -> HFONT {
         self.heading.0
     }
+}
+
+/// The two fonts a zoom step changes: the rows and their column titles.
+/// Every other font keeps its size, so a zoom step creates only these.
+#[derive(Debug)]
+pub(super) struct GridFonts {
+    grid: OwnedFont,
+    grid_header: OwnedFont,
+}
+
+impl GridFonts {
+    /// The grid fonts at `zoom` percent for a window at `dpi`, the same
+    /// fonts a theme built at that zoom has.
+    pub(super) fn new(dpi: u32, zoom: u32) -> Result<Self, ShellError> {
+        Self::from_body(message_logfont(dpi), crate::zoom::normalize_zoom(zoom))
+    }
+
+    fn from_body(body: LOGFONTW, zoom: u32) -> Result<Self, ShellError> {
+        let (grid, grid_header) = grid_definitions(body, zoom);
+        Ok(Self {
+            grid: OwnedFont::new(&grid)?,
+            grid_header: OwnedFont::new(&grid_header)?,
+        })
+    }
+}
+
+/// The rows' font and the column titles' semibold font at `zoom` percent of
+/// the body font.
+fn grid_definitions(body: LOGFONTW, zoom: u32) -> (LOGFONTW, LOGFONTW) {
+    let mut grid = body;
+    grid.lfHeight = crate::zoom::scale_by_zoom(body.lfHeight, zoom);
+    let mut grid_header = body;
+    grid_header.lfWeight = i32::try_from(FW_SEMIBOLD.0).unwrap_or(600);
+    grid_header.lfHeight = crate::zoom::scale_by_zoom(body.lfHeight, zoom);
+    (grid, grid_header)
 }
 
 #[derive(Debug)]
@@ -989,9 +1029,25 @@ impl Drop for OwnedRegistryKey {
 mod tests {
     use super::{
         EffectiveTheme, Palette, SWATCH_RING, Swatch, ThemeMode, UiColor, UiMetrics,
-        parse_apps_use_light_theme, parse_theme_mode, select_effective_theme,
-        theme_accessible_name, theme_display_name, theme_tooltip, wordmark_colors,
+        fallback_logfont, grid_definitions, parse_apps_use_light_theme, parse_theme_mode,
+        select_effective_theme, theme_accessible_name, theme_display_name, theme_tooltip,
+        wordmark_colors,
     };
+
+    #[test]
+    fn grid_fonts_scale_the_body_font_and_keep_its_face() {
+        let body = fallback_logfont(96);
+        assert_eq!(body.lfHeight, -12);
+        for (zoom, height) in [(50, -6), (100, -12), (125, -15), (300, -36)] {
+            let (grid, header) = grid_definitions(body, zoom);
+            assert_eq!(grid.lfHeight, height);
+            assert_eq!(header.lfHeight, height);
+            assert_eq!(grid.lfWeight, body.lfWeight);
+            assert_eq!(header.lfWeight, 600);
+            assert_eq!(grid.lfFaceName, body.lfFaceName);
+            assert_eq!(header.lfFaceName, body.lfFaceName);
+        }
+    }
 
     #[test]
     fn theme_cycle_and_labels_are_stable() {
