@@ -1,6 +1,6 @@
 # LeanRows Microsoft Store listing
 
-Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes. The version and "What's new" were updated for 0.4.0 on 2026-11-02 and for 0.5.0 on 2026-11-06.
+Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes. The version and "What's new" were updated for 0.4.0 on 2026-11-02 and for 0.5.0 on 2026-11-06, and for 0.5.1 on 2026-11-07.
 
 ## Product
 
@@ -64,7 +64,7 @@ LeanRows is free and open source under the MIT License.
 
 ## What's new in this version
 
-Five themes (System, Light, Dark, Dim and Dusk), a settings panel with every keyboard shortcut (Ctrl+/ or F1), zoom from 50% to 300%, and a new toolbar and tabs. Sorting a large file is several times faster.
+Zooming in and out is about ten times faster. Scroll bars are now thin and follow the theme colours, and the shortcut list in settings fits without sideways scrolling.
 
 ## Copyright and trademark info
 
