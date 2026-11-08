@@ -1,17 +1,22 @@
 # LeanRows: a free large CSV viewer for Windows
 
-**Open a 1.5 GB CSV with 20 million rows using 18 MB of RAM. No installer, no
-runtime, no admin rights.**
+**Open CSV files too big for Excel. A 1.5 GB CSV with 20 million rows opens
+using 18 MB of RAM. Also TSV, JSONL, logs and Excel `.xlsx` workbooks (read-only,
+one sheet at a time). No installer, no runtime, no admin rights.**
 
-[Website](https://abooodbah.github.io/leanrows/) · [Microsoft Store](https://apps.microsoft.com/detail/9NMV8GKJXSN0) · [All Lean apps](https://abooodbah.github.io/)
+[Website](https://abooodbah.github.io/leanrows/) · [Microsoft Store](https://apps.microsoft.com/detail/9NMV8GKJXSN0) · [Releases](https://github.com/abooodbah/leanrows/releases) ([feed](https://github.com/abooodbah/leanrows/releases.atom)) · [All Lean apps](https://abooodbah.github.io/)
+
+[![winget](https://img.shields.io/winget/v/abooodbah.LeanRows)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/a/abooodbah/LeanRows) [![GitHub release](https://img.shields.io/github/v/release/abooodbah/leanrows)](https://github.com/abooodbah/leanrows/releases/latest) [![License: MIT](https://img.shields.io/github/license/abooodbah/leanrows)](LICENSE) [![Downloads](https://img.shields.io/github/downloads/abooodbah/leanrows/total)](https://github.com/abooodbah/leanrows/releases)
 
 ![LeanRows with a 20 million row CSV open](docs/images/leanrows-20m-rows.png)
 
 *20,000,001 rows, 1,532,454,643 bytes, fully indexed. Peak working set: 18.4 MB.*
 
 Excel stops at about 1.05 million rows. Most tools that go further are paid, need
-an installer, or live in a terminal. LeanRows is a single 1,025 KB executable you
-can copy onto a locked-down work machine and run.
+an installer, or live in a terminal. LeanRows is a single executable (1,024,512
+bytes in v0.5.1) you can copy onto a locked-down work machine and run. For the
+other options, see
+[how to open a CSV file that is too large for Excel](https://abooodbah.github.io/leanrows/open-csv-too-large-for-excel/).
 
 It is strictly read-only, so it cannot alter the file it is inspecting. There is
 no telemetry and no network access of any kind.
@@ -24,6 +29,16 @@ it, and run `leanrows.exe`. Outside that folder, LeanRows writes only its
 theme and zoom settings, under `HKCU\Software\LeanRows`, and a scratch folder for
 search results, under `%LOCALAPPDATA%\LeanRows`. Column sorting also keeps
 temporary sort data there.
+
+### winget
+
+LeanRows is in the winget community repository. winget installs the portable
+ZIP from the GitHub Release after checking its SHA-256 and adds a `leanrows`
+command:
+
+```powershell
+winget install abooodbah.LeanRows
+```
 
 ### Microsoft Store
 
@@ -320,6 +335,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
+- [LeanRows 0.5.1 release notes](docs/releases/v0.5.1.md)
 - [LeanRows 0.5.0 release notes](docs/releases/v0.5.0.md)
 - [LeanRows 0.4.0 release notes](docs/releases/v0.4.0.md)
 - [LeanRows 0.3.0 release notes](docs/releases/v0.3.0.md)
