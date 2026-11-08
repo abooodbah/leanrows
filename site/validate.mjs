@@ -23,6 +23,7 @@ for (const required of [
   "assets/leanrows-icon.svg",
   "assets/leanrows-20m-rows.webp",
   "assets/social-preview.png",
+  "open-csv-too-large-for-excel/index.html",
 ]) {
   try {
     const entry = await stat(resolve(siteRoot, required));
@@ -180,6 +181,26 @@ requireMatch(
   /<code>winget install --id 9NMV8GKJXSN0 --source msstore<\/code>/,
   "the page must give the winget command for the Microsoft Store build",
 );
+requireMatch(
+  html,
+  /<code>winget install abooodbah\.LeanRows<\/code>/,
+  "the page must give the winget community package command",
+);
+requireMatch(
+  html,
+  /src="assets\/leanrows-20m-rows\.webp"\s+width="1400"\s+height="792"\s+fetchpriority="high"/,
+  "the 20 million row capture is the largest image on the page and must load with fetchpriority high",
+);
+requireMatch(
+  html,
+  /<link rel="alternate" type="application\/atom\+xml" title="LeanRows releases" href="https:\/\/github\.com\/abooodbah\/leanrows\/releases\.atom">/,
+  "the page must link the GitHub releases feed",
+);
+requireMatch(
+  html,
+  /href="open-csv-too-large-for-excel\/"/,
+  "the page must link the open-csv-too-large-for-excel task page",
+);
 requireMatch(css, /:focus-visible\s*\{[^}]*outline:/s, "visible focus styles are required");
 requireMatch(css, /prefers-reduced-motion:\s*reduce/i, "reduced-motion support is required");
 requireMatch(css, /@media\s*\(max-width:\s*48rem\)/i, "mobile layout rules are required");
@@ -194,8 +215,25 @@ if (structuredDataMatch) {
     if (structuredData["@type"] !== "SoftwareApplication") {
       failures.push("JSON-LD must describe a SoftwareApplication");
     }
-    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.5.0") {
+    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.5.1") {
       failures.push("JSON-LD name and release version must match the product");
+    }
+    if ("codeRepository" in structuredData) {
+      failures.push("JSON-LD codeRepository is not a SoftwareApplication property; use sameAs");
+    }
+    if ("aggregateRating" in structuredData || "review" in structuredData) {
+      failures.push("JSON-LD must not carry ratings or reviews; there are none to show");
+    }
+    const sameAs = Array.isArray(structuredData.sameAs) ? structuredData.sameAs : [];
+    for (const expected of [
+      "https://github.com/abooodbah/leanrows",
+      "https://apps.microsoft.com/detail/9NMV8GKJXSN0",
+      "https://community.chocolatey.org/packages/leanrows",
+    ]) {
+      if (!sameAs.includes(expected)) failures.push(`JSON-LD sameAs must include ${expected}`);
+    }
+    if (structuredData.screenshot !== "https://abooodbah.github.io/leanrows/assets/leanrows-20m-rows.webp") {
+      failures.push("JSON-LD screenshot must be the 20 million row capture shown on the page");
     }
     if (structuredData.downloadUrl !== "https://github.com/abooodbah/leanrows/releases/latest") {
       failures.push("JSON-LD downloadUrl must use the latest GitHub release");
@@ -251,6 +289,39 @@ try {
 
 const sitemap = await readFile(resolve(siteRoot, "sitemap.xml"), "utf8");
 requireMatch(sitemap, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/, "sitemap.xml must give a lastmod date");
+requireMatch(
+  sitemap,
+  /<loc>https:\/\/abooodbah\.github\.io\/leanrows\/open-csv-too-large-for-excel\/<\/loc>/,
+  "sitemap.xml must list the open-csv-too-large-for-excel task page",
+);
+
+// The task page is plain HTML beside index.html; check its own basics and local references.
+const taskDir = resolve(siteRoot, "open-csv-too-large-for-excel");
+const taskHtml = await readFile(resolve(taskDir, "index.html"), "utf8").catch(() => "");
+requireMatch(taskHtml, /^<!doctype html>/i, "the task page must start with an HTML5 doctype");
+requireMatch(
+  taskHtml,
+  /<link rel="canonical" href="https:\/\/abooodbah\.github\.io\/leanrows\/open-csv-too-large-for-excel\/">/,
+  "the task page must declare its canonical URL",
+);
+requireMatch(taskHtml, /<meta\s+name="description"/i, "the task page needs a meta description");
+if ((taskHtml.match(/<h1\b/gi) ?? []).length !== 1) failures.push("the task page must have exactly one h1");
+for (const match of taskHtml.matchAll(/(?:href|src)="([^"#]+)"/g)) {
+  const value = match[1];
+  if (/^(?:https?:|mailto:|data:)/i.test(value)) continue;
+  let localPath = resolve(taskDir, value.split(/[?#]/, 1)[0]);
+  if (value.endsWith("/")) localPath = resolve(localPath, "index.html");
+  if (!localPath.startsWith(siteRoot)) {
+    failures.push(`task page reference escapes site/: ${value}`);
+    continue;
+  }
+  try {
+    const entry = await stat(localPath);
+    if (!entry.isFile()) failures.push(`task page reference is not a file: ${value}`);
+  } catch {
+    failures.push(`task page has a missing local reference: ${value}`);
+  }
+}
 
 const primaryCount = (html.match(/class="primary-action"/g) ?? []).length;
 if (primaryCount !== 1) {
@@ -276,7 +347,8 @@ for (const match of html.matchAll(/href="#([^"]+)"/g)) {
 for (const match of html.matchAll(/(?:href|src)="([^"#]+)"/g)) {
   const value = match[1];
   if (/^(?:https?:|mailto:|data:)/i.test(value)) continue;
-  const localPath = resolve(siteRoot, value.split(/[?#]/, 1)[0]);
+  let localPath = resolve(siteRoot, value.split(/[?#]/, 1)[0]);
+  if (value.endsWith("/")) localPath = resolve(localPath, "index.html");
   if (!localPath.startsWith(siteRoot)) {
     failures.push(`local reference escapes site/: ${value}`);
     continue;

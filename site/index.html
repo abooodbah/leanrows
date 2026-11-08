@@ -24,6 +24,7 @@
     <meta property="og:image:alt" content="LeanRows, a large CSV viewer for Windows, with a 20 million row CSV open. 1.5 GB, 18.4 MB peak working set.">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="https://abooodbah.github.io/leanrows/">
+    <link rel="alternate" type="application/atom+xml" title="LeanRows releases" href="https://github.com/abooodbah/leanrows/releases.atom">
     <link rel="icon" href="assets/leanrows-icon.svg" type="image/svg+xml">
     <link rel="icon" href="assets/leanrows-icon.png" type="image/png">
     <link rel="stylesheet" href="styles.css">
@@ -34,10 +35,9 @@
         "name": "LeanRows",
         "description": "A free, read-only Windows viewer for large CSV, TSV, JSONL, NDJSON, log, and text files and Excel .xlsx workbooks, including CSV files too big for Excel.",
         "url": "https://abooodbah.github.io/leanrows/",
-        "codeRepository": "https://github.com/abooodbah/leanrows",
         "applicationCategory": "UtilitiesApplication",
         "operatingSystem": "Windows 10 and Windows 11 (x64)",
-        "softwareVersion": "0.5.0",
+        "softwareVersion": "0.5.1",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -45,9 +45,18 @@
         },
         "license": "https://github.com/abooodbah/leanrows/blob/main/LICENSE",
         "downloadUrl": "https://github.com/abooodbah/leanrows/releases/latest",
+        "screenshot": "https://abooodbah.github.io/leanrows/assets/leanrows-20m-rows.webp",
+        "image": "https://abooodbah.github.io/leanrows/assets/social-preview.png",
+        "sameAs": [
+          "https://github.com/abooodbah/leanrows",
+          "https://apps.microsoft.com/detail/9NMV8GKJXSN0",
+          "https://github.com/microsoft/winget-pkgs/tree/master/manifests/a/abooodbah/LeanRows",
+          "https://community.chocolatey.org/packages/leanrows"
+        ],
         "author": {
           "@type": "Person",
-          "name": "Abdulfatah Bahbouh"
+          "name": "Abdulfatah Bahbouh",
+          "url": "https://abooodbah.github.io/"
         }
       }
     </script>
@@ -104,7 +113,7 @@
                 <span aria-hidden="true">→</span>
               </a>
               <p id="release-note">
-                v0.5.0 is an unsigned Windows x64 ZIP. Verify the accompanying
+                v0.5.1 is an unsigned Windows x64 ZIP. Verify the accompanying
                 <code>.sha256</code> file before running it.
                 LeanRows is also in the
                 <a href="https://apps.microsoft.com/detail/9NMV8GKJXSN0">Microsoft Store</a>, signed by Microsoft.
@@ -173,6 +182,7 @@
                 src="assets/leanrows-20m-rows.webp"
                 width="1400"
                 height="792"
+                fetchpriority="high"
                 decoding="async"
                 alt="LeanRows in Dark appearance with demo_events_20M.csv open, showing the first rows of an event log, with the status bar reading Ready, 20000001 rows, 1532454643 of 1532454643 bytes, 100 percent"
               >
@@ -412,7 +422,7 @@
       <section class="release-note-section" aria-labelledby="release-warning-title">
         <div class="shell release-note-grid">
           <div>
-            <p class="eyebrow">Before installing v0.5.0</p>
+            <p class="eyebrow">Before installing v0.5.1</p>
             <h2 id="release-warning-title">The Windows build is intentionally unsigned.</h2>
           </div>
           <div>
@@ -421,7 +431,13 @@
               matching SHA-256 sidecar from the same GitHub Release, then compare the
               published value before running or installing LeanRows.
             </p>
-            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.5.0-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
+            <pre aria-label="PowerShell checksum verification command"><code>Get-FileHash .\LeanRows-v0.5.1-windows-x64-unsigned.zip -Algorithm SHA256</code></pre>
+            <p>
+              LeanRows is also in the winget community repository. winget installs
+              the portable ZIP from the GitHub Release after checking its SHA-256
+              and adds a <code>leanrows</code> command.
+            </p>
+            <pre><code>winget install abooodbah.LeanRows</code></pre>
             <p>
               To avoid the warning, install LeanRows from the
               <a href="https://apps.microsoft.com/detail/9NMV8GKJXSN0">Microsoft Store</a>
@@ -453,7 +469,7 @@
           <div class="faq-list">
             <div class="faq-item">
               <h3>How do I open a CSV file that is too large for Excel?</h3>
-              <p>Excel shows at most 1,048,576 rows. LeanRows reads the file in blocks and keeps only the visible rows in memory, so the row count is not limited by RAM. On the developer's PC it fully indexed a 1.5 GB, 20 million row CSV with an 18.4 MB peak working set.</p>
+              <p>Excel shows at most 1,048,576 rows. LeanRows reads the file in blocks and keeps only the visible rows in memory, so the row count is not limited by RAM. On the developer's PC it fully indexed a 1.5 GB, 20 million row CSV with an 18.4 MB peak working set. <a href="open-csv-too-large-for-excel/">Other ways to open a CSV that is too large for Excel</a> include Power Query, splitting the file, and DuckDB or Python.</p>
             </div>
             <div class="faq-item">
               <h3>Is LeanRows free?</h3>
@@ -469,7 +485,7 @@
             </div>
             <div class="faq-item">
               <h3>Do I need to install anything?</h3>
-              <p>No. Extract the portable ZIP and run its single 618 KB executable; it needs no administrator rights, and an optional per-user installer is included. Outside its folder it writes only its appearance setting under <code>HKCU\Software\LeanRows</code> and a search scratch folder under <code>%LOCALAPPDATA%\LeanRows</code>.</p>
+              <p>No. Extract the portable ZIP and run its single executable (1,024,512 bytes in v0.5.1); it needs no administrator rights, and an optional per-user installer is included. Outside its folder it writes only its appearance setting under <code>HKCU\Software\LeanRows</code> and a search scratch folder under <code>%LOCALAPPDATA%\LeanRows</code>.</p>
             </div>
             <div class="faq-item">
               <h3>Can I search and jump to a row?</h3>
