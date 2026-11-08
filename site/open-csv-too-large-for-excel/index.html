@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta
+      name="description"
+      content="Excel stops at 1,048,576 rows. Five ways to open a larger CSV on Windows: Power Query, splitting the file, DuckDB, Python, or a large-file viewer such as LeanRows."
+    >
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="How to open a CSV file that is too large for Excel">
+    <meta
+      property="og:description"
+      content="Excel stops at 1,048,576 rows. Five ways to open a larger CSV on Windows: Power Query, splitting the file, DuckDB, Python, or a large-file viewer such as LeanRows."
+    >
+    <meta property="og:url" content="https://abooodbah.github.io/leanrows/open-csv-too-large-for-excel/">
+    <meta property="og:image" content="https://abooodbah.github.io/leanrows/assets/social-preview.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://abooodbah.github.io/leanrows/open-csv-too-large-for-excel/">
+    <link rel="icon" href="../assets/leanrows-icon.svg" type="image/svg+xml">
+    <link rel="icon" href="../assets/leanrows-icon.png" type="image/png">
+    <link rel="stylesheet" href="../styles.css">
+    <title>How to open a CSV file that is too large for Excel</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="../" aria-label="LeanRows home">
+          <img src="../assets/leanrows-icon.svg" width="32" height="32" alt="">
+          <span>LeanRows</span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <a href="../">LeanRows</a>
+          <a href="../#faq">FAQ</a>
+          <a href="https://github.com/abooodbah/leanrows">Source</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <article class="section task-page">
+        <div class="shell task-copy">
+          <p class="eyebrow">Large CSV files · Windows</p>
+          <h1>How to open a CSV file that is too large for Excel</h1>
+          <p>
+            An Excel worksheet holds at most 1,048,576 rows. When a CSV file has
+            more, Excel opens the first 1,048,576 rows, warns that the file was
+            not loaded completely, and leaves the rest out. Saving that workbook
+            back over the CSV loses the missing rows.
+          </p>
+          <p>
+            Which way works best depends on whether you need to read the rows,
+            analyse them, or change them. These are the common options on Windows.
+          </p>
+
+          <h2>1. Load it with Power Query</h2>
+          <p>
+            In Excel, use Data &gt; Get Data &gt; From Text/CSV, then Load To and
+            choose the Data Model or a connection only. The rows stay in the data
+            model, not on a worksheet, so the row limit does not apply. You can
+            filter and summarise with PivotTables. You cannot scroll through every
+            row on a sheet, and very large files take time and memory to load.
+          </p>
+
+          <h2>2. Split the file into parts</h2>
+          <p>
+            Cut the file into pieces under the row limit and open each in Excel.
+            This works when the rows are independent. Keep the header row in every
+            part, and take care with quoted fields that contain line breaks: a
+            tool that splits on every line break will cut such a record in two.
+          </p>
+
+          <h2>3. Query it with DuckDB</h2>
+          <p>
+            DuckDB runs SQL directly on a CSV file without importing it first.
+            For example, <code>SELECT * FROM read_csv('data.csv') LIMIT 100;</code>
+            shows the first rows, and a <code>WHERE</code> or
+            <code>GROUP BY</code> clause filters or summarises the whole file.
+            This suits people who are comfortable with SQL.
+          </p>
+
+          <h2>4. Read it in chunks with Python</h2>
+          <p>
+            With pandas, <code>pd.read_csv('data.csv', chunksize=1_000_000)</code>
+            reads the file one block of rows at a time, so you can filter or
+            aggregate a file larger than memory. This needs Python and some
+            scripting.
+          </p>
+
+          <h2>5. Open it in a large-file viewer</h2>
+          <p>
+            If you only need to look at the rows, search them, or copy a few out,
+            a viewer built for large files avoids loading the whole file. LeanRows
+            is one of these: a free, open-source, read-only viewer for Windows 10
+            and 11. It reads the file in blocks, keeps only the visible rows in
+            memory, shows the first rows while it is still indexing, and can
+            search, jump to a row number, and sort by a column without changing
+            the file.
+          </p>
+          <p>
+            On the developer's Windows PC, LeanRows fully indexed a generated CSV
+            of 20,000,001 rows and 1,532,454,643 bytes (1.5 GB) with a peak working
+            set of 18.4 MB. The
+            <a href="https://github.com/abooodbah/leanrows/blob/main/docs/releases/v0.2.0.md">0.2.0 release notes</a>
+            record two more runs on a 20,000,001-row CSV at 18.15 to 18.18 MiB.
+            The PC's hardware is not recorded. LeanRows does not edit files,
+            calculate formulas, or run on macOS or Linux. Other large-file viewers
+            and text editors exist too, some of them paid; compare their limits
+            before you choose.
+          </p>
+          <p>
+            <a class="text-link" href="../">
+              See LeanRows and how to install it <span aria-hidden="true">&rarr;</span>
+            </a>
+          </p>
+
+          <h2>Which one to use</h2>
+          <p>
+            To analyse the data inside Excel, use Power Query. To query or
+            transform it repeatedly, use DuckDB or Python. To look at the rows
+            quickly without writing anything, use a viewer. Splitting the file is
+            a last resort, because it is easy to break quoted records.
+          </p>
+        </div>
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-grid">
+        <div class="footer-brand">
+          <img src="../assets/leanrows-icon.svg" width="28" height="28" alt="">
+          <p><strong>LeanRows</strong><span>Large row files, kept lean.</span></p>
+        </div>
+        <nav aria-label="Project links">
+          <a href="../">LeanRows</a>
+          <a href="https://github.com/abooodbah/leanrows">GitHub</a>
+          <a href="https://abooodbah.github.io/leanmark/">LeanMark</a>
+          <a href="https://abooodbah.github.io/leandoc/">LeanDoc</a>
+          <a href="https://abooodbah.github.io/">All Lean apps</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

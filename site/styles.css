@@ -1151,3 +1151,26 @@ pre {
 .android-join {
   margin: 1.5rem 0 1rem;
 }
+
+/* Task pages, such as open-csv-too-large-for-excel/. */
+.task-copy {
+  max-width: 46rem;
+}
+
+.task-copy h1 {
+  font-size: clamp(2.25rem, 4vw, 3rem);
+  line-height: 1.1;
+}
+
+.task-copy h2 {
+  max-width: none;
+  margin-top: var(--space-10);
+  margin-bottom: var(--space-4);
+  font-size: clamp(1.5rem, 2.6vw, 2rem);
+}
+
+.task-copy p {
+  color: var(--text-secondary);
+  font-size: 1.125rem;
+  line-height: 1.6;
+}
