@@ -10,7 +10,15 @@ use super::sort_smoke::{click, command, expect_order, sorted, wait};
 )]
 use super::*;
 use leanrows_core::{SortDirection, SortMode};
-use windows::Win32::UI::Controls::{HDI_TEXT, HDITEMW, HDM_GETITEMW, LVM_GETITEMTEXTW};
+use windows::Win32::Foundation::POINT;
+use windows::Win32::Graphics::Gdi::ClientToScreen;
+use windows::Win32::UI::Controls::{
+    HDF_SORTDOWN, HDF_SORTUP, HDI_FORMAT, HDI_TEXT, HDITEMW, HDM_GETITEMRECT, HDM_GETITEMW,
+    LVM_GETCOLUMNWIDTH, LVM_GETITEMTEXTW,
+};
+use windows::Win32::UI::WindowsAndMessaging::{EndMenu, WM_CONTEXTMENU};
+
+const END_MENU_TIMER_ID: usize = 0x4c52_434d;
 
 fn state_mut(window: HWND) -> Result<&'static mut WindowState, ShellError> {
     let pointer = state_pointer_for(window);
@@ -97,6 +105,81 @@ fn hide_from_header(window: HWND, file_column: usize) -> Result<(), ShellError> 
     Ok(())
 }
 
+/// The list columns whose header shows a sort arrow.
+fn sort_arrows(window: HWND) -> Result<Vec<usize>, ShellError> {
+    let state = state_mut(window)?;
+    let header = list_header(state.list).ok_or_else(|| ShellError::new("no list header"))?;
+    let count = header_column_count(state.list).unwrap_or_default();
+    let mut arrows = Vec::new();
+    for index in 0..usize::try_from(count).unwrap_or_default() {
+        let mut item = HDITEMW {
+            mask: HDI_FORMAT,
+            ..Default::default()
+        };
+        // SAFETY: The header fills this stack item synchronously.
+        unsafe {
+            SendMessageW(
+                header,
+                HDM_GETITEMW,
+                Some(WPARAM(index)),
+                Some(LPARAM((&raw mut item) as isize)),
+            )
+        };
+        if item.fmt.0 & (HDF_SORTUP.0 | HDF_SORTDOWN.0) != 0 {
+            arrows.push(index);
+        }
+    }
+    Ok(arrows)
+}
+
+fn column_width(window: HWND, native: usize) -> Result<isize, ShellError> {
+    let state = state_mut(window)?;
+    // SAFETY: LVM_GETCOLUMNWIDTH carries a column index and no pointers.
+    Ok(unsafe { SendMessageW(state.list, LVM_GETCOLUMNWIDTH, Some(WPARAM(native)), None) }.0)
+}
+
+unsafe extern "system" fn end_menu(_: HWND, _: u32, _: usize, _: u32) {
+    // SAFETY: Ends the menu this thread is tracking, if any.
+    let _ = unsafe { EndMenu() };
+}
+
+/// Right-clicks list column `native` through the header's real hit test.
+/// A timer closes the menu if it opens, so no command is chosen.
+fn right_click_header(window: HWND, native: usize) -> Result<(), ShellError> {
+    let state = state_mut(window)?;
+    let header = list_header(state.list).ok_or_else(|| ShellError::new("no list header"))?;
+    let mut rect = RECT::default();
+    // SAFETY: The item rectangle is writable and retained only for this call.
+    unsafe {
+        SendMessageW(
+            header,
+            HDM_GETITEMRECT,
+            Some(WPARAM(native)),
+            Some(LPARAM((&raw mut rect) as isize)),
+        )
+    };
+    let mut point = POINT {
+        x: rect.left.midpoint(rect.right),
+        y: rect.top.midpoint(rect.bottom),
+    };
+    // SAFETY: The header is live and the point is a writable stack value.
+    let _ = unsafe { ClientToScreen(header, &raw mut point) };
+    let packed = ((point.y & 0xffff) << 16) | (point.x & 0xffff);
+    // SAFETY: The timer belongs to this window and is killed below; the
+    // context-menu message carries only packed screen coordinates.
+    unsafe {
+        SetTimer(Some(window), END_MENU_TIMER_ID, 200, Some(end_menu));
+        SendMessageW(
+            header,
+            WM_CONTEXTMENU,
+            Some(WPARAM(header.0.addr())),
+            Some(LPARAM(packed as isize)),
+        );
+        let _ = KillTimer(Some(window), END_MENU_TIMER_ID);
+    }
+    Ok(())
+}
+
 fn expect_status(window: HWND, fragment: &str) -> Result<(), ShellError> {
     let status = control_text(state_mut(window)?.status);
     if !status.contains(fragment) {
@@ -121,13 +204,37 @@ pub(super) fn run(window: HWND, sort_fixture: &Path, path: &Path) -> Result<(), 
         &["Row", "Column 1", "Column 2", "Column 3", "Column 4"],
     )?;
 
-    // A middle column: the headers after it move left and keep their data.
+    // A middle column: the headers after it move left and keep their data,
+    // and a width set by hand stays with its column.
+    {
+        let state = state_mut(window)?;
+        set_column_widths(state.list, &[0, 151]);
+    }
     hide_from_header(window, 2)?;
     expect_titles(window, &["Row", "Column 1", "Column 3", "Column 4"])?;
     expect_item(window, 0, 1, "z")?;
     expect_item(window, 0, 2, "10")?;
     expect_item(window, 0, 3, "keep")?;
     expect_status(window, "Hid Column 2 from the view. The file is unchanged.")?;
+    if column_width(window, 1)? != 151 {
+        return Err(ShellError::new("hiding a column lost another's width"));
+    }
+    // Rows fetched from now on skip the hidden field.
+    {
+        let state = state_mut(window)?;
+        if let (Some(worker), Some(serial)) = (state.worker.as_ref(), state.active_serial) {
+            worker.request_viewport(serial, 0);
+        }
+    }
+    wait(window, |s| s.cache.skipped().contains(2))?;
+    expect_item(window, 0, 2, "10")?;
+    // A right-click on the second data header picks file column 3.
+    right_click_header(window, 2)?;
+    if state_mut(window)?.sort_column != 3 {
+        return Err(ShellError::new(
+            "a right-click on a shifted header picked the wrong column",
+        ));
+    }
 
     // A click on the second data header sorts file column 3, not column 2:
     // text order of 10, 2, ...993, ...992 is rows 1, 2, 4, 3.
@@ -135,12 +242,20 @@ pub(super) fn run(window: HWND, sort_fixture: &Path, path: &Path) -> Result<(), 
     sorted(window, SortMode::Text, SortDirection::Ascending, 2)?;
     expect_order(window, [0, 1, 3, 2])?;
     expect_item(window, 1, 2, "2")?;
+    if sort_arrows(window)? != [2] {
+        return Err(ShellError::new(
+            "the sort arrow is not on the sorted header",
+        ));
+    }
 
     // Hiding the sorted column keeps the order.
     command(window, column_view::ID_COLUMN_HIDE_FIRST + 2);
     expect_titles(window, &["Row", "Column 1", "Column 4"])?;
     expect_status(window, "Rows stay sorted by it.")?;
     expect_order(window, [0, 1, 3, 2])?;
+    if !sort_arrows(window)?.is_empty() {
+        return Err(ShellError::new("a sort arrow moved to another header"));
+    }
     {
         let state = state_mut(window)?;
         let committed = state.sort.as_ref().and_then(|s| s.committed);
@@ -200,5 +315,18 @@ pub(super) fn run(window: HWND, sort_fixture: &Path, path: &Path) -> Result<(), 
     })?;
     expect_item(window, 1, 2, "second")?;
     expect_item(window, 1, 3, "2")?;
+
+    // Reloading the file shows every column again.
+    hide_from_header(window, 2)?;
+    expect_titles(window, &["Row", "Column 1", "Column 3", "Column 4"])?;
+    command(window, ID_FILE_RELOAD);
+    wait(window, |s| {
+        s.rows.total_rows() == 4 && s.cache.cell(3, 0).is_some()
+    })?;
+    expect_titles(
+        window,
+        &["Row", "Column 1", "Column 2", "Column 3", "Column 4"],
+    )?;
+    expect_item(window, 0, 2, "first")?;
     Ok(())
 }

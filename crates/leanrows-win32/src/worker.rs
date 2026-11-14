@@ -1981,13 +1981,59 @@ mod tests {
         assert_eq!(cell_text(&shown, 0, 0)?, "2");
         assert_eq!(cell_text(&shown, 0, 2)?, "second");
 
-        // Hidden columns belong to one opened file; the next open shows all.
+        // A restore or a sort builds its rows with the columns hidden now,
+        // even when no viewport was requested since they changed.
         worker.set_hidden_columns(hidden);
-        worker.submit_path(fixture.path().to_path_buf());
+        let restored = wait_sort_complete(&worker, worker.request_sort(None))?;
+        assert_eq!(restored.cache.skipped(), hidden);
+        assert_eq!(cell_text(&restored, 0, 0)?, "1");
+        assert_eq!(cell_text(&restored, 0, 2)?, "");
+        worker.set_hidden_columns(crate::columns::HiddenColumns::NONE);
+        let descending = wait_sort_complete(
+            &worker,
+            worker.request_sort(Some(leanrows_core::SortRequest {
+                direction: leanrows_core::SortDirection::Descending,
+                ..request
+            })),
+        )?;
+        assert!(descending.cache.skipped().is_empty());
+        assert_eq!(cell_text(&descending, 0, 0)?, "3");
+        assert_eq!(cell_text(&descending, 0, 2)?, "third");
+
+        // Hidden columns belong to one opened file; the next open shows all,
+        // in its first rows and in the rows requested after it.
+        worker.set_hidden_columns(hidden);
+        let reopened_serial = worker.submit_path(fixture.path().to_path_buf());
         let reopened = wait_complete(&worker, Duration::from_secs(5))?;
         assert!(reopened.cache.skipped().is_empty());
         assert_eq!(cell_text(&reopened, 0, 2)?, "first");
+        assert!(worker.request_viewport(reopened_serial, 1));
+        let later = loop {
+            let event = wait_event(&worker, Duration::from_secs(5))?;
+            if event.cache_first_row == 1 {
+                break event;
+            }
+        };
+        assert!(later.cache.skipped().is_empty());
+        assert_eq!(cell_text(&later, 1, 2)?, "second");
         Ok(())
+    }
+
+    fn wait_sort_complete(worker: &Worker, serial: u64) -> io::Result<WorkerEvent> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(event) = worker.poll()
+                && event.sort.as_ref().is_some_and(|s| {
+                    s.serial == serial && s.phase == leanrows_core::SortPhase::Complete
+                })
+            {
+                return Ok(event);
+            }
+            if Instant::now() > deadline {
+                return Err(io::Error::other("sort timed out"));
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// A sort or restore in one tab must not cancel a sort waiting or running in
