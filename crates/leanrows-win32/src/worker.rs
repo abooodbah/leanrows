@@ -17,6 +17,7 @@ use leanrows_core::{
     QuerySessionConfig, QueryStepStatus, recover_stale_query_files,
 };
 
+use crate::columns::HiddenColumns;
 use crate::document_engine::{
     DocumentEngine, DocumentEngineError, DocumentProgress, DocumentQuerySource, DocumentScanStatus,
     SheetChoice, UiColumnKind, UiColumnLayout, UiRowSnapshot,
@@ -262,6 +263,7 @@ pub(crate) enum WorkerResult {
 }
 
 pub(crate) struct Worker {
+    hidden_columns: Arc<AtomicU64>,
     sorts: Arc<CoalescingMailbox<SortCommand>>,
     sort_cancellation: Arc<CancellationToken>,
     coordinator: SortCoordinator,
@@ -320,7 +322,9 @@ impl Worker {
         let sort_cancellation = Arc::new(CancellationToken::new());
         let coordinator = SortCoordinator::shared();
         let latest_sort_serial = Arc::new(AtomicU64::new(0));
+        let hidden_columns = Arc::new(AtomicU64::new(0));
         let runtime = WorkerRuntime {
+            hidden_columns: Arc::clone(&hidden_columns),
             sorts: sorts.clone(),
             sort_cancellation: sort_cancellation.clone(),
             coordinator: coordinator.clone(),
@@ -343,6 +347,7 @@ impl Worker {
             .name(String::from("leanrows-document"))
             .spawn(move || run_worker(&runtime))?;
         Ok(Self {
+            hidden_columns,
             sorts,
             sort_cancellation,
             coordinator,
@@ -371,6 +376,8 @@ impl Worker {
 
     /// Like `submit_path`, but for a workbook opens the given sheet.
     pub(crate) fn submit_path_sheet(&self, path: PathBuf, sheet: Option<usize>) -> u64 {
+        // Hidden columns belong to one opened file.
+        self.hidden_columns.store(0, Ordering::Release);
         self.sort_cancellation.cancel();
         self.latest_sort_serial.store(0, Ordering::Release);
         let _ = self.sorts.try_take();
@@ -396,6 +403,12 @@ impl Worker {
             let _ = self.signals.send(());
         }
         serial
+    }
+
+    /// Sets the data columns that later viewports leave empty. Set it before
+    /// requesting the viewport that should use it.
+    pub(crate) fn set_hidden_columns(&self, hidden: HiddenColumns) {
+        self.hidden_columns.store(hidden.bits(), Ordering::Release);
     }
 
     /// Coalesces an absolute viewport request for the current document.
@@ -635,6 +648,7 @@ impl fmt::Display for CacheConversionError {
 impl std::error::Error for CacheConversionError {}
 
 struct WorkerRuntime {
+    hidden_columns: Arc<AtomicU64>,
     sorts: Arc<CoalescingMailbox<SortCommand>>,
     sort_cancellation: Arc<CancellationToken>,
     coordinator: SortCoordinator,
@@ -652,6 +666,16 @@ struct WorkerRuntime {
     query_scratch_directory: PathBuf,
     query_scratch_quota_bytes: u64,
     wake_ui: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl WorkerRuntime {
+    /// Gives the document the hidden columns the UI set last, before a
+    /// viewport is built.
+    fn apply_hidden_columns(&self, engine: &mut DocumentEngine) {
+        engine.set_hidden_columns(HiddenColumns::from_bits(
+            self.hidden_columns.load(Ordering::Acquire),
+        ));
+    }
 }
 
 fn run_worker(runtime: &WorkerRuntime) {
@@ -799,6 +823,7 @@ fn apply_viewport_request(
         }
         document.reveal_rank = Some(request.first_row);
     }
+    runtime.apply_hidden_columns(&mut document.engine);
     let snapshot = match &document.order {
         Some(order) => document.engine.snapshot_ordered(
             order,
@@ -1388,6 +1413,7 @@ fn convert_cache(snapshot: UiRowSnapshot) -> Result<CacheState, CacheConversionE
     let first_row = snapshot.first_row();
     let row_count = u32::try_from(snapshot.len()).map_err(|_| CacheConversionError::TooManyRows)?;
     let columns = snapshot.columns();
+    let hidden = snapshot.hidden();
     let encoded_rows = snapshot.into_rows();
     let mut rows = Vec::new();
     rows.try_reserve_exact(encoded_rows.len())
@@ -1424,9 +1450,10 @@ fn convert_cache(snapshot: UiRowSnapshot) -> Result<CacheState, CacheConversionE
                     .ok_or(CacheConversionError::InconsistentColumns)?
                     .as_utf16(),
             ),
-            UiColumnKind::Fields | UiColumnKind::Cells => AccessibleName::from_utf16_cells(
+            UiColumnKind::Fields | UiColumnKind::Cells => AccessibleName::from_visible_utf16_cells(
                 parts.absolute_row,
                 cells.iter().skip(1).map(DisplayCell::as_utf16),
+                hidden,
             ),
         };
         rows.push(CachedRow::with_rank_and_name(
@@ -1437,7 +1464,7 @@ fn convert_cache(snapshot: UiRowSnapshot) -> Result<CacheState, CacheConversionE
         ));
     }
     Ok(CacheState {
-        cache: Arc::new(ImmutableRowCache::new(rows)),
+        cache: Arc::new(ImmutableRowCache::with_skipped(rows, hidden)),
         first_row,
         row_count,
         columns,
@@ -1869,6 +1896,144 @@ mod tests {
         let later = wait_event(&worker, Duration::from_secs(5))?;
         assert_eq!(later.reveal_rank, None);
         Ok(())
+    }
+
+    fn wait_skipped(
+        worker: &Worker,
+        skipped: crate::columns::HiddenColumns,
+        timeout: Duration,
+    ) -> io::Result<WorkerEvent> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let event = wait_event(worker, remaining)?;
+            if event.cache.skipped() == skipped && event.cached_rows > 0 {
+                return Ok(event);
+            }
+        }
+    }
+
+    /// The sort smoke's rows with a text column between the two it sorts.
+    #[test]
+    fn hidden_columns_are_skipped_in_plain_and_sorted_viewports_until_the_next_open()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = TempFixture::file(
+            "csv",
+            b"z,first,10\na,second,2\nm,third,9007199254740993\nb,fourth,9007199254740992\n",
+        )?;
+        let worker = Worker::start(Arc::new(|| {}))?;
+        let serial = worker.submit_path(fixture.path().to_path_buf());
+        let opened = wait_complete(&worker, Duration::from_secs(5))?;
+        assert_eq!(cell_text(&opened, 0, 2)?, "first");
+        assert!(opened.cache.skipped().is_empty());
+
+        let mut hidden = crate::columns::HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        worker.set_hidden_columns(hidden);
+        assert!(worker.request_viewport(serial, 0));
+        let plain = wait_skipped(&worker, hidden, Duration::from_secs(5))?;
+        assert_eq!(cell_text(&plain, 0, 1)?, "z");
+        assert_eq!(cell_text(&plain, 0, 2)?, "");
+        assert_eq!(cell_text(&plain, 0, 3)?, "10");
+        let name: Vec<u16> = "Row 1; Column 1: z; Column 3: 10\0"
+            .encode_utf16()
+            .collect();
+        assert_eq!(
+            plain
+                .cache
+                .accessible_name(0)
+                .map(crate::AccessibleName::as_utf16),
+            Some(name.as_slice())
+        );
+
+        let request = leanrows_core::SortRequest {
+            column: 2,
+            mode: leanrows_core::SortMode::Numeric,
+            direction: leanrows_core::SortDirection::Ascending,
+        };
+        let sort_serial = worker.request_sort(Some(request));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let sorted = loop {
+            if let Some(event) = worker.poll()
+                && event.sort.as_ref().is_some_and(|s| {
+                    s.serial == sort_serial && s.phase == leanrows_core::SortPhase::Complete
+                })
+            {
+                break event;
+            }
+            if Instant::now() > deadline {
+                return Err(io::Error::other("sort timed out").into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        assert_eq!(sorted.cache.skipped(), hidden);
+        assert_eq!(cell_text(&sorted, 0, 0)?, "2");
+        assert_eq!(cell_text(&sorted, 0, 2)?, "");
+        assert_eq!(cell_text(&sorted, 0, 3)?, "2");
+
+        worker.set_hidden_columns(crate::columns::HiddenColumns::NONE);
+        assert!(worker.request_viewport(serial, 0));
+        let shown = wait_skipped(
+            &worker,
+            crate::columns::HiddenColumns::NONE,
+            Duration::from_secs(5),
+        )?;
+        assert_eq!(cell_text(&shown, 0, 0)?, "2");
+        assert_eq!(cell_text(&shown, 0, 2)?, "second");
+
+        // A restore or a sort builds its rows with the columns hidden now,
+        // even when no viewport was requested since they changed.
+        worker.set_hidden_columns(hidden);
+        let restored = wait_sort_complete(&worker, worker.request_sort(None))?;
+        assert_eq!(restored.cache.skipped(), hidden);
+        assert_eq!(cell_text(&restored, 0, 0)?, "1");
+        assert_eq!(cell_text(&restored, 0, 2)?, "");
+        worker.set_hidden_columns(crate::columns::HiddenColumns::NONE);
+        let descending = wait_sort_complete(
+            &worker,
+            worker.request_sort(Some(leanrows_core::SortRequest {
+                direction: leanrows_core::SortDirection::Descending,
+                ..request
+            })),
+        )?;
+        assert!(descending.cache.skipped().is_empty());
+        assert_eq!(cell_text(&descending, 0, 0)?, "3");
+        assert_eq!(cell_text(&descending, 0, 2)?, "third");
+
+        // Hidden columns belong to one opened file; the next open shows all,
+        // in its first rows and in the rows requested after it.
+        worker.set_hidden_columns(hidden);
+        let reopened_serial = worker.submit_path(fixture.path().to_path_buf());
+        let reopened = wait_complete(&worker, Duration::from_secs(5))?;
+        assert!(reopened.cache.skipped().is_empty());
+        assert_eq!(cell_text(&reopened, 0, 2)?, "first");
+        assert!(worker.request_viewport(reopened_serial, 1));
+        let later = loop {
+            let event = wait_event(&worker, Duration::from_secs(5))?;
+            if event.cache_first_row == 1 {
+                break event;
+            }
+        };
+        assert!(later.cache.skipped().is_empty());
+        assert_eq!(cell_text(&later, 1, 2)?, "second");
+        Ok(())
+    }
+
+    fn wait_sort_complete(worker: &Worker, serial: u64) -> io::Result<WorkerEvent> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(event) = worker.poll()
+                && event.sort.as_ref().is_some_and(|s| {
+                    s.serial == serial && s.phase == leanrows_core::SortPhase::Complete
+                })
+            {
+                return Ok(event);
+            }
+            if Instant::now() > deadline {
+                return Err(io::Error::other("sort timed out"));
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// A sort or restore in one tab must not cancel a sort waiting or running in

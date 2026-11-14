@@ -4,6 +4,18 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Hide columns from the view: right-click a column header and choose Hide
+  column, or use More > Hide column. Show all columns brings them back. The
+  file is not changed, each tab keeps its own hidden columns, and nothing is
+  saved. Hidden columns are not copied by `Ctrl+C`, the rows on screen skip
+  decoding them, and a sorted column that is hidden keeps its order. Find still
+  searches hidden columns, and the status bar says so. Requested by @Dobatymo
+  in #39.
+
 ## [0.5.1] - 2026-11-06
 
 Zooming is fast, and the lists have thin scroll bars.

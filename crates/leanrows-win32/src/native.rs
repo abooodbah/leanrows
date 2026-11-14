@@ -2,6 +2,8 @@
 
 mod accessibility;
 mod clipboard;
+mod column_smoke;
+mod column_view;
 mod drop_files;
 mod header;
 mod hover;
@@ -96,6 +98,7 @@ use self::accessibility::{
 use self::layout::{CommandLayoutMode, UiLayout, UiRect, tab_item_width};
 use self::tabs::TabHover;
 use self::theme::{EffectiveTheme, ThemeMode, ThemeResources};
+use crate::columns::HiddenColumns;
 use crate::document_engine::{UiColumnKind, UiColumnLayout};
 use crate::worker::{
     QueryDirection, Worker, WorkerEvent, WorkerPhase, WorkerQueryPhase, WorkerQueryState,
@@ -187,6 +190,11 @@ impl MenuGuard {
     fn handle(&self) -> HMENU {
         self.0.unwrap_or_default()
     }
+
+    /// Hands the menu to its new owner, such as a parent menu.
+    fn release(mut self) {
+        self.0 = None;
+    }
 }
 
 impl Drop for MenuGuard {
@@ -246,7 +254,11 @@ struct WindowState {
     /// Visible worksheets when the active document is a workbook.
     sheets: Option<Arc<WorkerSheets>>,
     columns: NativeColumns,
+    /// Data columns the active tab hides from the view.
+    hidden_columns: HiddenColumns,
     sort: Option<crate::worker::WorkerSortState>,
+    /// The data column a header click or right-click chose last, numbered
+    /// from 1 as in the file; the More menu's sort commands use it.
     sort_column: usize,
     pending_reveal: Option<u64>,
     active_find: Option<ActiveFind>,
@@ -350,6 +362,7 @@ struct BackgroundTab {
     serial: Option<u64>,
     sheets: Option<Arc<WorkerSheets>>,
     columns: NativeColumns,
+    hidden_columns: HiddenColumns,
     column_widths: Vec<i32>,
     column_zoom: crate::zoom::ColumnZoom,
     rows: SlidingRowWindow,
@@ -390,7 +403,7 @@ impl BackgroundTab {
             self.chrome.status = format!("Column update failed: {error}");
             return;
         }
-        self.chrome.status = worker_status(event, self.active_find.as_ref());
+        self.chrome.status = worker_status(event, self.active_find.as_ref(), self.hidden_columns);
         let mut rows = SlidingRowWindow::new(event.progress.available_rows, u32::MAX);
         rows.seek(if changed_order {
             0
@@ -573,6 +586,7 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         active_serial: None,
         sheets: None,
         columns: NativeColumns::preview(),
+        hidden_columns: HiddenColumns::NONE,
         sort: None,
         sort_column: 1,
         pending_reveal: None,
@@ -1237,7 +1251,7 @@ fn verify_zoom_column_widths(window: HWND) -> Result<(), ShellError> {
     let widths = || {
         // SAFETY: Smoke runs synchronously on the window's owning UI thread.
         unsafe { pointer.as_ref() }
-            .map(|state| column_widths(state.list, state.columns))
+            .map(|state| column_widths(state.list))
             .ok_or_else(|| ShellError::new("zoom width smoke state was detached"))
     };
     let start = widths()?;
@@ -1419,7 +1433,7 @@ fn verify_zoom_background_tab(window: HWND) -> Result<(), ShellError> {
         .ok_or_else(|| ShellError::new("zoom tab smoke lost its background tab"))?;
     let stored = tab.column_widths.clone();
     let restored = restore_tab(window, state, tab);
-    let shown = column_widths(state.list, state.columns);
+    let shown = column_widths(state.list);
     let back = set_grid_zoom(window, crate::zoom::DEFAULT_ZOOM);
     restored?;
     back?;
@@ -2388,7 +2402,13 @@ fn verify_native_ux_primitives(state: &WindowState) -> Result<(), ShellError> {
     }
     select_absolute_row(state, 0)?;
     let selected = selected_local_rows(state.list)?;
-    let copied = build_copy_text(state.cache.as_ref(), state.rows, state.columns, &selected)?;
+    let copied = build_copy_text(
+        state.cache.as_ref(),
+        state.rows,
+        state.columns,
+        state.hidden_columns,
+        &selected,
+    )?;
     let expected: Vec<u16> = "1\tAccessibility smoke row\0".encode_utf16().collect();
     if copied != expected {
         return Err(ShellError::new(
@@ -2533,6 +2553,7 @@ fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
     )?;
     append_menu_text(menu.handle(), ID_EDIT_GOTO, w!("&Go to row...\tCtrl+G"))?;
     sorting::append_menu(menu.handle())?;
+    column_view::append_overflow_items(menu.handle(), state)?;
     let case_flag = if inline_match_case(state.chrome.match_case) {
         MF_STRING | MF_CHECKED
     } else {
@@ -2624,7 +2645,7 @@ fn append_menu_owned(menu: HMENU, command: u16, text: &str) -> Result<(), ShellE
 }
 
 fn handle_command(window: HWND, command: u16) {
-    if sorting::command(window, command) {
+    if sorting::command(window, command) || column_view::command(window, command) {
         return;
     }
     match command {
@@ -2761,7 +2782,7 @@ fn set_grid_zoom(window: HWND, zoom: u32) -> Result<(), ShellError> {
     let previous_fonts = state.theme.fonts.replace_grid(fonts);
     state.theme.zoom = zoom;
     let list = state.list;
-    let current = column_widths(list, state.columns);
+    let current = column_widths(list);
     let widths = state.column_zoom.rescale(&current, previous_zoom, zoom);
     with_list_redraw_off(list, || {
         set_font_quietly(list, state.theme.fonts.grid());
@@ -3043,7 +3064,13 @@ fn copy_selected_rows(window: HWND) -> Result<(usize, usize), ShellError> {
     let state = unsafe { pointer.as_ref() }
         .ok_or_else(|| ShellError::new("window state is unavailable"))?;
     let selected = selected_local_rows(state.list)?;
-    let text = build_copy_text(state.cache.as_ref(), state.rows, state.columns, &selected)?;
+    let text = build_copy_text(
+        state.cache.as_ref(),
+        state.rows,
+        state.columns,
+        state.hidden_columns,
+        &selected,
+    )?;
     let bytes = text
         .len()
         .checked_mul(size_of::<u16>())
@@ -3092,6 +3119,7 @@ fn build_copy_text(
     cache: &ImmutableRowCache,
     rows: SlidingRowWindow,
     columns: NativeColumns,
+    hidden: HiddenColumns,
     selected: &[i32],
 ) -> Result<Vec<u16>, ShellError> {
     if selected.is_empty() || selected.len() > MAX_COPY_ROWS {
@@ -3102,7 +3130,6 @@ fn build_copy_text(
     let Some(_kind) = columns.kind else {
         return Err(ShellError::new("the document has no copyable data columns"));
     };
-    let column_count = usize::from(columns.data_columns).saturating_add(1);
     let mut text = Vec::new();
     text.try_reserve_exact(MAX_COPY_UTF16_UNITS.min(4_096))
         .map_err(|_| ShellError::new("clipboard text allocation is unavailable"))?;
@@ -3118,9 +3145,15 @@ fn build_copy_text(
         if row_index != 0 {
             append_copy_units(&mut text, &[13, 10])?;
         }
-        for column in 0..column_count {
+        let shown = std::iter::once(0).chain(hidden.visible(columns.data_columns));
+        for column in shown {
             if column != 0 {
                 append_copy_units(&mut text, &[9])?;
+            }
+            if cache.skipped().contains(column) {
+                return Err(ShellError::new(
+                    "a column shown again is still loading; copy again in a moment",
+                ));
             }
             match cache.cell(absolute_row, column) {
                 Some(cell) => {
@@ -5328,6 +5361,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
     insert_existing_data_columns(
         list,
         state.columns,
+        state.hidden_columns,
         state.theme.zoom,
         &mut state.column_zoom,
     )?;
@@ -5561,17 +5595,19 @@ fn insert_column(
     (result.0 != -1).then_some(()).ok_or(())
 }
 
+/// Inserts the shown data columns after the Row column, in file order.
 fn insert_existing_data_columns(
     list: HWND,
     columns: NativeColumns,
+    hidden: HiddenColumns,
     zoom: u32,
     column_zoom: &mut crate::zoom::ColumnZoom,
 ) -> Result<(), ()> {
     let Some(kind) = columns.kind else {
         return (columns.data_columns == 0).then_some(()).ok_or(());
     };
-    for data_index in 1..=columns.data_columns {
-        insert_data_column(list, kind, data_index, zoom, column_zoom)?;
+    for (offset, file_column) in hidden.visible(columns.data_columns).enumerate() {
+        insert_data_column(list, kind, offset + 1, file_column, zoom, column_zoom)?;
     }
     Ok(())
 }
@@ -5588,33 +5624,25 @@ const fn data_column_width(kind: UiColumnKind) -> i32 {
     }
 }
 
-/// Inserts a data column as wide as its kind's width at `zoom`.
+/// Inserts data column `file_column` at list column `native_index`, as wide
+/// as its kind's width at `zoom`.
 fn insert_data_column(
     list: HWND,
     kind: UiColumnKind,
-    data_index: u8,
+    native_index: usize,
+    file_column: usize,
     zoom: u32,
     column_zoom: &mut crate::zoom::ColumnZoom,
 ) -> Result<(), ()> {
-    let index = usize::from(data_index);
-    if matches!(kind, UiColumnKind::Preview) && data_index != 1 {
+    if matches!(kind, UiColumnKind::Preview) && file_column != 1 {
         return Err(());
     }
-    let width = column_zoom.insert(index, data_column_width(kind), zoom);
-    match kind {
-        UiColumnKind::Preview => insert_column(list, index, w!("Preview"), width),
-        UiColumnKind::Fields => {
-            let title = format!("Column {data_index}");
-            let mut encoded: Vec<u16> = title.encode_utf16().collect();
-            encoded.push(0);
-            insert_column(list, index, PCWSTR(encoded.as_ptr()), width)
-        }
-        UiColumnKind::Cells => {
-            let mut encoded: Vec<u16> = sheet_column_letters(data_index).encode_utf16().collect();
-            encoded.push(0);
-            insert_column(list, index, PCWSTR(encoded.as_ptr()), width)
-        }
-    }
+    let width = column_zoom.insert(native_index, data_column_width(kind), zoom);
+    let mut encoded: Vec<u16> = column_view::column_title(kind, file_column)
+        .encode_utf16()
+        .collect();
+    encoded.push(0);
+    insert_column(list, native_index, PCWSTR(encoded.as_ptr()), width)
 }
 
 /// Spreadsheet column letters for a one-based column: 1 is A, 27 is AA.
@@ -5630,24 +5658,25 @@ fn sheet_column_letters(column: u8) -> String {
 }
 
 fn reset_data_columns(state: &mut WindowState) -> Result<(), ShellError> {
-    while state.columns.data_columns != 0 {
+    remove_data_columns(state.list)?;
+    state.columns.data_columns = 0;
+    state.columns.kind = None;
+    Ok(())
+}
+
+/// Deletes every list column after Row. The list holds only the shown data
+/// columns, so this counts the header rather than the document's columns.
+fn remove_data_columns(list: HWND) -> Result<(), ShellError> {
+    while header_column_count(list).is_some_and(|count| count > 1) {
         // Deleting subitem one repeatedly is deterministic because later data
         // columns shift left; user-resized widths cannot leak into a new file.
         // SAFETY: The list is live on this UI thread and the message has no pointers.
-        let result = unsafe {
-            SendMessageW(
-                state.list,
-                LVM_DELETECOLUMN,
-                Some(WPARAM(1)),
-                Some(LPARAM(0)),
-            )
-        };
+        let result =
+            unsafe { SendMessageW(list, LVM_DELETECOLUMN, Some(WPARAM(1)), Some(LPARAM(0))) };
         if result.0 == 0 {
             return Err(ShellError::new("native data-column reset failed"));
         }
-        state.columns.data_columns -= 1;
     }
-    state.columns.kind = None;
     Ok(())
 }
 
@@ -5669,10 +5698,16 @@ fn synchronize_data_columns(
     }
     while state.columns.data_columns < layout.data_columns() {
         let next = state.columns.data_columns.saturating_add(1);
+        // A column found later in the file is shown, after the shown ones.
+        let native_index = state
+            .hidden_columns
+            .native_column(usize::from(next), next)
+            .ok_or_else(|| ShellError::new("a new data column cannot start hidden"))?;
         insert_data_column(
             state.list,
             layout.kind(),
-            next,
+            native_index,
+            usize::from(next),
             state.theme.zoom,
             &mut state.column_zoom,
         )
@@ -5989,13 +6024,20 @@ fn serve_display_text(state: &WindowState, notification: &mut NMLVDISPINFOW) {
     let Some(absolute_row) = state.rows.local_to_absolute(notification.item.iItem) else {
         return;
     };
-    let subitem = usize::try_from(notification.item.iSubItem).ok();
-    let cached = subitem.and_then(|column| state.cache.cell(absolute_row, column));
-    let text = match cached {
-        Some(text) => text,
-        None if state.cache.contains_row(absolute_row) => &EMPTY_TEXT,
-        None => &LOADING_TEXT,
+    let Ok(native) = usize::try_from(notification.item.iSubItem) else {
+        return;
     };
+    let text = display_units(
+        &state.cache,
+        state.hidden_columns,
+        state.columns.data_columns,
+        absolute_row,
+        native,
+    );
+    let subitem = state
+        .hidden_columns
+        .file_column(native, state.columns.data_columns);
+    let cached = subitem.and_then(|column| state.cache.cell(absolute_row, column));
     // No allocation, parsing, locking, or I/O occurs here. The pointer targets
     // immutable cache storage or the static loading string. Smoke attestation is
     // one bounded comparison plus an atomic store.
@@ -6016,6 +6058,27 @@ fn serve_display_text(state: &WindowState, notification: &mut NMLVDISPINFOW) {
         state
             .document_smoke_observed
             .fetch_or(bit, Ordering::AcqRel);
+    }
+}
+
+/// The text list column `native` shows for `absolute_row`: the cached cell
+/// of the file column under that header, empty when the row has no such
+/// field, or "Loading" while the row, or a column shown again, is fetched.
+fn display_units(
+    cache: &ImmutableRowCache,
+    hidden: HiddenColumns,
+    data_columns: u8,
+    absolute_row: u64,
+    native: usize,
+) -> &[u16] {
+    let file_column = hidden.file_column(native, data_columns);
+    if file_column.is_some_and(|column| cache.skipped().contains(column)) {
+        return &LOADING_TEXT;
+    }
+    match file_column.and_then(|column| cache.cell(absolute_row, column)) {
+        Some(text) => text,
+        None if cache.contains_row(absolute_row) => &EMPTY_TEXT,
+        None => &LOADING_TEXT,
     }
 }
 
@@ -6088,6 +6151,7 @@ fn queue_path_sheet(window: HWND, path: PathBuf, sheet: Option<usize>) -> Result
     state.active_find = None;
     state.sort = None;
     state.sort_column = 1;
+    state.hidden_columns = HiddenColumns::NONE;
     state.revealed_match = None;
     let worker = state
         .worker
@@ -6248,7 +6312,7 @@ fn open_pending(window: HWND) {
 fn stash_active(state: &mut WindowState) -> Result<BackgroundTab, ShellError> {
     let top_row = top_visible_row(state);
     let selected_row = first_selected_row(state);
-    let column_widths = column_widths(state.list, state.columns);
+    let column_widths = column_widths(state.list);
     let chrome = capture_chrome(state);
     let rows = state.rows;
     let cache = Arc::clone(&state.cache);
@@ -6265,6 +6329,7 @@ fn stash_active(state: &mut WindowState) -> Result<BackgroundTab, ShellError> {
         serial: state.active_serial.take(),
         sheets: state.sheets.take(),
         columns: state.columns,
+        hidden_columns: std::mem::take(&mut state.hidden_columns),
         column_widths,
         column_zoom: state.column_zoom.clone(),
         rows,
@@ -6297,9 +6362,11 @@ fn restore_tab(
     state.pending_reveal = None;
 
     reset_data_columns(state)?;
+    state.hidden_columns = tab.hidden_columns;
     insert_existing_data_columns(
         state.list,
         tab.columns,
+        tab.hidden_columns,
         state.theme.zoom,
         &mut state.column_zoom,
     )
@@ -6583,8 +6650,10 @@ fn control_text(handle: HWND) -> String {
     String::from_utf16_lossy(&buffer[..copied])
 }
 
-fn column_widths(list: HWND, columns: NativeColumns) -> Vec<i32> {
-    (0..=usize::from(columns.data_columns))
+/// The widths of the list's columns: Row and the shown data columns.
+fn column_widths(list: HWND) -> Vec<i32> {
+    let count = header_column_count(list).unwrap_or_default();
+    (0..usize::try_from(count).unwrap_or_default())
         .map(|column| {
             // SAFETY: LVM_GETCOLUMNWIDTH carries a column index and no pointers.
             let width =
@@ -6883,7 +6952,7 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
         return state.document_smoke;
     }
 
-    let status_text = worker_status(event, state.active_find.as_ref());
+    let status_text = worker_status(event, state.active_find.as_ref(), state.hidden_columns);
     sorting::update_header(state);
     let mut rows = SlidingRowWindow::new(event.progress.available_rows, u32::MAX);
     rows.seek(if changed_order {
@@ -7220,7 +7289,44 @@ fn decode_cache_cell(cache: &ImmutableRowCache, row: u64, column: usize) -> Opti
     String::from_utf16(payload).ok()
 }
 
-fn worker_status(event: &WorkerEvent, active_find: Option<&ActiveFind>) -> String {
+/// The status strip text for a worker event. When columns are hidden it
+/// says how many, or, while Find is showing, that Find still searches them.
+fn worker_status(
+    event: &WorkerEvent,
+    active_find: Option<&ActiveFind>,
+    hidden: HiddenColumns,
+) -> String {
+    let (mut status, kind) = event_status(event, active_find, hidden);
+    if hidden.is_empty() {
+        return status;
+    }
+    match kind {
+        StatusKind::Failure => {}
+        StatusKind::Find => status.push_str(" | hidden columns are searched too"),
+        StatusKind::Rows => match hidden.count() {
+            1 => status.push_str(" | 1 column hidden"),
+            count => {
+                use std::fmt::Write as _;
+                let _ = write!(status, " | {count} columns hidden");
+            }
+        },
+    }
+    status
+}
+
+/// Which part of a worker event the status strip shows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StatusKind {
+    Failure,
+    Find,
+    Rows,
+}
+
+fn event_status(
+    event: &WorkerEvent,
+    active_find: Option<&ActiveFind>,
+    hidden: HiddenColumns,
+) -> (String, StatusKind) {
     use std::fmt::Write as _;
 
     if let WorkerResult::Failed { message } = &event.result {
@@ -7229,19 +7335,27 @@ fn worker_status(event: &WorkerEvent, active_find: Option<&ActiveFind>) -> Strin
         } else {
             ""
         };
-        return format!("Could not read file: {message}{reload}");
+        return (
+            format!("Could not read file: {message}{reload}"),
+            StatusKind::Failure,
+        );
     }
     if let Some(sort) = &event.sort
         && (!matches!(sort.phase, leanrows_core::SortPhase::Complete) || active_find.is_none())
-        && let Some(status) = sorting::status(event)
+        && let Some(status) = sorting::status(event, hidden)
     {
-        return status;
+        let kind = if sort.error.is_some() {
+            StatusKind::Failure
+        } else {
+            StatusKind::Rows
+        };
+        return (status, kind);
     }
     if let Some(query) = event.query.as_ref()
         && let Some(active) = active_find
         && active.query_serial == query.query_serial
     {
-        return query_status(query, active.case_sensitive);
+        return (query_status(query, active.case_sensitive), StatusKind::Find);
     }
     let progress = event.progress;
     let percent = progress_percent(progress.scanned_bytes, progress.source_bytes);
@@ -7289,7 +7403,7 @@ fn worker_status(event: &WorkerEvent, active_find: Option<&ActiveFind>) -> Strin
             event.source_truncated_rows, event.display_truncated_rows, event.escaped_non_utf8_rows
         );
     }
-    status
+    (status, StatusKind::Rows)
 }
 
 fn query_status(query: &WorkerQueryState, case_sensitive: bool) -> String {
@@ -7409,14 +7523,16 @@ mod tests {
 
     use super::layout::UiLayout;
     use super::{
-        ActiveFind, EMPTY_TITLE_CAPTION, MAX_COPY_ROWS, MAX_COPY_UTF16_UNITS,
-        MAX_STARTUP_ERROR_UTF16_UNITS, NativeColumns, RevealedMatch, SHELL_SMOKE_TEXT_UNITS,
-        append_copy_units, brush_result, build_copy_text, control_style, document_event_is_usable,
-        document_smoke_evidence, document_title, event_chrome, failure_requires_reload,
-        file_meta_text, find_needle, is_supported_document_path, parse_one_based_row,
-        parse_open_selection, query_match_to_reveal, query_status, sheet_column_letters,
-        startup_error_text, worker_status,
+        ActiveFind, EMPTY_TEXT, EMPTY_TITLE_CAPTION, LOADING_TEXT, MAX_COPY_ROWS,
+        MAX_COPY_UTF16_UNITS, MAX_STARTUP_ERROR_UTF16_UNITS, NativeColumns, RevealedMatch,
+        SHELL_SMOKE_TEXT_UNITS, append_copy_units, brush_result, build_copy_text, control_style,
+        display_units, document_event_is_usable, document_smoke_evidence, document_title,
+        event_chrome, failure_requires_reload, file_meta_text, find_needle,
+        is_supported_document_path, parse_one_based_row, parse_open_selection,
+        query_match_to_reveal, query_status, sheet_column_letters, startup_error_text,
+        worker_status,
     };
+    use crate::columns::HiddenColumns;
     use crate::document_engine::{UiColumnKind, UiColumnLayout};
     use crate::worker::{
         WorkerEvent, WorkerPhase, WorkerProgress, WorkerQueryPhase, WorkerQueryState, WorkerResult,
@@ -7651,7 +7767,7 @@ mod tests {
     fn source_truncation_is_visible_in_native_status() {
         let mut event = ready_event();
         event.source_truncated_rows = 1;
-        assert!(worker_status(&event, None).contains("1 source-truncated"));
+        assert!(worker_status(&event, None, HiddenColumns::NONE).contains("1 source-truncated"));
     }
 
     #[test]
@@ -7741,14 +7857,123 @@ mod tests {
             data_columns: 3,
         };
         let rows = crate::SlidingRowWindow::new(20, u32::MAX);
-        let text = build_copy_text(&cache, rows, columns, &[7, 8])?;
+        let text = build_copy_text(&cache, rows, columns, HiddenColumns::NONE, &[7, 8])?;
         let expected: Vec<u16> = "8\talpha\t\tomega\r\n9\tnext\t\t\0"
             .encode_utf16()
             .collect();
         assert_eq!(text, expected);
-        assert!(build_copy_text(&cache, rows, columns, &[6]).is_err());
-        assert!(build_copy_text(&cache, rows, columns, &vec![7; MAX_COPY_ROWS + 1]).is_err());
+        assert!(build_copy_text(&cache, rows, columns, HiddenColumns::NONE, &[6]).is_err());
+        assert!(
+            build_copy_text(
+                &cache,
+                rows,
+                columns,
+                HiddenColumns::NONE,
+                &vec![7; MAX_COPY_ROWS + 1]
+            )
+            .is_err()
+        );
         Ok(())
+    }
+
+    fn smoke_fixture_row() -> CachedRow {
+        // The fields of tests/fixtures/document-smoke.csv, row 8.
+        CachedRow::new(
+            7,
+            vec![
+                DisplayCell::new("8"),
+                DisplayCell::new("alpha"),
+                DisplayCell::new("quoted, value"),
+                DisplayCell::new(r"line1\nline2"),
+            ],
+        )
+    }
+
+    fn units(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain([0]).collect()
+    }
+
+    #[test]
+    fn copy_leaves_out_hidden_columns_and_waits_for_a_shown_column()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let columns = NativeColumns {
+            kind: Some(UiColumnKind::Fields),
+            data_columns: 3,
+        };
+        let rows = crate::SlidingRowWindow::new(20, u32::MAX);
+        let mut hidden = HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        let cache = ImmutableRowCache::new(vec![smoke_fixture_row()]);
+        let text = build_copy_text(&cache, rows, columns, hidden, &[7])?;
+        assert_eq!(text, units("8\talpha\tline1\\nline2"));
+        // Rows fetched while column 2 was hidden do not hold it. Once it is
+        // shown again, copy refuses until the refetched rows arrive rather
+        // than paste an empty field.
+        let skipped = ImmutableRowCache::with_skipped(vec![smoke_fixture_row()], hidden);
+        assert!(build_copy_text(&skipped, rows, columns, HiddenColumns::NONE, &[7]).is_err());
+        assert_eq!(
+            build_copy_text(&skipped, rows, columns, hidden, &[7])?,
+            units("8\talpha\tline1\\nline2")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn grid_cells_follow_the_header_to_the_file_column() {
+        let cache = ImmutableRowCache::new(vec![smoke_fixture_row()]);
+        let mut hidden = HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        assert_eq!(display_units(&cache, hidden, 3, 7, 0), &units("8")[..]);
+        assert_eq!(display_units(&cache, hidden, 3, 7, 1), &units("alpha")[..]);
+        assert_eq!(
+            display_units(&cache, hidden, 3, 7, 2),
+            &units(r"line1\nline2")[..]
+        );
+        assert_eq!(display_units(&cache, hidden, 3, 7, 3), &EMPTY_TEXT[..]);
+        assert_eq!(display_units(&cache, hidden, 3, 8, 1), &LOADING_TEXT[..]);
+        let all = HiddenColumns::NONE;
+        assert_eq!(
+            display_units(&cache, all, 3, 7, 2),
+            &units("quoted, value")[..]
+        );
+        let skipped = ImmutableRowCache::with_skipped(vec![smoke_fixture_row()], hidden);
+        assert_eq!(display_units(&skipped, all, 3, 7, 2), &LOADING_TEXT[..]);
+        assert_eq!(
+            display_units(&skipped, all, 3, 7, 3),
+            &units(r"line1\nline2")[..]
+        );
+    }
+
+    #[test]
+    fn status_counts_hidden_columns_and_says_find_searches_them() {
+        let mut hidden = HiddenColumns::NONE;
+        let event = ready_event();
+        assert!(!worker_status(&event, None, hidden).contains("hidden"));
+        assert!(hidden.hide(2, 4));
+        assert!(worker_status(&event, None, hidden).ends_with(" | 1 column hidden"));
+        assert!(hidden.hide(4, 4));
+        assert!(worker_status(&event, None, hidden).ends_with(" | 2 columns hidden"));
+
+        let mut searching = ready_event();
+        searching.query = Some(WorkerQueryState {
+            query_serial: 19,
+            phase: WorkerQueryPhase::MatchReady,
+            scanned_bytes: 50,
+            source_bytes: 100,
+            stored_hits: 4,
+            active_hit_index: Some(2),
+            active_row: Some(41),
+            message: String::from("Match 3 (4 stored)."),
+        });
+        let active = ActiveFind {
+            query_serial: 19,
+            needle: b"row".to_vec(),
+            case_sensitive: false,
+        };
+        let status = worker_status(&searching, Some(&active), hidden);
+        assert!(status.starts_with("Find: match ready"));
+        assert!(status.ends_with(" | hidden columns are searched too"));
+        assert!(!worker_status(&searching, Some(&active), HiddenColumns::NONE).contains("hidden"));
     }
 
     #[test]
@@ -7789,7 +8014,10 @@ mod tests {
             ],
             current: 3,
         }));
-        assert!(worker_status(&event, None).starts_with("Sheet 2 of 2: Tab here | "));
+        assert!(
+            worker_status(&event, None, HiddenColumns::NONE)
+                .starts_with("Sheet 2 of 2: Tab here | ")
+        );
     }
 
     #[test]

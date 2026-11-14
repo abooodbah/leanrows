@@ -2,6 +2,8 @@
 
 use std::char::decode_utf16;
 
+use crate::columns::HiddenColumns;
+
 /// Maximum UTF-16 storage for one accessible name, including its terminal NUL.
 pub const MAX_ACCESSIBLE_NAME_UTF16_UNITS: usize = 512;
 
@@ -34,10 +36,23 @@ impl AccessibleName {
         absolute_row: u64,
         cells: impl IntoIterator<Item = &'a [u16]>,
     ) -> Self {
+        Self::from_visible_utf16_cells(absolute_row, cells, HiddenColumns::NONE)
+    }
+
+    /// Like `from_utf16_cells`, but leaves out hidden data columns. The
+    /// columns that remain keep their numbers in the file.
+    pub(crate) fn from_visible_utf16_cells<'a>(
+        absolute_row: u64,
+        cells: impl IntoIterator<Item = &'a [u16]>,
+        hidden: HiddenColumns,
+    ) -> Self {
         let mut builder = NameBuilder::new();
         builder.push_str("Row ");
         builder.push_str(&absolute_row.saturating_add(1).to_string());
         for (index, cell) in cells.into_iter().enumerate() {
+            if hidden.contains(index.saturating_add(1)) {
+                continue;
+            }
             builder.push_str("; Column ");
             builder.push_str(&index.saturating_add(1).to_string());
             builder.push_str(": ");
@@ -216,5 +231,26 @@ mod tests {
 
         let preview = AccessibleName::from_preview_utf16(2, &value);
         assert_eq!(decoded(&preview), "Row 3; Preview: value");
+    }
+
+    #[test]
+    fn hidden_columns_are_left_out_of_the_row_name_and_keep_file_numbers() {
+        let first: Vec<u16> = "alpha\0".encode_utf16().collect();
+        let skipped = [0_u16];
+        let third: Vec<u16> = "omega\0".encode_utf16().collect();
+        let mut hidden = crate::columns::HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        let name =
+            AccessibleName::from_visible_utf16_cells(6, [&first[..], &skipped, &third], hidden);
+        assert_eq!(decoded(&name), "Row 7; Column 1: alpha; Column 3: omega");
+        let all = AccessibleName::from_visible_utf16_cells(
+            6,
+            [&first[..], &skipped, &third],
+            crate::columns::HiddenColumns::NONE,
+        );
+        assert_eq!(
+            decoded(&all),
+            "Row 7; Column 1: alpha; Column 2: (empty); Column 3: omega"
+        );
     }
 }

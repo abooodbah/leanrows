@@ -1,6 +1,7 @@
 //! Pure, platform-independent viewport and display-cache models.
 
 use crate::AccessibleName;
+use crate::columns::HiddenColumns;
 
 /// Microsoft documents 100,000,000 as the virtual list-view item-count limit.
 const MAX_NATIVE_ROWS: u32 = 100_000_000;
@@ -221,16 +222,33 @@ impl CachedRow {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ImmutableRowCache {
     rows: Box<[CachedRow]>,
+    /// Data columns the worker left empty because they were hidden when it
+    /// fetched these rows.
+    skipped: HiddenColumns,
 }
 
 impl ImmutableRowCache {
     /// Sorts a new cache block once before it can be queried by the UI.
     #[must_use]
-    pub fn new(mut rows: Vec<CachedRow>) -> Self {
+    pub fn new(rows: Vec<CachedRow>) -> Self {
+        Self::with_skipped(rows, HiddenColumns::NONE)
+    }
+
+    /// Like `new`, for rows fetched without decoding the `skipped` columns.
+    #[must_use]
+    pub(crate) fn with_skipped(mut rows: Vec<CachedRow>, skipped: HiddenColumns) -> Self {
         rows.sort_unstable_by_key(|row| row.display_rank);
         Self {
             rows: rows.into_boxed_slice(),
+            skipped,
         }
+    }
+
+    /// The data columns these rows do not hold. A column in this set that is
+    /// shown again reads as loading until the worker fetches the rows anew.
+    #[must_use]
+    pub(crate) const fn skipped(&self) -> HiddenColumns {
+        self.skipped
     }
 
     /// Returns persistent UTF-16 storage for one cached cell.
@@ -344,6 +362,27 @@ mod tests {
         let name = cache.accessible_name(2).map(AccessibleName::as_utf16);
         let expected: Vec<u16> = "Row 3; Column 1: two\0".encode_utf16().collect();
         assert_eq!(name, Some(expected.as_slice()));
+    }
+
+    #[test]
+    fn cache_records_the_columns_its_rows_skipped() {
+        let row = || {
+            CachedRow::new(
+                0,
+                vec![
+                    DisplayCell::new("1"),
+                    DisplayCell::new("alpha"),
+                    DisplayCell::new(""),
+                ],
+            )
+        };
+        let mut hidden = crate::columns::HiddenColumns::NONE;
+        assert!(hidden.hide(2, 2));
+        let cache = ImmutableRowCache::with_skipped(vec![row()], hidden);
+        assert_eq!(cache.skipped(), hidden);
+        assert_eq!(cache.cell(0, 1), Some(&[97, 108, 112, 104, 97, 0][..]));
+        assert!(ImmutableRowCache::new(vec![row()]).skipped().is_empty());
+        assert!(ImmutableRowCache::default().skipped().is_empty());
     }
 
     #[test]

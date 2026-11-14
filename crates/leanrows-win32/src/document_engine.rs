@@ -19,6 +19,8 @@ use leanrows_core::{
     XlsxWorkbook, project_delimited_record, read_viewport,
 };
 
+use crate::columns::HiddenColumns;
+
 const INDEX_CAPACITY: usize = 4_096;
 const INITIAL_ROW_STRIDE: u64 = 1_024;
 const READ_BUFFER_BYTES: usize = 64 * 1_024;
@@ -33,6 +35,8 @@ const CHECKPOINT_BUDGET_BYTES: usize =
     INDEX_CAPACITY * std::mem::size_of::<leanrows_core::Checkpoint>();
 const CORE_OPERATION_BUDGET_BYTES: usize = 1_024 * 1_024;
 const MAX_PROJECTED_FIELDS: usize = 64;
+// Every projected field can be hidden, one bit each.
+const _: () = assert!(MAX_PROJECTED_FIELDS == crate::columns::MAX_HIDDEN_COLUMN);
 const MAX_DECODED_BYTES_PER_FIELD: usize = 1_024;
 const MAX_DECODED_BYTES_PER_ROW: usize = MAX_RECORD_PREVIEW_BYTES;
 
@@ -303,6 +307,8 @@ pub(crate) struct DocumentEngine {
     projection_limits: FieldProjectionLimits,
     integrity_failed: Cell<bool>,
     bytes_since_strong_path_check: u64,
+    /// Fields the next viewports leave empty instead of decoding.
+    hidden: HiddenColumns,
 }
 
 impl DocumentEngine {
@@ -391,6 +397,7 @@ impl DocumentEngine {
             projection_limits,
             integrity_failed: Cell::new(false),
             bytes_since_strong_path_check: 0,
+            hidden: HiddenColumns::NONE,
         };
         let first_snapshot = engine.snapshot(0, token, generation)?;
         Ok(OpenedDocument {
@@ -519,6 +526,13 @@ impl DocumentEngine {
         }
     }
 
+    /// Sets the data columns that later viewports leave empty. Their fields
+    /// are still split from the record, so the columns after them keep their
+    /// places, but their text is not decoded or encoded.
+    pub(crate) fn set_hidden_columns(&mut self, hidden: HiddenColumns) {
+        self.hidden = hidden;
+    }
+
     /// Reconstructs and pre-encodes one bounded viewport.
     pub(crate) fn snapshot(
         &self,
@@ -572,7 +586,7 @@ impl DocumentEngine {
             if token.is_cancelled(generation) {
                 return Err(DocumentEngineError::Cancelled);
             }
-            let row = build_cached_row(record, format, self.projection_limits)?;
+            let row = build_cached_row(record, format, self.projection_limits, self.hidden)?;
             data_columns = data_columns.max(row.data_columns());
             rows.push(row);
         }
@@ -582,6 +596,7 @@ impl DocumentEngine {
             columns: UiColumnLayout::new(column_kind, data_columns)?,
             reached_eof: viewport.reached_eof(),
             diagnostic: viewport.csv_diagnostic(),
+            hidden: self.hidden,
         })
     }
 
@@ -671,7 +686,7 @@ impl DocumentEngine {
             if token.is_cancelled(generation) {
                 return Err(DocumentEngineError::Cancelled);
             }
-            let row = build_xlsx_row(&row)?;
+            let row = build_xlsx_row(&row, self.hidden)?;
             data_columns = data_columns.max(row.data_columns());
             rows.push(row);
         }
@@ -681,6 +696,7 @@ impl DocumentEngine {
             columns: UiColumnLayout::new(UiColumnKind::Cells, data_columns)?,
             reached_eof,
             diagnostic: None,
+            hidden: self.hidden,
         })
     }
 
@@ -725,7 +741,7 @@ impl DocumentEngine {
                 generation,
             )
             .map_err(map_viewport_error)?;
-            let mut row = build_cached_row(&record, format, self.projection_limits)?;
+            let mut row = build_cached_row(&record, format, self.projection_limits, self.hidden)?;
             row.display_rank = rank;
             data_columns = data_columns.max(row.data_columns());
             rows.push(row);
@@ -737,6 +753,7 @@ impl DocumentEngine {
             columns: UiColumnLayout::new(column_kind, data_columns)?,
             reached_eof: first_row.saturating_add(count as u64) >= order.len(),
             diagnostic: scan.diagnostic(),
+            hidden: self.hidden,
         })
     }
 
@@ -966,6 +983,8 @@ pub(crate) struct UiRowSnapshot {
     columns: UiColumnLayout,
     reached_eof: bool,
     diagnostic: Option<CsvDiagnostic>,
+    /// The data columns these rows left empty.
+    hidden: HiddenColumns,
 }
 
 /// Semantic shape of the bounded native data columns (excluding `Row`).
@@ -1065,6 +1084,12 @@ impl UiRowSnapshot {
     #[must_use]
     pub(crate) const fn columns(&self) -> UiColumnLayout {
         self.columns
+    }
+
+    /// The data columns these rows left empty because they were hidden.
+    #[must_use]
+    pub(crate) const fn hidden(&self) -> HiddenColumns {
+        self.hidden
     }
 
     #[cfg(test)]
@@ -1206,6 +1231,18 @@ impl Utf16Cell {
             .try_reserve_exact(encoded.len() - cursor + 1)
             .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
         units.extend_from_slice(&encoded[cursor..]);
+        units.push(0);
+        Ok(Self {
+            units: units.into_boxed_slice(),
+        })
+    }
+
+    /// An empty cell, kept in a hidden column's place.
+    fn empty() -> Result<Self, DocumentEngineError> {
+        let mut units = Vec::new();
+        units
+            .try_reserve_exact(1)
+            .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
         units.push(0);
         Ok(Self {
             units: units.into_boxed_slice(),
@@ -1359,6 +1396,7 @@ fn build_cached_row(
     record: &RecordPreview,
     format: DocumentFormat,
     projection_limits: FieldProjectionLimits,
+    hidden: HiddenColumns,
 ) -> Result<UiCachedRow, DocumentEngineError> {
     let mut source_truncated = record.is_truncated();
     let mut display_truncated = false;
@@ -1371,7 +1409,11 @@ fn build_cached_row(
             .try_reserve_exact(projection.fields().len().saturating_add(1))
             .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
         cells.push(Utf16Cell::decimal(record.row().saturating_add(1))?);
-        for field in projection.fields() {
+        for (index, field) in projection.fields().iter().enumerate() {
+            if hidden.contains(index + 1) {
+                cells.push(Utf16Cell::empty()?);
+                continue;
+            }
             let mut value =
                 PreviewBuilder::new(MAX_PREVIEW_UTF16_UNITS, field.decoded_bytes().len())?;
             value.push_bytes(field.decoded_bytes());
@@ -1402,7 +1444,10 @@ fn build_cached_row(
     })
 }
 
-fn build_xlsx_row(row: &XlsxRow) -> Result<UiCachedRow, DocumentEngineError> {
+fn build_xlsx_row(
+    row: &XlsxRow,
+    hidden: HiddenColumns,
+) -> Result<UiCachedRow, DocumentEngineError> {
     let mut source_truncated = row.is_truncated();
     let mut display_truncated = false;
     let mut escaped_non_utf8 = false;
@@ -1411,7 +1456,11 @@ fn build_xlsx_row(row: &XlsxRow) -> Result<UiCachedRow, DocumentEngineError> {
         .try_reserve_exact(row.cells().len().saturating_add(1))
         .map_err(|_| DocumentEngineError::AllocationUnavailable)?;
     cells.push(Utf16Cell::decimal(row.index().saturating_add(1))?);
-    for cell in row.cells() {
+    for (index, cell) in row.cells().iter().enumerate() {
+        if hidden.contains(index + 1) {
+            cells.push(Utf16Cell::empty()?);
+            continue;
+        }
         let mut value = PreviewBuilder::new(MAX_PREVIEW_UTF16_UNITS, cell.bytes().len())?;
         value.push_bytes(cell.bytes());
         source_truncated |= cell.is_truncated();
@@ -2318,6 +2367,50 @@ mod tests {
                 ))
             ));
         }
+        Ok(())
+    }
+
+    /// The CSV smoke fixture and `LibreOffice`'s conversion of it hold the same
+    /// fields: alpha, "quoted, value", a two-line field, and (CSV only) an
+    /// empty fourth field. Hiding the quoted field must leave its neighbours
+    /// in their own columns, in both formats.
+    #[test]
+    fn hidden_fields_are_left_empty_in_csv_and_xlsx_rows() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let mut hidden = crate::columns::HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        let token = CancellationToken::new();
+
+        let csv = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/document-smoke.csv");
+        let (mut engine, first) =
+            DocumentEngine::open(&csv, &token, token.snapshot())?.into_parts();
+        assert!(first.hidden().is_empty());
+        assert_eq!(cell_text(&first, 0, 2)?, "quoted, value");
+        engine.set_hidden_columns(hidden);
+        let rows = engine.snapshot(0, &token, token.snapshot())?;
+        assert_eq!(rows.hidden(), hidden);
+        assert_eq!(rows.columns().data_columns(), 4);
+        assert_eq!(cell_text(&rows, 0, 0)?, "1");
+        assert_eq!(cell_text(&rows, 0, 1)?, "alpha");
+        assert_eq!(cell_text(&rows, 0, 2)?, "");
+        assert_eq!(cell_text(&rows, 0, 3)?, r"line1\nline2");
+        assert_eq!(cell_text(&rows, 0, 4)?, "");
+
+        let (mut workbook, cells) = open_xlsx("libreoffice-document-smoke.xlsx", None)?;
+        assert_eq!(cell_text(&cells, 0, 2)?, "quoted, value");
+        workbook.set_hidden_columns(hidden);
+        let cells = workbook.snapshot(0, &token, token.snapshot())?;
+        assert_eq!(cells.hidden(), hidden);
+        assert_eq!(cells.columns().data_columns(), 3);
+        assert_eq!(cell_text(&cells, 0, 1)?, "alpha");
+        assert_eq!(cell_text(&cells, 0, 2)?, "");
+        assert_eq!(cell_text(&cells, 0, 3)?, r"line1\nline2");
+
+        workbook.set_hidden_columns(crate::columns::HiddenColumns::NONE);
+        let shown = workbook.snapshot(0, &token, token.snapshot())?;
+        assert!(shown.hidden().is_empty());
+        assert_eq!(cell_text(&shown, 0, 2)?, "quoted, value");
         Ok(())
     }
 
