@@ -1,8 +1,6 @@
 # LeanRows: a free large CSV viewer for Windows
 
-**Open CSV files too big for Excel. A 1.5 GB CSV with 20 million rows opens
-using 18 MB of RAM. Also TSV, JSONL, logs and Excel `.xlsx` workbooks (read-only,
-one sheet at a time). No installer, no runtime, no admin rights.**
+**Open CSV files too big for Excel, without loading them into memory.**
 
 [Website](https://abooodbah.github.io/leanrows/) · [Microsoft Store](https://apps.microsoft.com/detail/9NMV8GKJXSN0) · [Releases](https://github.com/abooodbah/leanrows/releases) ([feed](https://github.com/abooodbah/leanrows/releases.atom)) · [All Lean apps](https://abooodbah.github.io/)
 
@@ -10,12 +8,18 @@ one sheet at a time). No installer, no runtime, no admin rights.**
 
 ![LeanRows with a 20 million row CSV open](docs/images/leanrows-20m-rows.png)
 
-*20,000,001 rows, 1,532,454,643 bytes, fully indexed. Peak working set: 18.4 MB.*
+**Excel stops at 1,048,576 rows. LeanRows fully indexed a 20,000,001-row, 1.5 GB
+CSV (1,532,454,643 bytes) at a peak working set of 18.4 MB.**
 
-Excel stops at about 1.05 million rows. Most tools that go further are paid, need
-an installer, or live in a terminal. LeanRows is a single executable (1,024,512
-bytes in v0.5.1) you can copy onto a locked-down work machine and run. For the
-other options, see
+```powershell
+winget install abooodbah.LeanRows
+```
+
+It also opens TSV, JSONL, logs and Excel `.xlsx` workbooks (read-only, one sheet
+at a time). The portable ZIP needs no installer, runtime, or admin rights. Most
+tools that go past Excel's limit are paid, need an installer, or live in a
+terminal. LeanRows is a single executable (1,024,512 bytes in v0.5.1) you can
+copy onto a locked-down work machine and run. For the other options, see
 [how to open a CSV file that is too large for Excel](https://abooodbah.github.io/leanrows/open-csv-too-large-for-excel/).
 
 It is strictly read-only, so it cannot alter the file it is inspecting. There is
