@@ -50,6 +50,11 @@ requireMatch(
 requireMatch(html, /<meta name="twitter:card" content="summary_large_image">/, "a large-image Twitter card is required");
 requireMatch(html, /<section class="section capture-section" id="measured"/, "the measured 20 million row run must be on the page");
 requireMatch(html, /20,000,001 rows and 1,532,454,643\s+bytes/, "the measured run must give its exact rows and bytes");
+requireMatch(
+  html,
+  /<p class="hero-measure">\s*Excel stops at 1,048,576 rows\. LeanRows fully indexed a\s+20,000,001-row, 1\.5 GB CSV at a peak working set of\s+<a href="#measured">18\.4 MB<\/a>\.\s*<\/p>/,
+  "the hero must state Excel's row limit and the measured 20,000,001-row run with its 18.4 MB peak",
+);
 requireMatch(html, /src="assets\/leanrows-20m-rows\.webp"/, "the 20 million row capture must be rendered");
 requireMatch(html, /<section class="section faq-section" id="faq"/, "the visible FAQ section is required");
 requireMatch(html, /href="https:\/\/abooodbah\.github\.io\/leandoc\/"/i, "the page must link the LeanDoc site");
