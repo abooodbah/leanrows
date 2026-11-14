@@ -1,13 +1,13 @@
 # LeanRows Microsoft Store listing
 
-Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes. The version and "What's new" were updated for 0.4.0 on 2026-11-02 and for 0.5.0 on 2026-11-06, and for 0.5.1 on 2026-11-07.
+Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes. The version and "What's new" were updated for 0.4.0 on 2026-11-02 and for 0.5.0 on 2026-11-06, and for 0.5.1 on 2026-11-07. For 0.6.0 on 2026-11-14 the version, description, features and "What's new" were updated; the description is the AlternativeTo full description with the hide-columns line.
 
 ## Product
 
 - Product name (reserve this exact name): LeanRows
 - Publisher display name: Lean Apps Studio
 - Short title (50 characters or fewer): LeanRows: large CSV viewer
-- Version in this pack: 0.5.0 (package version 0.5.0.0)
+- Version in this pack: 0.6.0 (package version 0.6.0.0)
 - File types it opens: CSV, TSV, JSON Lines, NDJSON, and log files (.csv, .tsv, .jsonl, .ndjson, .log). Excel workbooks (.xlsx) open from inside the app; the package does not register .xlsx.
 
 ## Short description
@@ -18,17 +18,18 @@ Open very large CSV, TSV, JSON Lines, and log files without loading them into me
 
 ## Description
 
-LeanRows is a read-only viewer for large row-based files: CSV, TSV, JSON Lines, NDJSON, and log files.
+Open CSV files too big for Excel. Excel stops at 1,048,576 rows. LeanRows opens CSV, TSV, JSONL, NDJSON, log and text files of any size on Windows, plus Excel .xlsx workbooks one sheet at a time.
 
-It reads the file in blocks as you move through it and keeps only the visible rows in memory, so memory use depends on the window, not the file size. On the test machine, a 1.5 GB CSV with 20 million rows was fully indexed with a peak working set of 18.4 MB. The first rows appear before indexing reaches the end of the file.
+It never loads the whole file. A 1.5 GB CSV with 20 million rows was read to the end at a peak of 18.4 MB of memory, so it stays usable on a work laptop that is short on RAM.
 
-Excel workbooks (.xlsx) open read-only, one worksheet at a time. LeanRows shows the values the workbook stores, with columns titled A, B, C. Formulas are not calculated, and macros and external links are never run or followed.
+Click a column header to sort the whole file, as text or as numbers.
+Hide columns you do not need, per tab, without changing the file.
+Search the whole file, jump to any row, and open several files as tabs.
+A single program of about 1 MB. No installer, no admin rights, no runtime. Read-only, so your file is never changed.
+No telemetry and no network access.
+Five themes, including two softer dark themes.
 
-You can search for literal text, jump to a row number, and copy selected rows. Each file opens in its own tab in one window. CSV and TSV records are read correctly even when quoted fields contain line breaks. Bytes that are not valid text are shown escaped, and very long values are marked as shortened instead of being changed silently.
-
-LeanRows never edits or rewrites the file it shows. It has no telemetry, no update checker, no account, and makes no network connections. It is a native Windows program and does not use a browser engine.
-
-LeanRows is free and open source under the MIT License.
+Free and MIT licensed. Install from the Microsoft Store, winget, Scoop or Chocolatey, or download the portable ZIP from GitHub.
 
 ## Product features
 
@@ -41,6 +42,7 @@ LeanRows is free and open source under the MIT License.
 - Find text, forward and backward, with an optional case-insensitive mode
 - Go to any row number
 - Copy selected rows as tab-separated text
+- Hide columns you do not need, per tab, without changing the file
 - Each file opens in its own tab in one window
 - Strictly read-only: the source file is never changed
 - Light, dark, and system themes; high contrast supported
@@ -64,7 +66,7 @@ LeanRows is free and open source under the MIT License.
 
 ## What's new in this version
 
-Zooming in and out is about ten times faster. Scroll bars are now thin and follow the theme colours, and the shortcut list in settings fits without sideways scrolling.
+You can now hide columns you do not need. Right-click a column header and choose Hide column, or use the More menu; Show all columns brings them back. The file is never changed, each tab keeps its own hidden columns, and hidden columns are left out when you copy rows.
 
 ## Copyright and trademark info
 
