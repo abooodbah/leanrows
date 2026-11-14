@@ -198,7 +198,8 @@ pub(super) fn header_menu(window: HWND, header: HWND, lparam: LPARAM) -> Result<
         )
     };
     if let Ok(id) = u16::try_from(selected.0) {
-        command(window, id);
+        // The header menu also holds the column commands.
+        handle_command(window, id);
     }
     Ok(())
 }
