@@ -236,6 +236,27 @@ directions. Equal keys retain original row order. CSV/TSV's first record remains
 data. Row numbers, Find results and Go to row identify the original source rows.
 Sorting is not available for `.xlsx` workbooks yet; it reports that instead.
 
+## Hiding columns
+
+Right-click a column header and choose Hide column to take that column out of
+the view. Show all columns, on the same menu, brings every hidden column back.
+The More menu has both commands, with a Hide column submenu that lists the
+shown columns, so they also work from the keyboard. The last shown column
+cannot be hidden, so a text, log or JSONL file, which shows one Preview column,
+has nothing to hide.
+
+Hiding a column changes the view only. The file is not changed and nothing is
+saved: each tab keeps its own hidden columns until the file is reloaded or
+another file or sheet is shown in it. Hidden columns are left out of `Ctrl+C`
+copies and of horizontal scrolling.
+
+LeanRows never loads whole columns into memory, so hiding one saves screen
+space rather than memory. For the rows on screen, LeanRows skips decoding the
+hidden fields. Sorting by a column and then hiding it keeps the order, and the
+status bar marks the sorted column as hidden. Find still searches whole rows,
+hidden columns included, and the status bar says so while a search result is
+shown.
+
 ## Snapshot behavior
 
 An open document is a read-only snapshot. On Windows, the retained file handle
@@ -284,6 +305,9 @@ qualification records full process-tree memory independently; see
 - `Ctrl+G` jumps to a checked, one-based absolute row number.
 - `Ctrl+C` copies selected cached rows as tab-delimited Unicode text. One
   operation is limited to 4,096 rows and 1 MiB, including the terminator.
+  Hidden columns are not copied.
+- More > Hide column hides a column from the view, and More > Show all columns
+  shows them again, the same commands as a right-click on a column header.
 - `F5` reloads the active path as a new snapshot.
 - `Ctrl+Plus`, `Ctrl+Minus` and `Ctrl+0` zoom the rows in, out and back to
   actual size, as does `Ctrl` with the mouse wheel over the rows. The steps

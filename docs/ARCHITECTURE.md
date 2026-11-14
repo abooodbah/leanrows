@@ -240,6 +240,32 @@ A fixed 64-entry cleanup queue retries before the next session; queue paths
 are charged to managed memory. A full queue keeps the disk charge conservative
 until process exit and startup recovery, rather than permitting quota bypass.
 
+## Hidden columns
+
+Each tab keeps a 64-bit set of hidden data columns, one bit per column. A
+viewport holds at most 64 data columns, so the set never grows with the file.
+The native list holds the Row column and the shown data columns only, and the
+set maps each list column to its column in the file for cell text, header
+clicks, the sort arrow, the header menu and copy. Hiding or showing a column
+rebuilds the list's data columns and keeps the width of each column that stays.
+The last shown column cannot be hidden, which also leaves the one-column
+Preview of text, log and JSONL files as it is.
+
+The worker reads the set from an atomic before it builds a viewport. A hidden
+field is still split from its record, so the columns after it keep their
+places, but its text is not decoded or encoded; an empty cell keeps its place.
+The row cache records which columns it skipped. A column shown again reads as
+loading until the worker sends the rows again, and copy waits for those rows.
+Accessible row names leave hidden columns out and keep the file's column
+numbers.
+
+Find stays a byte search over whole records, so hidden columns are searched and
+the status bar says so. Deciding which field holds a match would mean splitting
+every matching record, and a match past the 4 KiB record preview could not be
+placed at all. Sorting keys on the file column, so a sorted column that is then
+hidden keeps its order, and the status bar marks it. The set is not saved;
+reloading, or showing another file or sheet in the tab, shows every column.
+
 ## Accessibility and rendering
 
 The window, top-bar controls, virtual grid, progress control, and row items
