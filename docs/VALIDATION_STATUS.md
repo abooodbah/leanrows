@@ -1,16 +1,44 @@
 # Validation status
 
 **Status date:** 2026-11-14<br>
-**Scope:** the LeanRows 0.6.0 release candidate, Windows x64, local evidence
-from the maintainer's laptop; and the LeanRows 0.5.0 published release,
-tagged-CI, public-package and CI-runner measurements.<br>
-**Current public release:** LeanRows 0.5.1
+**Scope:** LeanRows 0.6.0 published release, Windows x64; tagged-CI,
+public-package, CI-runner and maintainer-laptop measurements, and the local
+QA receipt on the release commit.<br>
+**Current public release:** LeanRows 0.6.0
 
-## Frozen v0.6.0 candidate local evidence
+## Published v0.6.0 verification
 
-LeanRows 0.6.0 adds hiding columns from the view (#49, requested in #39).
-This section records the release candidate before the tag. It is replaced by
-a published-release section once `v0.6.0` is tagged and published.
+LeanRows 0.6.0 adds hiding columns from the view (#49, requested in #39). It
+is published on
+[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.6.0).
+
+The release is anchored to commit `e7b6b6fca6f5be93ce11519c83937582170dabf4`
+(the merge of #50) and annotated tag `v0.6.0`. Tagged workflow
+[run 43642263330](https://github.com/abooodbah/leanrows/actions/runs/43642263330)
+passed its quality gates and Windows x64 package job, published the release,
+and deployed the product page. The Store package workflow
+([run 43642263362](https://github.com/abooodbah/leanrows/actions/runs/43642263362))
+built the MSIX from the published ZIP.
+
+| Published evidence field | v0.6.0 result |
+| --- | --- |
+| Release | [LeanRows v0.6.0](https://github.com/abooodbah/leanrows/releases/tag/v0.6.0) contains exactly the unsigned Windows x64 ZIP and its checksum sidecar. |
+| Public package | The sidecar records ZIP SHA-256 `72D9BB2BD927DBAF299990000ED875B0A5508F3B846997933B5674514ACF786B`, and the downloaded 522,482-byte ZIP matched it. |
+| Public executable | The extracted `leanrows.exe` is 1,062,400 bytes, reports file version `0.6.0.0`, and has SHA-256 `E42B615E1D439B58AEE31AAC6456C4F6FBE64691B09EBD6D6A0636D6D4494B6E`. |
+| Post-commit QA receipt | `tests/qa/Invoke-LeanRowsReleaseQa.ps1` on the merge commit `e7b6b6f`, with a local `cargo build --release --locked` of it: 26/26 checks passed, sparse-scale fixtures included. Receipt `artifacts/qa/v0.6.0-post-commit/qa-receipt.json` (not committed). |
+| Install | The public ZIP's `install.ps1` installed 0.6.0 over 0.5.1 for the current user on the maintainer's laptop; the installed `leanrows.exe` has the public executable's SHA-256 and reports `0.6.0.0`, and it opened a window. |
+| Measurements | On a `windows-2022` runner ([run 43641129690](https://github.com/abooodbah/leanrows/actions/runs/43641129690), 0.5.1 `main` against the #49 branch), with a 10,000,000-row CSV: peak working set 16.4 MiB open for both, sort 12.4 s in the app's worker (0.5.1: 11.5 s) and 10.6 s in the core engine (0.5.1: 11.9 s). A second runner run on #50 ([run 43641690523](https://github.com/abooodbah/leanrows/actions/runs/43641690523)) measured 16.4 MiB, 15.5 s and 17.1 s for the same build. On the maintainer's laptop, see the 20M-row row below. |
+| Distribution | Scoop was moved to 0.6.0, the open winget submission was moved from 0.5.1 to 0.6.0, and the Chocolatey package was pushed. |
+
+Not repeated for 0.6.0: the live installer cycle (upgrade, reinstall,
+uninstall, install) and the installed-association checks. The tests and
+mutation results are recorded in #49 and the
+[0.6.0 release notes](releases/v0.6.0.md).
+
+This status update is a post-release documentation change on `main`; it is
+not part of the `v0.6.0` tag.
+
+### Frozen v0.6.0 candidate before the tag
 
 The candidate is commit `6e279d4f00db8b15f32d4ab9a955c7f46071b639` on the
 `release/0.6.0` branch, built with `cargo build --release --locked`. The
@@ -26,13 +54,10 @@ commit that adds this section changes only this file.
 | Native sort and column smoke | `tests/qa/Invoke-LeanRowsSortSmoke.ps1` passed, including the eight hidden-column checks. |
 | Workspace gates | `cargo test --workspace --all-targets --locked`, `cargo clippy` with `-D warnings`, `cargo fmt --check`, both forms of `scripts/Test-ReleaseEngineering.ps1`, and `node site/validate.mjs` passed. |
 
-Not done for this candidate: the live installer cycle (upgrade, reinstall,
-uninstall, install) and the installed-association checks, which change the
-installed copy on the machine; the post-commit QA run on the merged commit;
-and the tag. The site capture was not regenerated; 0.6.0 does not change the
-toolbar, the tabs or the rows it shows.
+The site capture was not regenerated; 0.6.0 does not change the toolbar, the
+tabs or the rows it shows.
 
-## Published v0.5.0 verification
+## Earlier release: v0.5.0
 
 LeanRows 0.5.0 adds LeanMark's five themes, a settings panel with the
 shortcut list, zoom, a restyled toolbar and tabs, and a faster sort. It is
