@@ -19,7 +19,7 @@ const fn row(group: &'static str, keys: &'static str, action: &'static str) -> S
 
 /// The list in the order the panel shows it. A test checks it against the
 /// accelerator table in `leanrows.rc`.
-pub(crate) const SHORTCUTS: [Shortcut; 39] = [
+pub(crate) const SHORTCUTS: [Shortcut; 41] = [
     row("File", "Ctrl+O", "Open files"),
     row("File", "F5", "Reload the file"),
     row("Rows", "Ctrl+C", "Copy the selected rows"),
@@ -49,6 +49,12 @@ pub(crate) const SHORTCUTS: [Shortcut; 39] = [
     ),
     row("Sorting", "Click Row", "Restore source order"),
     row("Sorting", "More menu", "Sort, restore, or cancel a sort"),
+    row(
+        "Columns",
+        "Right-click a column header",
+        "Hide it, or show all columns",
+    ),
+    row("Columns", "More menu", "Hide a column, or show all"),
     row("Tabs", "Ctrl+Tab", "Next tab"),
     row("Tabs", "Ctrl+Shift+Tab", "Previous tab"),
     row("Tabs", "Ctrl+Page Down", "Next tab"),

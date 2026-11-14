@@ -17,6 +17,7 @@ use leanrows_core::{
     QuerySessionConfig, QueryStepStatus, recover_stale_query_files,
 };
 
+use crate::columns::HiddenColumns;
 use crate::document_engine::{
     DocumentEngine, DocumentEngineError, DocumentProgress, DocumentQuerySource, DocumentScanStatus,
     SheetChoice, UiColumnKind, UiColumnLayout, UiRowSnapshot,
@@ -262,6 +263,7 @@ pub(crate) enum WorkerResult {
 }
 
 pub(crate) struct Worker {
+    hidden_columns: Arc<AtomicU64>,
     sorts: Arc<CoalescingMailbox<SortCommand>>,
     sort_cancellation: Arc<CancellationToken>,
     coordinator: SortCoordinator,
@@ -320,7 +322,9 @@ impl Worker {
         let sort_cancellation = Arc::new(CancellationToken::new());
         let coordinator = SortCoordinator::shared();
         let latest_sort_serial = Arc::new(AtomicU64::new(0));
+        let hidden_columns = Arc::new(AtomicU64::new(0));
         let runtime = WorkerRuntime {
+            hidden_columns: Arc::clone(&hidden_columns),
             sorts: sorts.clone(),
             sort_cancellation: sort_cancellation.clone(),
             coordinator: coordinator.clone(),
@@ -343,6 +347,7 @@ impl Worker {
             .name(String::from("leanrows-document"))
             .spawn(move || run_worker(&runtime))?;
         Ok(Self {
+            hidden_columns,
             sorts,
             sort_cancellation,
             coordinator,
@@ -371,6 +376,8 @@ impl Worker {
 
     /// Like `submit_path`, but for a workbook opens the given sheet.
     pub(crate) fn submit_path_sheet(&self, path: PathBuf, sheet: Option<usize>) -> u64 {
+        // Hidden columns belong to one opened file.
+        self.hidden_columns.store(0, Ordering::Release);
         self.sort_cancellation.cancel();
         self.latest_sort_serial.store(0, Ordering::Release);
         let _ = self.sorts.try_take();
@@ -396,6 +403,12 @@ impl Worker {
             let _ = self.signals.send(());
         }
         serial
+    }
+
+    /// Sets the data columns that later viewports leave empty. Set it before
+    /// requesting the viewport that should use it.
+    pub(crate) fn set_hidden_columns(&self, hidden: HiddenColumns) {
+        self.hidden_columns.store(hidden.bits(), Ordering::Release);
     }
 
     /// Coalesces an absolute viewport request for the current document.
@@ -635,6 +648,7 @@ impl fmt::Display for CacheConversionError {
 impl std::error::Error for CacheConversionError {}
 
 struct WorkerRuntime {
+    hidden_columns: Arc<AtomicU64>,
     sorts: Arc<CoalescingMailbox<SortCommand>>,
     sort_cancellation: Arc<CancellationToken>,
     coordinator: SortCoordinator,
@@ -652,6 +666,16 @@ struct WorkerRuntime {
     query_scratch_directory: PathBuf,
     query_scratch_quota_bytes: u64,
     wake_ui: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl WorkerRuntime {
+    /// Gives the document the hidden columns the UI set last, before a
+    /// viewport is built.
+    fn apply_hidden_columns(&self, engine: &mut DocumentEngine) {
+        engine.set_hidden_columns(HiddenColumns::from_bits(
+            self.hidden_columns.load(Ordering::Acquire),
+        ));
+    }
 }
 
 fn run_worker(runtime: &WorkerRuntime) {
@@ -799,6 +823,7 @@ fn apply_viewport_request(
         }
         document.reveal_rank = Some(request.first_row);
     }
+    runtime.apply_hidden_columns(&mut document.engine);
     let snapshot = match &document.order {
         Some(order) => document.engine.snapshot_ordered(
             order,
@@ -1388,6 +1413,7 @@ fn convert_cache(snapshot: UiRowSnapshot) -> Result<CacheState, CacheConversionE
     let first_row = snapshot.first_row();
     let row_count = u32::try_from(snapshot.len()).map_err(|_| CacheConversionError::TooManyRows)?;
     let columns = snapshot.columns();
+    let hidden = snapshot.hidden();
     let encoded_rows = snapshot.into_rows();
     let mut rows = Vec::new();
     rows.try_reserve_exact(encoded_rows.len())
@@ -1424,9 +1450,10 @@ fn convert_cache(snapshot: UiRowSnapshot) -> Result<CacheState, CacheConversionE
                     .ok_or(CacheConversionError::InconsistentColumns)?
                     .as_utf16(),
             ),
-            UiColumnKind::Fields | UiColumnKind::Cells => AccessibleName::from_utf16_cells(
+            UiColumnKind::Fields | UiColumnKind::Cells => AccessibleName::from_visible_utf16_cells(
                 parts.absolute_row,
                 cells.iter().skip(1).map(DisplayCell::as_utf16),
+                hidden,
             ),
         };
         rows.push(CachedRow::with_rank_and_name(
@@ -1437,7 +1464,7 @@ fn convert_cache(snapshot: UiRowSnapshot) -> Result<CacheState, CacheConversionE
         ));
     }
     Ok(CacheState {
-        cache: Arc::new(ImmutableRowCache::new(rows)),
+        cache: Arc::new(ImmutableRowCache::with_skipped(rows, hidden)),
         first_row,
         row_count,
         columns,
@@ -1908,9 +1935,14 @@ mod tests {
         assert_eq!(cell_text(&plain, 0, 1)?, "z");
         assert_eq!(cell_text(&plain, 0, 2)?, "");
         assert_eq!(cell_text(&plain, 0, 3)?, "10");
-        let name: Vec<u16> = "Row 1; Column 1: z; Column 3: 10\0".encode_utf16().collect();
+        let name: Vec<u16> = "Row 1; Column 1: z; Column 3: 10\0"
+            .encode_utf16()
+            .collect();
         assert_eq!(
-            plain.cache.accessible_name(0).map(crate::AccessibleName::as_utf16),
+            plain
+                .cache
+                .accessible_name(0)
+                .map(crate::AccessibleName::as_utf16),
             Some(name.as_slice())
         );
 

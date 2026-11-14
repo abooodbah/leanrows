@@ -2,6 +2,8 @@
 
 use std::char::decode_utf16;
 
+use crate::columns::HiddenColumns;
+
 /// Maximum UTF-16 storage for one accessible name, including its terminal NUL.
 pub const MAX_ACCESSIBLE_NAME_UTF16_UNITS: usize = 512;
 
@@ -34,10 +36,23 @@ impl AccessibleName {
         absolute_row: u64,
         cells: impl IntoIterator<Item = &'a [u16]>,
     ) -> Self {
+        Self::from_visible_utf16_cells(absolute_row, cells, HiddenColumns::NONE)
+    }
+
+    /// Like `from_utf16_cells`, but leaves out hidden data columns. The
+    /// columns that remain keep their numbers in the file.
+    pub(crate) fn from_visible_utf16_cells<'a>(
+        absolute_row: u64,
+        cells: impl IntoIterator<Item = &'a [u16]>,
+        hidden: HiddenColumns,
+    ) -> Self {
         let mut builder = NameBuilder::new();
         builder.push_str("Row ");
         builder.push_str(&absolute_row.saturating_add(1).to_string());
         for (index, cell) in cells.into_iter().enumerate() {
+            if hidden.contains(index.saturating_add(1)) {
+                continue;
+            }
             builder.push_str("; Column ");
             builder.push_str(&index.saturating_add(1).to_string());
             builder.push_str(": ");

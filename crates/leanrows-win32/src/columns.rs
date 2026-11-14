@@ -1,4 +1,128 @@
 //! Data columns hidden from one tab's view.
+//!
+//! Hiding a column changes only what the grid shows. The file is never
+//! written, and `LeanRows` never held whole columns in memory to begin with:
+//! the worker skips decoding a hidden field for the rows it fetches, and the
+//! list shows the Row column plus the columns that are still visible.
+//!
+//! Data columns are numbered from 1, as in the `Column N` headers; 0 is the
+//! Row column, which cannot be hidden. A viewport keeps at most 64 data
+//! columns, so one bit per column is enough and the set never grows with the
+//! file.
+
+/// The highest data column a viewport holds, and so the highest one that can
+/// be hidden. It equals the document engine's 64-field projection cap.
+pub(crate) const MAX_HIDDEN_COLUMN: usize = 64;
+
+/// A set of hidden data columns, one bit per column.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct HiddenColumns(u64);
+
+impl HiddenColumns {
+    /// Every column shown.
+    pub(crate) const NONE: Self = Self(0);
+
+    /// Rebuilds a set from `bits`, as stored in the worker's atomic.
+    #[must_use]
+    pub(crate) const fn from_bits(bits: u64) -> Self {
+        Self(bits)
+    }
+
+    /// The set as bits: bit `n - 1` is data column `n`.
+    #[must_use]
+    pub(crate) const fn bits(self) -> u64 {
+        self.0
+    }
+
+    #[must_use]
+    pub(crate) const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Whether data column `file_column` is hidden. The Row column never is.
+    #[must_use]
+    pub(crate) const fn contains(self, file_column: usize) -> bool {
+        match Self::bit(file_column) {
+            Some(bit) => self.0 & bit != 0,
+            None => false,
+        }
+    }
+
+    /// How many columns are hidden.
+    #[must_use]
+    pub(crate) const fn count(self) -> usize {
+        self.0.count_ones() as usize
+    }
+
+    /// How many of the first `data_columns` data columns are shown.
+    #[must_use]
+    pub(crate) fn visible_count(self, data_columns: u8) -> usize {
+        self.visible(data_columns).count()
+    }
+
+    /// Whether `file_column` can be hidden now: it is a data column of this
+    /// view, it is shown, and another data column stays shown.
+    #[must_use]
+    pub(crate) fn can_hide(self, file_column: usize, data_columns: u8) -> bool {
+        file_column >= 1
+            && file_column <= usize::from(data_columns)
+            && file_column <= MAX_HIDDEN_COLUMN
+            && !self.contains(file_column)
+            && self.visible_count(data_columns) > 1
+    }
+
+    /// Hides `file_column` when `can_hide` allows it, and says whether it did.
+    pub(crate) fn hide(&mut self, file_column: usize, data_columns: u8) -> bool {
+        if !self.can_hide(file_column, data_columns) {
+            return false;
+        }
+        if let Some(bit) = Self::bit(file_column) {
+            self.0 |= bit;
+        }
+        true
+    }
+
+    /// The data column shown under list column `native_column`. List column
+    /// 0 is the Row column; `None` means there is no such list column.
+    #[must_use]
+    pub(crate) fn file_column(self, native_column: usize, data_columns: u8) -> Option<usize> {
+        if native_column == 0 {
+            return Some(0);
+        }
+        self.visible(data_columns).nth(native_column - 1)
+    }
+
+    /// The list column that shows data column `file_column`, or `None` when
+    /// it is hidden or not a column of this view.
+    #[must_use]
+    pub(crate) fn native_column(self, file_column: usize, data_columns: u8) -> Option<usize> {
+        if file_column == 0 {
+            return Some(0);
+        }
+        if file_column > usize::from(data_columns) || self.contains(file_column) {
+            return None;
+        }
+        Some(
+            self.visible(data_columns)
+                .take_while(|c| *c < file_column)
+                .count()
+                + 1,
+        )
+    }
+
+    /// The shown data columns of a view with `data_columns` columns, in order.
+    pub(crate) fn visible(self, data_columns: u8) -> impl Iterator<Item = usize> {
+        (1..=usize::from(data_columns)).filter(move |column| !self.contains(*column))
+    }
+
+    const fn bit(file_column: usize) -> Option<u64> {
+        if file_column == 0 || file_column > MAX_HIDDEN_COLUMN {
+            None
+        } else {
+            Some(1 << (file_column - 1))
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

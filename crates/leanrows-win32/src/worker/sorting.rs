@@ -58,6 +58,7 @@ pub(super) fn start_sort(
         });
     } else {
         let generation = runtime.cancellation.snapshot();
+        runtime.apply_hidden_columns(&mut document.engine);
         match document
             .engine
             .snapshot(0, &runtime.cancellation, generation)
@@ -300,6 +301,7 @@ fn complete_sort(runtime: &WorkerRuntime, document: &mut ActiveDocument) {
     let Some(session) = active.session.take() else {
         return;
     };
+    runtime.apply_hidden_columns(&mut document.engine);
     let result = prepare_sort_if_current(
         &runtime.latest_sort_serial,
         &runtime.sort_cancellation,

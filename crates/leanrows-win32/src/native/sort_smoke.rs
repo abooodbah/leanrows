@@ -10,7 +10,10 @@ use windows::Win32::UI::Controls::{HDM_GETITEMRECT, LVM_GETITEMTEXTW};
 use windows::Win32::UI::WindowsAndMessaging::{
     PM_REMOVE, PeekMessageW, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_QUIT,
 };
-pub(super) fn wait(window: HWND, predicate: impl Fn(&WindowState) -> bool) -> Result<(), ShellError> {
+pub(super) fn wait(
+    window: HWND,
+    predicate: impl Fn(&WindowState) -> bool,
+) -> Result<(), ShellError> {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         let pointer = state_pointer_for(window);

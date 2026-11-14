@@ -3,12 +3,12 @@
 //! header, menu commands, worker and list, with no mock grid. The fixture
 //! has four columns: a name, a word only one row holds, the sort smoke's
 //! numbers, and a constant tag.
+use super::sort_smoke::{click, command, expect_order, sorted, wait};
 #[allow(
     clippy::wildcard_imports,
     reason = "native workflow smoke deliberately uses the actual shell functions"
 )]
 use super::*;
-use super::sort_smoke::{click, command, expect_order, sorted, wait};
 use leanrows_core::{SortDirection, SortMode};
 use windows::Win32::UI::Controls::{HDI_TEXT, HDITEMW, HDM_GETITEMW, LVM_GETITEMTEXTW};
 
