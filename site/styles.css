@@ -277,6 +277,14 @@ h3 {
   margin-bottom: var(--space-4);
 }
 
+.hero-measure {
+  max-width: 35rem;
+  margin: 0 0 var(--space-6);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
 .hero-detail {
   max-width: 32rem;
   margin: 0 0 var(--space-8);
