@@ -18,7 +18,7 @@ winget install abooodbah.LeanRows
 It also opens TSV, JSONL, logs and Excel `.xlsx` workbooks (read-only, one sheet
 at a time). The portable ZIP needs no installer, runtime, or admin rights. Most
 tools that go past Excel's limit are paid, need an installer, or live in a
-terminal. LeanRows is a single executable (1,024,512 bytes in v0.5.1) you can
+terminal. LeanRows is a single executable (1,062,400 bytes in v0.6.0) you can
 copy onto a locked-down work machine and run. For the other options, see
 [how to open a CSV file that is too large for Excel](https://abooodbah.github.io/leanrows/open-csv-too-large-for-excel/).
 
@@ -143,15 +143,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.5.1-windows-x64-unsigned.zip
-LeanRows-v0.5.1-windows-x64-unsigned.sha256
+LeanRows-v0.6.0-windows-x64-unsigned.zip
+LeanRows-v0.6.0-windows-x64-unsigned.sha256
 ```
 
-LeanRows 0.5 is not Authenticode-signed. Windows may therefore show a security
+LeanRows 0.6 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.5.1-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.6.0-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
@@ -195,7 +195,7 @@ registry behavior.
 
 ## Supported input
 
-| Format | Extensions | v0.5 behavior |
+| Format | Extensions | v0.6 behavior |
 | --- | --- | --- |
 | Comma-separated data | `.csv` | Quote-aware logical records in independently bounded native columns |
 | Tab-separated data | `.tsv` | Quote-aware logical records in independently bounded native columns |
@@ -203,11 +203,11 @@ registry behavior.
 | Logs and text | `.log`, `.txt` | One physical line per displayed record |
 | Excel workbooks | `.xlsx` | One worksheet at a time, stored values as text; see [XLSX cell text](docs/XLSX.md). Opened from LeanRows or the command line; the installer does not register `.xlsx`. |
 
-Format selection is extension-based in 0.5. Input is treated as bytes and
+Format selection is extension-based in 0.6. Input is treated as bytes and
 decoded for display as UTF-8; invalid bytes are shown as `\xNN`. Long records,
 fields, and display strings use bounded previews and are marked when truncated.
 
-LeanRows 0.5 deliberately excludes editing, saving, export, filtering,
+LeanRows 0.6 deliberately excludes editing, saving, export, filtering,
 regular expressions, SQL, charts, archives, remote or UNC paths, reparse points,
 tail/follow mode, plug-ins, scripts, and arbitrary JSON documents remain excluded.
 
@@ -327,7 +327,7 @@ qualification records full process-tree memory independently; see
 
 Find compares raw UTF-8 bytes. Its optional case-insensitive mode folds ASCII
 letters only; non-ASCII bytes remain exact. Regular expressions are not
-supported in 0.5.
+supported in 0.6.
 
 The interface provides five themes, the same as LeanMark: System, Light, Dark,
 Dim, and Dusk. Dim and Dusk are softer dark themes. System follows the active
@@ -363,6 +363,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
+- [LeanRows 0.6.0 release notes](docs/releases/v0.6.0.md)
 - [LeanRows 0.5.1 release notes](docs/releases/v0.5.1.md)
 - [LeanRows 0.5.0 release notes](docs/releases/v0.5.0.md)
 - [LeanRows 0.4.0 release notes](docs/releases/v0.4.0.md)

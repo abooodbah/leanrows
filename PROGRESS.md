@@ -1,6 +1,6 @@
 # Progress
 
-Work for LeanRows desktop 0.5.0 and its 0.5.1 patch. This file is updated with every merge.
+Work for LeanRows desktop 0.5.0, its 0.5.1 patch, and 0.6.0. This file is updated with every merge.
 
 ## Goal for 0.5.0
 
@@ -102,16 +102,18 @@ measured the same way.
 | 7. Dim and Dusk themes | [#30](https://github.com/abooodbah/leanrows/pull/30) | Five themes with LeanMark 0.6.0's values; start time, memory and size unchanged. |
 | 15. Fast zoom steps (0.5.1) | [#43](https://github.com/abooodbah/leanrows/pull/43) | A step sets the column widths with the list's redraw off and paints once. Maintainer's laptop, six-column 2 MB file: 264.5 ms to 25.8 ms per step (median). |
 | 16. Thin scroll bars (0.5.1) | [#44](https://github.com/abooodbah/leanrows/pull/44) | Theme-coloured bars without arrows over the rows and the shortcut list, which now wraps to fit its width. High contrast keeps the system bars. |
-| 17. Version 0.5.1 | this pull request | `docs/releases/v0.5.1.md`. |
+| 17. Version 0.5.1 | [#45](https://github.com/abooodbah/leanrows/pull/45) | `docs/releases/v0.5.1.md`. |
+| 19. Hide columns (0.6.0) | [#49](https://github.com/abooodbah/leanrows/pull/49) | Right-click a header for Hide column and Show all columns, also on the More menu. Requested in #39. |
+| 20. Version 0.6.0 | this pull request | `docs/releases/v0.6.0.md`. |
 
 ## In progress
 
-- 18. Tag `v0.5.1` on the merge of the version pull request, which starts the
+- 21. Tag `v0.6.0` on the merge of the version pull request, which starts the
   release workflow and the Store package workflow.
 
 ## Remaining
 
-For 0.5.1: the post-release update of `site/`, `store/listing.md` and `docs/VALIDATION_STATUS.md`, and the Scoop, winget, Chocolatey and Partner Center steps.
+For 0.6.0: the post-release update of `store/listing.md` and the published-release section of `docs/VALIDATION_STATUS.md`, and the Scoop, winget, Chocolatey and Partner Center steps.
 
 ## Known gaps
 

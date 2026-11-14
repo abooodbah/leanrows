@@ -4,7 +4,9 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-14
+
+Columns can be hidden from the view.
 
 ### Added
 
@@ -15,6 +17,18 @@ All notable changes to LeanRows are recorded in this file. The format follows
   decoding them, and a sorted column that is hidden keeps its order. Find still
   searches hidden columns, and the status bar says so. Requested by @Dobatymo
   in #39.
+
+### Measured
+
+On the maintainer's laptop, 0.5.1 and 0.6.0 built the same way, with a
+generated 20,000,001-row, seven-column CSV of 1,494,444,479 bytes, three runs
+each:
+
+| Measure | 0.5.1 | 0.6.0 |
+| --- | --- | --- |
+| Peak working set when indexing finished | 18.42 to 18.45 MiB | 18.40 to 18.45 MiB |
+| The same, four of seven columns hidden | | 18.45 to 18.53 MiB |
+| Executable size, local build | 1,024,512 bytes | 1,062,400 bytes |
 
 ## [0.5.1] - 2026-11-06
 
@@ -286,6 +300,7 @@ Column sorting, contributed by @w3bgr3p in #9.
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.6.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.6.0
 [0.5.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.5.1
 [0.5.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.5.0
 [0.4.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.4.0
