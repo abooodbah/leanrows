@@ -7,6 +7,7 @@
 //! and narrow.
 
 mod accessibility;
+mod columns;
 mod document_engine;
 mod mailbox;
 mod model;

@@ -255,6 +255,32 @@ pub(super) fn status(event: &WorkerEvent) -> Option<String> {
 mod tests {
     use super::*;
     #[test]
+    fn a_hidden_sorted_column_keeps_the_order_and_the_status_says_so() {
+        let request = SortRequest {
+            column: 1,
+            mode: SortMode::Text,
+            direction: SortDirection::Ascending,
+        };
+        let none = crate::columns::HiddenColumns::NONE;
+        assert_eq!(
+            sort_description(Some(request), none),
+            "column 2 / Text / Ascending"
+        );
+        let mut hidden = none;
+        assert!(hidden.hide(2, 3));
+        assert_eq!(
+            sort_description(Some(request), hidden),
+            "column 2 (hidden) / Text / Ascending"
+        );
+        let mut other = none;
+        assert!(other.hide(3, 3));
+        assert_eq!(
+            sort_description(Some(request), other),
+            "column 2 / Text / Ascending"
+        );
+        assert_eq!(sort_description(None, hidden), "source order");
+    }
+    #[test]
     fn row_header_restores_source_and_repeated_click_keeps_numeric_mode() {
         let current = Some(SortRequest {
             column: 2,

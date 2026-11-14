@@ -347,6 +347,27 @@ mod tests {
     }
 
     #[test]
+    fn cache_records_the_columns_its_rows_skipped() {
+        let row = || {
+            CachedRow::new(
+                0,
+                vec![
+                    DisplayCell::new("1"),
+                    DisplayCell::new("alpha"),
+                    DisplayCell::new(""),
+                ],
+            )
+        };
+        let mut hidden = crate::columns::HiddenColumns::NONE;
+        assert!(hidden.hide(2, 2));
+        let cache = ImmutableRowCache::with_skipped(vec![row()], hidden);
+        assert_eq!(cache.skipped(), hidden);
+        assert_eq!(cache.cell(0, 1), Some(&[97, 108, 112, 104, 97, 0][..]));
+        assert!(ImmutableRowCache::new(vec![row()]).skipped().is_empty());
+        assert!(ImmutableRowCache::default().skipped().is_empty());
+    }
+
+    #[test]
     fn preencoded_cell_transfer_is_zero_copy_and_fails_closed() {
         let encoded = vec![65_u16, 66, 0].into_boxed_slice();
         let original_pointer = encoded.as_ptr();

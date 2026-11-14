@@ -1871,6 +1871,93 @@ mod tests {
         Ok(())
     }
 
+    fn wait_skipped(
+        worker: &Worker,
+        skipped: crate::columns::HiddenColumns,
+        timeout: Duration,
+    ) -> io::Result<WorkerEvent> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let event = wait_event(worker, remaining)?;
+            if event.cache.skipped() == skipped && event.cached_rows > 0 {
+                return Ok(event);
+            }
+        }
+    }
+
+    /// The sort smoke's rows with a text column between the two it sorts.
+    #[test]
+    fn hidden_columns_are_skipped_in_plain_and_sorted_viewports_until_the_next_open()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = TempFixture::file(
+            "csv",
+            b"z,first,10\na,second,2\nm,third,9007199254740993\nb,fourth,9007199254740992\n",
+        )?;
+        let worker = Worker::start(Arc::new(|| {}))?;
+        let serial = worker.submit_path(fixture.path().to_path_buf());
+        let opened = wait_complete(&worker, Duration::from_secs(5))?;
+        assert_eq!(cell_text(&opened, 0, 2)?, "first");
+        assert!(opened.cache.skipped().is_empty());
+
+        let mut hidden = crate::columns::HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        worker.set_hidden_columns(hidden);
+        assert!(worker.request_viewport(serial, 0));
+        let plain = wait_skipped(&worker, hidden, Duration::from_secs(5))?;
+        assert_eq!(cell_text(&plain, 0, 1)?, "z");
+        assert_eq!(cell_text(&plain, 0, 2)?, "");
+        assert_eq!(cell_text(&plain, 0, 3)?, "10");
+        let name: Vec<u16> = "Row 1; Column 1: z; Column 3: 10\0".encode_utf16().collect();
+        assert_eq!(
+            plain.cache.accessible_name(0).map(crate::AccessibleName::as_utf16),
+            Some(name.as_slice())
+        );
+
+        let request = leanrows_core::SortRequest {
+            column: 2,
+            mode: leanrows_core::SortMode::Numeric,
+            direction: leanrows_core::SortDirection::Ascending,
+        };
+        let sort_serial = worker.request_sort(Some(request));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let sorted = loop {
+            if let Some(event) = worker.poll()
+                && event.sort.as_ref().is_some_and(|s| {
+                    s.serial == sort_serial && s.phase == leanrows_core::SortPhase::Complete
+                })
+            {
+                break event;
+            }
+            if Instant::now() > deadline {
+                return Err(io::Error::other("sort timed out").into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        assert_eq!(sorted.cache.skipped(), hidden);
+        assert_eq!(cell_text(&sorted, 0, 0)?, "2");
+        assert_eq!(cell_text(&sorted, 0, 2)?, "");
+        assert_eq!(cell_text(&sorted, 0, 3)?, "2");
+
+        worker.set_hidden_columns(crate::columns::HiddenColumns::NONE);
+        assert!(worker.request_viewport(serial, 0));
+        let shown = wait_skipped(
+            &worker,
+            crate::columns::HiddenColumns::NONE,
+            Duration::from_secs(5),
+        )?;
+        assert_eq!(cell_text(&shown, 0, 0)?, "2");
+        assert_eq!(cell_text(&shown, 0, 2)?, "second");
+
+        // Hidden columns belong to one opened file; the next open shows all.
+        worker.set_hidden_columns(hidden);
+        worker.submit_path(fixture.path().to_path_buf());
+        let reopened = wait_complete(&worker, Duration::from_secs(5))?;
+        assert!(reopened.cache.skipped().is_empty());
+        assert_eq!(cell_text(&reopened, 0, 2)?, "first");
+        Ok(())
+    }
+
     /// A sort or restore in one tab must not cancel a sort waiting or running in
     /// another tab. The other tab's sort waits its turn instead.
     /// A file replaced on disk after it was opened is never published as a

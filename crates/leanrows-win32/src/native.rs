@@ -2,6 +2,8 @@
 
 mod accessibility;
 mod clipboard;
+mod column_smoke;
+mod column_view;
 mod drop_files;
 mod header;
 mod hover;
@@ -7409,14 +7411,16 @@ mod tests {
 
     use super::layout::UiLayout;
     use super::{
-        ActiveFind, EMPTY_TITLE_CAPTION, MAX_COPY_ROWS, MAX_COPY_UTF16_UNITS,
+        ActiveFind, EMPTY_TEXT, EMPTY_TITLE_CAPTION, LOADING_TEXT, MAX_COPY_ROWS, MAX_COPY_UTF16_UNITS,
         MAX_STARTUP_ERROR_UTF16_UNITS, NativeColumns, RevealedMatch, SHELL_SMOKE_TEXT_UNITS,
-        append_copy_units, brush_result, build_copy_text, control_style, document_event_is_usable,
+        append_copy_units, brush_result, build_copy_text, control_style, display_units,
+        document_event_is_usable,
         document_smoke_evidence, document_title, event_chrome, failure_requires_reload,
         file_meta_text, find_needle, is_supported_document_path, parse_one_based_row,
         parse_open_selection, query_match_to_reveal, query_status, sheet_column_letters,
         startup_error_text, worker_status,
     };
+    use crate::columns::HiddenColumns;
     use crate::document_engine::{UiColumnKind, UiColumnLayout};
     use crate::worker::{
         WorkerEvent, WorkerPhase, WorkerProgress, WorkerQueryPhase, WorkerQueryState, WorkerResult,
@@ -7651,7 +7655,7 @@ mod tests {
     fn source_truncation_is_visible_in_native_status() {
         let mut event = ready_event();
         event.source_truncated_rows = 1;
-        assert!(worker_status(&event, None).contains("1 source-truncated"));
+        assert!(worker_status(&event, None, HiddenColumns::NONE).contains("1 source-truncated"));
     }
 
     #[test]
@@ -7741,14 +7745,114 @@ mod tests {
             data_columns: 3,
         };
         let rows = crate::SlidingRowWindow::new(20, u32::MAX);
-        let text = build_copy_text(&cache, rows, columns, &[7, 8])?;
+        let text = build_copy_text(&cache, rows, columns, HiddenColumns::NONE, &[7, 8])?;
         let expected: Vec<u16> = "8\talpha\t\tomega\r\n9\tnext\t\t\0"
             .encode_utf16()
             .collect();
         assert_eq!(text, expected);
-        assert!(build_copy_text(&cache, rows, columns, &[6]).is_err());
-        assert!(build_copy_text(&cache, rows, columns, &vec![7; MAX_COPY_ROWS + 1]).is_err());
+        assert!(build_copy_text(&cache, rows, columns, HiddenColumns::NONE, &[6]).is_err());
+        assert!(build_copy_text(&cache, rows, columns, HiddenColumns::NONE, &vec![7; MAX_COPY_ROWS + 1]).is_err());
         Ok(())
+    }
+
+    fn smoke_fixture_row() -> CachedRow {
+        // The fields of tests/fixtures/document-smoke.csv, row 8.
+        CachedRow::new(
+            7,
+            vec![
+                DisplayCell::new("8"),
+                DisplayCell::new("alpha"),
+                DisplayCell::new("quoted, value"),
+                DisplayCell::new(r"line1\nline2"),
+            ],
+        )
+    }
+
+    fn units(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain([0]).collect()
+    }
+
+    #[test]
+    fn copy_leaves_out_hidden_columns_and_waits_for_a_shown_column()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let columns = NativeColumns {
+            kind: Some(UiColumnKind::Fields),
+            data_columns: 3,
+        };
+        let rows = crate::SlidingRowWindow::new(20, u32::MAX);
+        let mut hidden = HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        let cache = ImmutableRowCache::new(vec![smoke_fixture_row()]);
+        let text = build_copy_text(&cache, rows, columns, hidden, &[7])?;
+        assert_eq!(text, units("8\talpha\tline1\\nline2"));
+        // Rows fetched while column 2 was hidden do not hold it. Once it is
+        // shown again, copy refuses until the refetched rows arrive rather
+        // than paste an empty field.
+        let skipped = ImmutableRowCache::with_skipped(vec![smoke_fixture_row()], hidden);
+        assert!(build_copy_text(&skipped, rows, columns, HiddenColumns::NONE, &[7]).is_err());
+        assert_eq!(
+            build_copy_text(&skipped, rows, columns, hidden, &[7])?,
+            units("8\talpha\tline1\\nline2")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn grid_cells_follow_the_header_to_the_file_column() {
+        let cache = ImmutableRowCache::new(vec![smoke_fixture_row()]);
+        let mut hidden = HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        assert_eq!(display_units(&cache, hidden, 3, 7, 0), &units("8")[..]);
+        assert_eq!(display_units(&cache, hidden, 3, 7, 1), &units("alpha")[..]);
+        assert_eq!(
+            display_units(&cache, hidden, 3, 7, 2),
+            &units(r"line1\nline2")[..]
+        );
+        assert_eq!(display_units(&cache, hidden, 3, 7, 3), &EMPTY_TEXT[..]);
+        assert_eq!(display_units(&cache, hidden, 3, 8, 1), &LOADING_TEXT[..]);
+        let all = HiddenColumns::NONE;
+        assert_eq!(
+            display_units(&cache, all, 3, 7, 2),
+            &units("quoted, value")[..]
+        );
+        let skipped = ImmutableRowCache::with_skipped(vec![smoke_fixture_row()], hidden);
+        assert_eq!(display_units(&skipped, all, 3, 7, 2), &LOADING_TEXT[..]);
+        assert_eq!(
+            display_units(&skipped, all, 3, 7, 3),
+            &units(r"line1\nline2")[..]
+        );
+    }
+
+    #[test]
+    fn status_counts_hidden_columns_and_says_find_searches_them() {
+        let mut hidden = HiddenColumns::NONE;
+        let event = ready_event();
+        assert!(!worker_status(&event, None, hidden).contains("hidden"));
+        assert!(hidden.hide(2, 4));
+        assert!(worker_status(&event, None, hidden).ends_with(" | 1 column hidden"));
+        assert!(hidden.hide(4, 4));
+        assert!(worker_status(&event, None, hidden).ends_with(" | 2 columns hidden"));
+
+        let mut searching = ready_event();
+        searching.query = Some(WorkerQueryState {
+            query_serial: 19,
+            phase: WorkerQueryPhase::MatchReady,
+            scanned_bytes: 50,
+            source_bytes: 100,
+            stored_hits: 4,
+            active_hit_index: Some(2),
+            active_row: Some(41),
+            message: String::from("Match 3 (4 stored)."),
+        });
+        let active = ActiveFind {
+            query_serial: 19,
+            needle: b"row".to_vec(),
+            case_sensitive: false,
+        };
+        let status = worker_status(&searching, Some(&active), hidden);
+        assert!(status.starts_with("Find: match ready"));
+        assert!(status.ends_with(" | hidden columns are searched too"));
+        assert!(!worker_status(&searching, Some(&active), HiddenColumns::NONE).contains("hidden"));
     }
 
     #[test]
@@ -7789,7 +7893,7 @@ mod tests {
             ],
             current: 3,
         }));
-        assert!(worker_status(&event, None).starts_with("Sheet 2 of 2: Tab here | "));
+        assert!(worker_status(&event, None, HiddenColumns::NONE).starts_with("Sheet 2 of 2: Tab here | "));
     }
 
     #[test]

@@ -10,7 +10,7 @@ use windows::Win32::UI::Controls::{HDM_GETITEMRECT, LVM_GETITEMTEXTW};
 use windows::Win32::UI::WindowsAndMessaging::{
     PM_REMOVE, PeekMessageW, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_QUIT,
 };
-fn wait(window: HWND, predicate: impl Fn(&WindowState) -> bool) -> Result<(), ShellError> {
+pub(super) fn wait(window: HWND, predicate: impl Fn(&WindowState) -> bool) -> Result<(), ShellError> {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         let pointer = state_pointer_for(window);
@@ -41,7 +41,7 @@ fn wait(window: HWND, predicate: impl Fn(&WindowState) -> bool) -> Result<(), Sh
         std::thread::sleep(Duration::from_millis(1));
     }
 }
-fn click(window: HWND, column: usize) -> Result<(), ShellError> {
+pub(super) fn click(window: HWND, column: usize) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: The live UI state supplies its list handle.
     let state = unsafe { pointer.as_ref() }.ok_or_else(|| ShellError::new("no smoke state"))?;
@@ -78,11 +78,11 @@ fn click(window: HWND, column: usize) -> Result<(), ShellError> {
     }
     Ok(())
 }
-fn command(window: HWND, command: u16) {
+pub(super) fn command(window: HWND, command: u16) {
     // SAFETY: The scalar command follows the same native menu-command path.
     unsafe { SendMessageW(window, WM_COMMAND, Some(WPARAM(usize::from(command))), None) };
 }
-fn expect_order(window: HWND, expected: [u64; 4]) -> Result<(), ShellError> {
+pub(super) fn expect_order(window: HWND, expected: [u64; 4]) -> Result<(), ShellError> {
     let pointer = state_pointer_for(window);
     // SAFETY: Synchronous smoke inspection runs on the list's owning thread.
     let state = unsafe { pointer.as_ref() }.ok_or_else(|| ShellError::new("no smoke state"))?;
@@ -115,7 +115,7 @@ fn expect_order(window: HWND, expected: [u64; 4]) -> Result<(), ShellError> {
     }
     Ok(())
 }
-fn sorted(
+pub(super) fn sorted(
     window: HWND,
     mode: SortMode,
     direction: SortDirection,
@@ -235,7 +235,7 @@ pub(super) fn run(window: HWND, paths: Vec<PathBuf>) -> Result<(), ShellError> {
                     .is_some_and(|v| v.phase == SortPhase::Complete)
         })
     })?;
-    open_document(window, path)?;
+    open_document(window, path.clone())?;
     expect_order(window, [1, 3, 2, 0])?;
     {
         let pointer = state_pointer_for(window);
@@ -269,5 +269,5 @@ pub(super) fn run(window: HWND, paths: Vec<PathBuf>) -> Result<(), ShellError> {
     })?;
     expect_order(window, [0, 1, 2, 3])?;
     drop(held);
-    Ok(())
+    super::column_smoke::run(window, &path, &path.with_extension("columns.csv"))
 }

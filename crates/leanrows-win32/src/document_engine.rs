@@ -2321,6 +2321,50 @@ mod tests {
         Ok(())
     }
 
+    /// The CSV smoke fixture and LibreOffice's conversion of it hold the same
+    /// fields: alpha, "quoted, value", a two-line field, and (CSV only) an
+    /// empty fourth field. Hiding the quoted field must leave its neighbours
+    /// in their own columns, in both formats.
+    #[test]
+    fn hidden_fields_are_left_empty_in_csv_and_xlsx_rows() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let mut hidden = crate::columns::HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        let token = CancellationToken::new();
+
+        let csv = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/document-smoke.csv");
+        let (mut engine, first) =
+            DocumentEngine::open(&csv, &token, token.snapshot())?.into_parts();
+        assert!(first.hidden().is_empty());
+        assert_eq!(cell_text(&first, 0, 2)?, "quoted, value");
+        engine.set_hidden_columns(hidden);
+        let rows = engine.snapshot(0, &token, token.snapshot())?;
+        assert_eq!(rows.hidden(), hidden);
+        assert_eq!(rows.columns().data_columns(), 4);
+        assert_eq!(cell_text(&rows, 0, 0)?, "1");
+        assert_eq!(cell_text(&rows, 0, 1)?, "alpha");
+        assert_eq!(cell_text(&rows, 0, 2)?, "");
+        assert_eq!(cell_text(&rows, 0, 3)?, r"line1\nline2");
+        assert_eq!(cell_text(&rows, 0, 4)?, "");
+
+        let (mut workbook, cells) = open_xlsx("libreoffice-document-smoke.xlsx", None)?;
+        assert_eq!(cell_text(&cells, 0, 2)?, "quoted, value");
+        workbook.set_hidden_columns(hidden);
+        let cells = workbook.snapshot(0, &token, token.snapshot())?;
+        assert_eq!(cells.hidden(), hidden);
+        assert_eq!(cells.columns().data_columns(), 3);
+        assert_eq!(cell_text(&cells, 0, 1)?, "alpha");
+        assert_eq!(cell_text(&cells, 0, 2)?, "");
+        assert_eq!(cell_text(&cells, 0, 3)?, r"line1\nline2");
+
+        workbook.set_hidden_columns(crate::columns::HiddenColumns::NONE);
+        let shown = workbook.snapshot(0, &token, token.snapshot())?;
+        assert!(shown.hidden().is_empty());
+        assert_eq!(cell_text(&shown, 0, 2)?, "quoted, value");
+        Ok(())
+    }
+
     #[test]
     fn xlsx_sort_is_refused_with_its_own_message() -> Result<(), Box<dyn std::error::Error>> {
         let (engine, _) = open_xlsx("libreoffice-document-smoke.xlsx", None)?;

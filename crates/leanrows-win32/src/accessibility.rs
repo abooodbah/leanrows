@@ -217,4 +217,25 @@ mod tests {
         let preview = AccessibleName::from_preview_utf16(2, &value);
         assert_eq!(decoded(&preview), "Row 3; Preview: value");
     }
+
+    #[test]
+    fn hidden_columns_are_left_out_of_the_row_name_and_keep_file_numbers() {
+        let first: Vec<u16> = "alpha\0".encode_utf16().collect();
+        let skipped = [0_u16];
+        let third: Vec<u16> = "omega\0".encode_utf16().collect();
+        let mut hidden = crate::columns::HiddenColumns::NONE;
+        assert!(hidden.hide(2, 3));
+        let name =
+            AccessibleName::from_visible_utf16_cells(6, [&first[..], &skipped, &third], hidden);
+        assert_eq!(decoded(&name), "Row 7; Column 1: alpha; Column 3: omega");
+        let all = AccessibleName::from_visible_utf16_cells(
+            6,
+            [&first[..], &skipped, &third],
+            crate::columns::HiddenColumns::NONE,
+        );
+        assert_eq!(
+            decoded(&all),
+            "Row 7; Column 1: alpha; Column 2: (empty); Column 3: omega"
+        );
+    }
 }

@@ -163,6 +163,8 @@ mod tests {
         assert!(find("Sorting", "Right-click a column header"));
         assert!(find("Sorting", "Click Row"));
         assert!(find("Sorting", "More menu"));
+        assert!(find("Columns", "Right-click a column header"));
+        assert!(find("Columns", "More menu"));
         assert!(find("Find box", "Enter"));
         assert!(find("Find box", "Shift+Enter"));
         assert!(find("Find box", "Esc"));
@@ -175,7 +177,7 @@ mod tests {
         assert_eq!(
             groups(),
             [
-                "File", "Rows", "Find", "Find box", "Sorting", "Tabs", "Window"
+                "File", "Rows", "Find", "Find box", "Sorting", "Columns", "Tabs", "Window"
             ]
         );
         for entry in SHORTCUTS {
