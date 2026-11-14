@@ -1,10 +1,36 @@
 # Validation status
 
-**Status date:** 2026-11-06<br>
-**Scope:** LeanRows 0.5.0 published release, Windows x64; tagged-CI,
-public-package and CI-runner measurements. The full local QA receipt
-recorded for 0.2.0 was not repeated for 0.5.0.<br>
-**Current public release:** LeanRows 0.5.0
+**Status date:** 2026-11-14<br>
+**Scope:** the LeanRows 0.6.0 release candidate, Windows x64, local evidence
+from the maintainer's laptop; and the LeanRows 0.5.0 published release,
+tagged-CI, public-package and CI-runner measurements.<br>
+**Current public release:** LeanRows 0.5.1
+
+## Frozen v0.6.0 candidate local evidence
+
+LeanRows 0.6.0 adds hiding columns from the view (#49, requested in #39).
+This section records the release candidate before the tag. It is replaced by
+a published-release section once `v0.6.0` is tagged and published.
+
+The candidate is commit `6e279d4f00db8b15f32d4ab9a955c7f46071b639` on the
+`release/0.6.0` branch, built with `cargo build --release --locked`. The
+commit that adds this section changes only this file.
+
+| Candidate field | v0.6.0 result |
+| --- | --- |
+| Executable | 1,062,400 bytes; version `0.6.0.0` (checked by `scripts/Test-ReleaseEngineering.ps1 -BinaryPath`); SHA-256 `FD6E6A5AE437ADD5AF3A7E89CC091956C555986094B0B56BA3564A97001DFBAF`. |
+| Local package | `LeanRows-v0.6.0-windows-x64-unsigned.zip`, 507,123 bytes, SHA-256 `C2C13ECE55134771844623CFFD046E7326487A59C950B61ABFAE99E4CE5D1825`. Two QA runs of the same build produced the same executable and ZIP digests. The release workflow builds its own package, so the public digests can differ. |
+| Aggregate QA receipt | `artifacts/qa/v0.6.0-final-frozen-pass/qa-receipt.json` (not committed): 26/26 checks passed in 55,027 ms, sparse-scale fixtures included and 24 random seeks. |
+| Idle memory in the receipt | No document: 16.94 MiB working set, 2.42 MiB private. One document open: 18.21 MiB working set, 3.32 MiB private. |
+| 20M-row file | On a generated 20,000,001-row, 1,494,444,479-byte CSV, three runs: peak working set 18.40 to 18.45 MiB when indexing finished (0.5.1 code at `51c86d6`: 18.42 to 18.45 MiB), and 18.45 to 18.53 MiB with four of its seven columns hidden. |
+| Native sort and column smoke | `tests/qa/Invoke-LeanRowsSortSmoke.ps1` passed, including the eight hidden-column checks. |
+| Workspace gates | `cargo test --workspace --all-targets --locked`, `cargo clippy` with `-D warnings`, `cargo fmt --check`, both forms of `scripts/Test-ReleaseEngineering.ps1`, and `node site/validate.mjs` passed. |
+
+Not done for this candidate: the live installer cycle (upgrade, reinstall,
+uninstall, install) and the installed-association checks, which change the
+installed copy on the machine; the post-commit QA run on the merged commit;
+and the tag. The site capture was not regenerated; 0.6.0 does not change the
+toolbar, the tabs or the rows it shows.
 
 ## Published v0.5.0 verification
 
