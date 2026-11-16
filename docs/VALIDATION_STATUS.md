@@ -1,10 +1,39 @@
 # Validation status
 
-**Status date:** 2026-11-14<br>
-**Scope:** LeanRows 0.6.0 published release, Windows x64; tagged-CI,
+**Status date:** 2026-11-15<br>
+**Scope:** LeanRows 0.6.1 published patch release and the 0.6.0 release it repackages, Windows x64; tagged-CI,
 public-package, CI-runner and maintainer-laptop measurements, and the local
 QA receipt on the release commit.<br>
-**Current public release:** LeanRows 0.6.0
+**Current public release:** LeanRows 0.6.1
+
+## Published v0.6.1 verification
+
+LeanRows 0.6.1 is a patch release: the Microsoft Store package shows the name
+reserved in Partner Center, LeanRows CSV Viewer (#54). The code is the same as
+0.6.0. It is published on
+[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.6.1).
+
+The release is anchored to commit `e799a4fc736820e6cdcf8ad74186a5c8ead782c7`
+(the merge of #55) and annotated tag `v0.6.1`. Tagged workflow
+[run 43810946750](https://github.com/abooodbah/leanrows/actions/runs/43810946750)
+passed its quality gates and Windows x64 package job, published the release,
+and deployed the product page. The Store package workflow
+([run 43810946817](https://github.com/abooodbah/leanrows/actions/runs/43810946817))
+built the MSIX from the published ZIP.
+
+| Published evidence field | v0.6.1 result |
+| --- | --- |
+| Release | [LeanRows v0.6.1](https://github.com/abooodbah/leanrows/releases/tag/v0.6.1) contains exactly the unsigned Windows x64 ZIP and its checksum sidecar. |
+| Public package | The sidecar records ZIP SHA-256 `16CF817C94B50E9F362D38A1A7AB7223194EC18DF87CE1E46646A38380ECF384`, and the downloaded 522,452-byte ZIP matched it. |
+| Public executable | The extracted `leanrows.exe` is 1,062,400 bytes, reports version `0.6.1.0`, and has SHA-256 `AA39621B283FD1ED888A881C6C4493FE5547B61783FF57C392F683D0FEB7146C`. |
+| Store package | `LeanRows-v0.6.1-x64.msix`, 646,307 bytes, SHA-256 `60101dd8f1300d829268ad436dee5680a92a142d744c728660677bd9e2087570`. Its manifest: `Properties/DisplayName` and `VisualElements DisplayName` are `LeanRows CSV Viewer`; Identity Name `LeanAppsStudio.LeanRows` and the publisher are the same as in the 0.6.0 package; version `0.6.1.0`; executable `leanrows.exe`. |
+| Install | The public ZIP's `install.ps1` installed 0.6.1 over 0.6.0 for the current user on the maintainer's laptop; the installed `leanrows.exe` has the public executable's SHA-256, reports `0.6.1.0`, keeps the appearance and zoom settings, and opened a window titled `LeanRows`. |
+| Distribution | Scoop moved to 0.6.1, winget pull request microsoft/winget-pkgs#481308 opened (the 0.6.0 pull request #474256 is still open), Chocolatey 0.6.1 pushed. The Store submission is not made yet. |
+
+Not repeated for 0.6.1: the local QA receipt, the measurements and the live
+installer cycle; the code did not change. This status update is a
+post-release documentation change on `main`; it is not part of the `v0.6.1`
+tag.
 
 ## Published v0.6.0 verification
 

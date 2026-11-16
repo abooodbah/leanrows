@@ -1,13 +1,13 @@
 # LeanRows Microsoft Store listing
 
-Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes. The version and "What's new" were updated for 0.4.0 on 2026-11-02 and for 0.5.0 on 2026-11-06, and for 0.5.1 on 2026-11-07. For 0.6.0 on 2026-11-14 the version, description, features and "What's new" were updated; the description is the AlternativeTo full description with the hide-columns line.
+Paste each field into Partner Center > your app > Submission > Store listings > English (United States). Every value below was checked against the README and the app on 2026-10-24. The version, file types, description, features and "What's new" were updated for 0.3.0 on 2026-10-30 from the README and the 0.3.0 release notes. The version and "What's new" were updated for 0.4.0 on 2026-11-02 and for 0.5.0 on 2026-11-06, and for 0.5.1 on 2026-11-07. For 0.6.0 on 2026-11-14 the version, description, features and "What's new" were updated; the description is the AlternativeTo full description with the hide-columns line. For 0.6.1 on 2026-11-15 the version and "What's new" were updated; the package now shows the reserved name LeanRows CSV Viewer.
 
 ## Product
 
 - Product name (reserve this exact name): LeanRows CSV Viewer (reserved 2026-11; the MSIX manifest DisplayName is set to it, and the package identity, executable and window title stay LeanRows)
 - Publisher display name: Lean Apps Studio
 - Short title (50 characters or fewer): LeanRows: large CSV viewer
-- Version in this pack: 0.6.0 (package version 0.6.0.0)
+- Version in this pack: 0.6.1 (package version 0.6.1.0)
 - File types it opens: CSV, TSV, JSON Lines, NDJSON, and log files (.csv, .tsv, .jsonl, .ndjson, .log). Excel workbooks (.xlsx) open from inside the app; the package does not register .xlsx.
 
 ## Short description
@@ -66,7 +66,9 @@ Free and MIT licensed. Install from the Microsoft Store, winget, Scoop or Chocol
 
 ## What's new in this version
 
-You can now hide columns you do not need. Right-click a column header and choose Hide column, or use the More menu; Show all columns brings them back. The file is never changed, each tab keeps its own hidden columns, and hidden columns are left out when you copy rows.
+The Microsoft Store now lists the app as LeanRows CSV Viewer. Nothing else changed.
+
+From 0.6.0: you can hide columns you do not need. Right-click a column header and choose Hide column, or use the More menu; Show all columns brings them back. The file is never changed, each tab keeps its own hidden columns, and hidden columns are left out when you copy rows.
 
 ## Copyright and trademark info
 
