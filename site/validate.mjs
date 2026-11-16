@@ -220,7 +220,7 @@ if (structuredDataMatch) {
     if (structuredData["@type"] !== "SoftwareApplication") {
       failures.push("JSON-LD must describe a SoftwareApplication");
     }
-    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.6.0") {
+    if (structuredData.name !== "LeanRows" || structuredData.softwareVersion !== "0.6.1") {
       failures.push("JSON-LD name and release version must match the product");
     }
     if ("codeRepository" in structuredData) {

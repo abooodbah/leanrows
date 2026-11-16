@@ -143,15 +143,15 @@ The official package is attached to the
 [GitHub release](https://github.com/abooodbah/leanrows/releases/latest) as:
 
 ```text
-LeanRows-v0.6.0-windows-x64-unsigned.zip
-LeanRows-v0.6.0-windows-x64-unsigned.sha256
+LeanRows-v0.6.1-windows-x64-unsigned.zip
+LeanRows-v0.6.1-windows-x64-unsigned.sha256
 ```
 
 LeanRows 0.6 is not Authenticode-signed. Windows may therefore show a security
 warning. Verify the downloaded ZIP before running it:
 
 ```powershell
-Get-FileHash .\LeanRows-v0.6.0-windows-x64-unsigned.zip -Algorithm SHA256
+Get-FileHash .\LeanRows-v0.6.1-windows-x64-unsigned.zip -Algorithm SHA256
 ```
 
 The result must match the value in the accompanying `.sha256` file from the
@@ -363,6 +363,7 @@ cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
 - [Architecture](docs/ARCHITECTURE.md)
 - [Acceptance and assurance](docs/ACCEPTANCE.md)
 - [Validation status](docs/VALIDATION_STATUS.md)
+- [LeanRows 0.6.1 release notes](docs/releases/v0.6.1.md)
 - [LeanRows 0.6.0 release notes](docs/releases/v0.6.0.md)
 - [LeanRows 0.5.1 release notes](docs/releases/v0.5.1.md)
 - [LeanRows 0.5.0 release notes](docs/releases/v0.5.0.md)
