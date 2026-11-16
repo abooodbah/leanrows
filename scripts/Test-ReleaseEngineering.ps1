@@ -930,6 +930,30 @@ function Test-WorkflowContract {
         -Message 'The SignPath artifact configuration must Authenticode-sign leanrows.exe inside the artifact ZIP.'
 }
 
+function Test-StorePackageContract {
+    $config = Import-PowerShellDataFile -LiteralPath (Join-Path $repositoryRoot 'store/msix/app.psd1')
+    Assert-True -Condition ($config.StoreDisplayName -ceq 'LeanRows CSV Viewer') `
+        -Message ("Store display name must be the reserved name 'LeanRows CSV Viewer', found '{0}'." -f $config.StoreDisplayName)
+
+    $templatePath = Join-Path $repositoryRoot 'store/msix/AppxManifest.template.xml'
+    [xml]$template = [System.IO.File]::ReadAllText($templatePath)
+    $package = $template.Package
+    $application = $package.Applications.Application
+    $visual = $application.VisualElements
+    Assert-True -Condition ($package.Properties.DisplayName -ceq $config.StoreDisplayName) `
+        -Message ("Manifest Properties/DisplayName is '{0}', expected '{1}'." -f $package.Properties.DisplayName, $config.StoreDisplayName)
+    Assert-True -Condition ($visual.DisplayName -ceq $config.StoreDisplayName) `
+        -Message ("Manifest VisualElements DisplayName is '{0}', expected '{1}'." -f $visual.DisplayName, $config.StoreDisplayName)
+
+    # Only the listed name changes: identity, app id and executable stay.
+    Assert-True -Condition ($package.Identity.Name -ceq '{{IDENTITY_NAME}}') `
+        -Message 'Manifest Identity Name must stay the Partner Center value from MSIX_IDENTITY_NAME.'
+    Assert-True -Condition ($application.Id -ceq $config.AppId -and $config.AppId -ceq 'LeanRows') `
+        -Message 'Manifest Application Id must stay LeanRows.'
+    Assert-True -Condition ($application.Executable -ceq $config.Executable -and $config.Executable -ceq 'leanrows.exe') `
+        -Message 'Manifest Executable must stay leanrows.exe.'
+}
+
 function Test-ChecksumArtifact {
     param(
         [Parameter(Mandatory = $true)]
@@ -1234,6 +1258,7 @@ Test-PowerShellParsing
 Test-InstallerContract
 Test-WindowsSourceContract
 Test-WorkflowContract
+Test-StorePackageContract
 
 if (-not [string]::IsNullOrWhiteSpace($BinaryPath)) {
     Test-WindowsBinaryMetadata -ApplicationBinary $BinaryPath

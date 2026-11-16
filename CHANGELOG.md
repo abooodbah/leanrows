@@ -4,6 +4,13 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The Microsoft Store now lists the app as LeanRows CSV Viewer. Nothing else
+  changed.
+
 ## [0.6.0] - 2026-11-14
 
 Columns can be hidden from the view.

@@ -16,7 +16,7 @@
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>LeanRows</DisplayName>
+    <DisplayName>LeanRows CSV Viewer</DisplayName>
     <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
     <Logo>Images\StoreLogo.png</Logo>
     <Description>A read-only viewer for very large CSV, TSV, JSON Lines and log files that keeps memory use small.</Description>
@@ -33,7 +33,7 @@
   <Applications>
     <Application Id="LeanRows" Executable="leanrows.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="LeanRows"
+        DisplayName="LeanRows CSV Viewer"
         Description="View very large CSV and log files without loading them into memory."
         BackgroundColor="transparent"
         Square150x150Logo="Images\Square150x150Logo.png"

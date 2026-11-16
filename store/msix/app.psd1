@@ -1,6 +1,11 @@
 @{
     # Read by New-StorePackage.ps1, New-StoreImages.ps1 and Test-StorePackage.ps1.
     AppId = 'LeanRows'
+    # The product name reserved in Partner Center. The Store takes the listing
+    # name from the manifest DisplayName, which must equal it exactly. The
+    # package identity, the executable and the app's own window title stay
+    # LeanRows.
+    StoreDisplayName = 'LeanRows CSV Viewer'
     Executable = 'leanrows.exe'
     # README documents passing file paths on the command line, so the package
     # adds a command alias for it.
