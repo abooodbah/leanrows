@@ -4,7 +4,7 @@ Paste each field into Partner Center > your app > Submission > Store listings > 
 
 ## Product
 
-- Product name (reserve this exact name): LeanRows
+- Product name (reserve this exact name): LeanRows CSV Viewer (reserved 2026-11; the MSIX manifest DisplayName is set to it, and the package identity, executable and window title stay LeanRows)
 - Publisher display name: Lean Apps Studio
 - Short title (50 characters or fewer): LeanRows: large CSV viewer
 - Version in this pack: 0.6.0 (package version 0.6.0.0)
