@@ -169,6 +169,12 @@ foreach ($Required in 'AppxManifest.xml', 'AppxBlockMap.xml', 'resources.pri', $
 }
 [xml]$Packed = Get-Content -LiteralPath (Join-Path $Unpacked 'AppxManifest.xml') -Raw
 if ($Packed.Package.Identity.Version -ne $PackageVersion) { throw 'Packed version does not match.' }
+if ($Packed.Package.Identity.Name -cne $IdentityName) { throw 'Packed identity name does not match.' }
+foreach ($Shown in @($Packed.Package.Properties.DisplayName, $Packed.Package.Applications.Application.VisualElements.DisplayName)) {
+    if ($Shown -cne $Config.StoreDisplayName) {
+        throw ('Packed display name is {0}; the reserved Store name is {1}.' -f $Shown, $Config.StoreDisplayName)
+    }
+}
 
 $Hash = (Get-FileHash -LiteralPath $PackagePath -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText($PackagePath + '.sha256', ('{0}  {1}{2}' -f $Hash, $PackageName, [char]10),
@@ -178,6 +184,7 @@ $Result = [ordered]@{
     Package = $PackagePath
     Version = $PackageVersion
     IdentityName = $IdentityName
+    DisplayName = $Packed.Package.Properties.DisplayName
     Publisher = $Publisher
     PublisherDisplayName = $PublisherDisplayName
     UsesPlaceholders = $UsesPlaceholders
