@@ -4,7 +4,9 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.1] - 2026-11-15
+
+The Microsoft Store lists the app under a new name.
 
 ### Changed
 
@@ -307,6 +309,7 @@ Column sorting, contributed by @w3bgr3p in #9.
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.6.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.6.1
 [0.6.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.6.0
 [0.5.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.5.1
 [0.5.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.5.0

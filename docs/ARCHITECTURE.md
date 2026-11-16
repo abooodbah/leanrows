@@ -5,7 +5,7 @@ of row-oriented local files. The source file remains the primary backing store;
 the application does not import the document into a database or construct a
 whole-file in-memory model.
 
-This document describes the 0.6.0 implementation. Future candidates are kept
+This document describes the 0.6.1 implementation. Future candidates are kept
 in the [roadmap](../ROADMAP.md) rather than presented as current behavior.
 
 ## System boundary
