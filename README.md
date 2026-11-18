@@ -157,6 +157,17 @@ Get-FileHash .\LeanRows-v0.6.1-windows-x64-unsigned.zip -Algorithm SHA256
 The result must match the value in the accompanying `.sha256` file from the
 same release.
 
+Releases after 0.6.1 also carry a build provenance attestation: a record,
+signed through GitHub, that the ZIP was built by this repository's release
+workflow from the tagged source. To check one with the GitHub CLI:
+
+```powershell
+gh attestation verify <downloaded ZIP> --repo abooodbah/leanrows
+```
+
+This shows where the file was built. It is not code signing and does not change
+the Windows security warning.
+
 ## Run or install
 
 The extracted ZIP is portable. Launch `leanrows.exe` directly, pass one or more

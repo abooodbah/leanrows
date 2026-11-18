@@ -755,6 +755,9 @@ function Test-WorkflowContract {
         'Release notes file' = $releaseNotesPattern
         'Checksum upload' = 'artifacts/\*\.sha256'
         'Unsigned artifact disclosure' = 'Upload the unsigned portable package'
+        'Attestation identity permission' = '(?s)github-release:.*?id-token: write.*?deploy-pages:'
+        'Attestation store permission' = '(?s)github-release:.*?attestations: write.*?deploy-pages:'
+        'Provenance attested before publishing' = '(?s)actions/attest-build-provenance@[0-9a-f]{40}.*?subject-path: artifacts/\*\.zip.*?gh release create'
         'Pages waits for release' = '(?s)deploy-pages:.*needs: github-release'
         'Pages deployment' = 'actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346'
     }
