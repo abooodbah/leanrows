@@ -554,10 +554,10 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
                 }
             }
         }
-        // Statements split over lines: a status call whose next line is a
-        // bare English literal.
+        // Calls split over lines: any argument line up to the closing
+        // parenthesis that is a bare English literal.
         let lines: Vec<&str> = code.lines().collect();
-        for pair in lines.windows(3) {
+        for pair in lines.windows(8) {
             let call = pair[0].trim_end();
             if [
                 "set_status(",
@@ -572,6 +572,9 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
             {
                 for next in &pair[1..] {
                     let next = next.trim();
+                    if next.starts_with(')') {
+                        break;
+                    }
                     if next.starts_with('"') || next.starts_with("&format!(\"") {
                         bare.push(format!("{name}: {call} {next}"));
                     }
