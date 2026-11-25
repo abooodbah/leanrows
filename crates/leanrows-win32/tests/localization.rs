@@ -514,13 +514,40 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
             }
             // A status call whose text argument is an English literal or a
             // format string.
-            for call in ["set_status(", "set_status_handle("] {
+            for call in [
+                "set_status(",
+                "set_status_handle(",
+                "set_control_text(",
+                "set_tool_text(",
+                "add_tool(",
+                "name_control(",
+            ] {
                 if let Some(start) = line.find(call) {
                     let args = &line[start + call.len()..];
+                    // The text is the last argument.
                     let text = args
-                        .split_once(',')
+                        .rsplit_once(',')
                         .map_or("", |(_, text)| text.trim_start());
-                    if text.starts_with('"') || text.starts_with("&format!(\"") {
+                    // A format string counts when it has words outside its
+                    // placeholders, so "{zoom}%" is not English.
+                    let literal = text
+                        .strip_prefix("&format!(\"")
+                        .or_else(|| text.strip_prefix('"'))
+                        .map(|rest| rest.split('"').next().unwrap_or_default());
+                    let words = literal.is_some_and(|literal| {
+                        let mut outside = String::new();
+                        let mut depth = 0;
+                        for c in literal.chars() {
+                            match c {
+                                '{' => depth += 1,
+                                '}' => depth -= 1,
+                                c if depth == 0 => outside.push(c),
+                                _ => {}
+                            }
+                        }
+                        outside.chars().filter(char::is_ascii_alphabetic).count() >= 2
+                    });
+                    if words {
                         bare.push(format!("{name}:{}: {}", index + 1, line.trim()));
                     }
                 }
@@ -531,9 +558,16 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
         let lines: Vec<&str> = code.lines().collect();
         for pair in lines.windows(3) {
             let call = pair[0].trim_end();
-            if ["set_status(", "set_status_handle("]
-                .iter()
-                .any(|c| call.ends_with(c))
+            if [
+                "set_status(",
+                "set_status_handle(",
+                "set_control_text(",
+                "set_tool_text(",
+                "add_tool(",
+                "name_control(",
+            ]
+            .iter()
+            .any(|c| call.ends_with(c))
             {
                 for next in &pair[1..] {
                     let next = next.trim();
@@ -558,6 +592,44 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
         bare.is_empty(),
         "visible English outside the tables:\n{}",
         bare.join("\n")
+    );
+}
+
+/// Every string the worker, the engine or the shell writes from the English
+/// table, to be translated where it shows, is a message template.
+#[test]
+fn english_messages_are_message_templates() {
+    let mut code = String::new();
+    let root = source_root();
+    let mut stack = vec![root.clone()];
+    while let Some(directory) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                code.push_str(&shipped_code(&path));
+            }
+        }
+    }
+    let joined: String = code.split_whitespace().collect();
+    let mut missing = Vec::new();
+    for (index, _) in joined.match_indices("english().") {
+        let key: String = joined[index + "english().".len()..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        let method = ["get", "entries"].contains(&key.as_str());
+        if !method && !MESSAGE_KEYS.contains(&key.as_str()) && !missing.contains(&key) {
+            missing.push(key);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "written in English but never translated: {missing:?}"
     );
 }
 
