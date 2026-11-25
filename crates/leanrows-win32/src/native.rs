@@ -7,6 +7,8 @@ mod column_view;
 mod drop_files;
 mod header;
 mod hover;
+#[cfg(test)]
+mod label_widths;
 mod layout;
 mod process;
 mod progress;
@@ -18,6 +20,10 @@ mod tabs;
 mod theme;
 
 use std::ffi::{OsString, c_void};
+
+use crate::localization::{
+    LanguageSetting, english, fill, set_current, strings, translate_message,
+};
 use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
@@ -148,16 +154,16 @@ const ID_SEARCH_FIELD: u16 = 300;
 const ID_TAB_STRIP: u16 = 301;
 const IDD_GOTO_ROW: usize = 201;
 const IDC_GOTO_ROW_EDIT: i32 = 1001;
+/// The label above the row number, given an ID so it can be relabelled.
+const IDC_GOTO_ROW_LABEL: i32 = 1002;
 const MAX_COPY_ROWS: usize = 4_096;
 const MAX_COPY_BYTES: usize = 1_024 * 1_024;
 const MAX_COPY_UTF16_UNITS: usize = MAX_COPY_BYTES / size_of::<u16>();
 const MAX_FIND_UTF16_UNITS: usize = 1_024;
-const EMPTY_TITLE_CAPTION: &str = "Open large files without loading them all.";
+/// The product name over the welcome screen and in the top bar, the same in
+/// every language.
 const WELCOME_EYEBROW: &str = "LEANROWS";
-const WELCOME_BODY: &str = "Open a local CSV, TSV, JSONL, NDJSON, log, text, or .xlsx file. LeanRows keeps memory bounded and never modifies the source.";
 const IDLE_FILE_NAME: &str = "LeanRows";
-const IDLE_FILE_META: &str = "Large-file row viewer";
-const IDLE_STATUS: &str = "Ready";
 const WINDOW_CLASS_NAME: PCWSTR = w!("LeanRows.NativeWindow");
 const FIRST_TAB_ID: usize = 1;
 /// Each open file keeps a worker thread, a file handle, and one bounded row
@@ -284,6 +290,12 @@ struct WindowState {
     /// The settings panel's controls, and whether it is open.
     settings: settings::SettingsHandles,
     settings_open: bool,
+    /// The language choice saved in the settings panel, and the Windows
+    /// display language it resolves against when it is System.
+    language: LanguageSetting,
+    system_language: String,
+    /// Which empty state shows, so a language change can write it again.
+    empty_kind: EmptyKind,
     /// Where focus goes back to when the panel closes.
     settings_return_focus: HWND,
     /// Files handed over by another launch, opened once the sender returns.
@@ -297,6 +309,52 @@ struct WindowState {
     document_smoke_cells: AtomicU64,
     document_smoke_evidence: Arc<Mutex<Option<DocumentSmokeEvidence>>>,
     reclaimed: Arc<AtomicBool>,
+}
+
+/// The empty state the window shows when no rows do.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+enum EmptyKind {
+    #[default]
+    Welcome,
+    Opening,
+    /// A file failed to open; the reason as the worker wrote it.
+    Failed(String),
+    Empty,
+    Indexing,
+}
+
+impl EmptyKind {
+    /// The eyebrow, title and body in the language shown now.
+    fn text(&self) -> [String; 3] {
+        let text = strings();
+        let [eyebrow, title, body] = match self {
+            Self::Welcome => [WELCOME_EYEBROW, text.welcome_caption, text.welcome_body],
+            Self::Opening => [text.opening_eyebrow, text.opening_title, text.opening_body],
+            Self::Failed(reason) => {
+                return [
+                    text.failed_eyebrow.to_owned(),
+                    text.failed_title.to_owned(),
+                    translate_message(reason),
+                ];
+            }
+            Self::Empty => [text.empty_eyebrow, text.empty_title, text.empty_body],
+            Self::Indexing => [
+                text.indexing_eyebrow,
+                text.indexing_title,
+                text.indexing_body,
+            ],
+        };
+        [eyebrow.to_owned(), title.to_owned(), body.to_owned()]
+    }
+}
+
+/// `template` with its `{error}` filled in by `error`, in the language
+/// shown now.
+fn failed(template: &str, error: &dyn std::fmt::Display) -> String {
+    fill(
+        template,
+        &[("error", &translate_message(&error.to_string()))],
+    )
 }
 
 struct GoToDialogState {
@@ -392,15 +450,13 @@ impl BackgroundTab {
         self.chrome.grid_visible = chrome.grid_visible;
         self.chrome.progress_visible = chrome.progress_visible;
         self.chrome.progress_percent = chrome.progress_percent;
-        if let Some([eyebrow, title, body]) = chrome.empty_state {
-            eyebrow.clone_into(&mut self.chrome.empty_eyebrow);
-            title.clone_into(&mut self.chrome.empty_title);
-            body.clone_into(&mut self.chrome.empty_body);
+        if let Some(kind) = chrome.empty_state {
+            self.chrome.empty = kind;
         }
         if let Some(layout) = event.columns
             && let Err(error) = self.columns.grow(layout)
         {
-            self.chrome.status = format!("Column update failed: {error}");
+            self.chrome.status = failed(strings().status_column_failed, &error);
             return;
         }
         self.chrome.status = worker_status(event, self.active_find.as_ref(), self.hidden_columns);
@@ -435,9 +491,7 @@ impl BackgroundTab {
 struct TabChrome {
     file_name: String,
     file_meta: String,
-    empty_eyebrow: String,
-    empty_title: String,
-    empty_body: String,
+    empty: EmptyKind,
     status: String,
     grid_visible: bool,
     progress_visible: bool,
@@ -447,13 +501,13 @@ struct TabChrome {
 /// What one worker event shows in the chrome, for the active tab or for a
 /// tab that is not showing.
 #[derive(Debug, Eq, PartialEq)]
-struct EventChrome<'a> {
+struct EventChrome {
     source_bytes: Option<u64>,
     grid_visible: bool,
     progress_visible: bool,
     progress_percent: u64,
-    /// Eyebrow, title, and body for the empty state when the grid is hidden.
-    empty_state: Option<[&'a str; 3]>,
+    /// The empty state to show when the grid is hidden.
+    empty_state: Option<EmptyKind>,
 }
 
 impl WindowState {
@@ -499,6 +553,12 @@ pub(crate) fn free_disk_bytes(path: &Path) -> std::io::Result<u64> {
     }
     .map_err(std::io::Error::other)?;
     Ok(available)
+}
+
+/// Shows the reader's saved language, or the Windows display language.
+pub(crate) fn load_interface_language() {
+    let language = theme::load_language_setting();
+    set_current(language.resolve(&theme::system_language_tag()));
 }
 
 pub(crate) fn show_startup_error(message: &str) {
@@ -551,6 +611,9 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     let accessibility = AccessibilityBridge::new()?;
     // SAFETY: This reads the system DPI before any top-level HWND is created.
     let initial_dpi = unsafe { GetDpiForSystem() }.max(96);
+    let language = theme::load_language_setting();
+    let system_language = theme::system_language_tag();
+    set_current(language.resolve(&system_language));
     let theme = ThemeResources::new(ThemeMode::load(), initial_dpi, theme::load_zoom_percent())?;
 
     // SAFETY: Passing `None` requests the current executable module.
@@ -604,6 +667,9 @@ pub(crate) fn run(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
         search_frame: None,
         settings: settings::SettingsHandles::default(),
         settings_open: false,
+        language,
+        system_language,
+        empty_kind: EmptyKind::Welcome,
         settings_return_focus: HWND::default(),
         pending_opens: Vec::new(),
         closing: false,
@@ -1117,7 +1183,7 @@ fn verify_modern_shell_chrome(state: &WindowState) -> Result<(), ShellError> {
     // SAFETY: The hidden title control is live and the fixed buffer is writable.
     let copied = unsafe { GetWindowTextW(state.chrome.empty_title, &mut title) };
     let copied = usize::try_from(copied).unwrap_or_default().min(title.len());
-    let expected = EMPTY_TITLE_CAPTION.encode_utf16();
+    let expected = strings().welcome_caption.encode_utf16();
     if copied != expected.clone().count() || !title[..copied].iter().copied().eq(expected) {
         return Err(ShellError::new(
             "modern shell empty-state title caption changed unexpectedly",
@@ -1610,7 +1676,8 @@ fn verify_settings_panel(window: HWND) -> Result<(), ShellError> {
         // SAFETY: LVM_GETITEMCOUNT carries no pointers.
         let items =
             unsafe { SendMessageW(open.settings.shortcuts, LVM_GETITEMCOUNT, None, None) }.0;
-        let expected = crate::shortcuts::SHORTCUTS.len() + crate::shortcuts::groups().len();
+        let expected =
+            crate::shortcuts::SHORTCUTS.len() + crate::shortcuts::groups(strings()).len();
         if usize::try_from(items).unwrap_or_default() != expected {
             return Err(ShellError::new(format!(
                 "shortcut list shows {items} rows, not {expected}"
@@ -1941,9 +2008,10 @@ fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
         let device = unsafe { GetDC(Some(list)) };
         let mut problem = None;
         let mut tallest = m.table_row_height;
+        let text = strings();
         for entry in &crate::shortcuts::SHORTCUTS {
-            let keys: Vec<u16> = entry.keys.encode_utf16().collect();
-            let mut action: Vec<u16> = entry.action.encode_utf16().collect();
+            let keys: Vec<u16> = entry.keys(text).encode_utf16().collect();
+            let mut action: Vec<u16> = entry.action(text).encode_utf16().collect();
             let mut size = windows::Win32::Foundation::SIZE::default();
             let mut wrapped = RECT::default();
             let room = (row.right - row.left) - m.space_1 * 2 - m.space_3;
@@ -1966,10 +2034,10 @@ fn verify_shortcut_list_fits(window: HWND) -> Result<(), ShellError> {
             if !(fits_across && fits_down) && problem.is_none() {
                 problem = Some(format!(
                     "\"{}\" needs {} x {} px beside \"{}\" in a row with {} x {} px",
-                    entry.action,
+                    entry.action(text),
                     wrapped.right,
                     wrapped.bottom - wrapped.top + m.space_2 * 2,
-                    entry.keys,
+                    entry.keys(text),
                     room - size.cx,
                     row.bottom - row.top
                 ));
@@ -2507,51 +2575,72 @@ fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
         .ok_or_else(|| ShellError::new("window state is unavailable"))?;
     // SAFETY: The popup handle is newly allocated and stays under this guard.
     let menu = MenuGuard::new(unsafe { CreatePopupMenu() }.map_err(menu_error)?);
-    append_menu_text(menu.handle(), ID_FILE_OPEN, w!("&Open...\tCtrl+O"))?;
-    append_menu_text(menu.handle(), ID_FILE_RELOAD, w!("&Reload\tF5"))?;
-    append_menu_item(
+    let text = strings();
+    append_menu_keys(menu.handle(), ID_FILE_OPEN, text.menu_open, "Ctrl+O", true)?;
+    append_menu_keys(menu.handle(), ID_FILE_RELOAD, text.menu_reload, "F5", true)?;
+    append_menu_keys(
         menu.handle(),
         ID_TAB_CLOSE,
-        w!("Close &tab\tCtrl+W"),
+        text.menu_close_tab,
+        "Ctrl+W",
         state.current_path.is_some() || state.tab_order.len() > 1,
     )?;
-    append_menu_item(
+    append_menu_keys(
         menu.handle(),
         ID_TAB_NEXT,
-        w!("Next ta&b\tCtrl+Tab"),
+        text.menu_next_tab,
+        "Ctrl+Tab",
         state.tab_order.len() > 1,
     )?;
     let several_sheets = state
         .sheets
         .as_ref()
         .is_some_and(|sheets| sheets.choices.len() > 1);
-    append_menu_item(
+    append_menu_keys(
         menu.handle(),
         ID_SHEET_NEXT,
-        w!("Next s&heet"),
+        text.menu_next_sheet,
+        "",
         several_sheets,
     )?;
-    append_menu_item(
+    append_menu_keys(
         menu.handle(),
         ID_SHEET_PREVIOUS,
-        w!("Pre&vious sheet"),
+        text.menu_previous_sheet,
+        "",
         several_sheets,
     )?;
     // SAFETY: The guarded popup is mutable until TrackPopupMenuEx returns.
     unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
-    append_menu_text(
+    append_menu_keys(
         menu.handle(),
         ID_EDIT_COPY,
-        w!("&Copy selected rows\tCtrl+C"),
+        text.menu_copy_rows,
+        "Ctrl+C",
+        true,
     )?;
-    append_menu_text(menu.handle(), ID_EDIT_FIND, w!("Focus &Find\tCtrl+F"))?;
-    append_menu_text(menu.handle(), ID_EDIT_FIND_NEXT, w!("Find &next\tF3"))?;
-    append_menu_text(
+    append_menu_keys(
+        menu.handle(),
+        ID_EDIT_FIND,
+        text.menu_focus_find,
+        "Ctrl+F",
+        true,
+    )?;
+    append_menu_keys(
+        menu.handle(),
+        ID_EDIT_FIND_NEXT,
+        text.menu_find_next,
+        "F3",
+        true,
+    )?;
+    append_menu_keys(
         menu.handle(),
         ID_EDIT_FIND_PREVIOUS,
-        w!("Find &previous\tShift+F3"),
+        text.menu_find_previous,
+        "Shift+F3",
+        true,
     )?;
-    append_menu_text(menu.handle(), ID_EDIT_GOTO, w!("&Go to row...\tCtrl+G"))?;
+    append_menu_keys(menu.handle(), ID_EDIT_GOTO, text.menu_goto, "Ctrl+G", true)?;
     sorting::append_menu(menu.handle())?;
     column_view::append_overflow_items(menu.handle(), state)?;
     let case_flag = if inline_match_case(state.chrome.match_case) {
@@ -2559,34 +2648,54 @@ fn show_overflow_menu(window: HWND) -> Result<(), ShellError> {
     } else {
         MF_STRING | MF_UNCHECKED
     };
-    // SAFETY: The popup and static label remain valid for this synchronous call.
+    let match_case: Vec<u16> = text.menu_match_case.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: The popup and the label remain valid for this synchronous call.
     unsafe {
         AppendMenuW(
             menu.handle(),
             case_flag,
             usize::from(ID_SEARCH_MATCH_CASE),
-            w!("Match &case"),
+            PCWSTR(match_case.as_ptr()),
         )
     }
     .map_err(menu_error)?;
     unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
-    append_menu_text(
+    append_menu_keys(
         menu.handle(),
         ID_VIEW_SETTINGS,
-        w!("&Settings and shortcuts\tCtrl+/"),
+        text.menu_settings,
+        "Ctrl+/",
+        true,
     )?;
-    append_menu_text(menu.handle(), ID_VIEW_ZOOM_IN, w!("Zoom &in\tCtrl++"))?;
-    append_menu_text(menu.handle(), ID_VIEW_ZOOM_OUT, w!("Zoom o&ut\tCtrl+-"))?;
-    append_menu_text(
+    append_menu_keys(
+        menu.handle(),
+        ID_VIEW_ZOOM_IN,
+        text.menu_zoom_in,
+        "Ctrl++",
+        true,
+    )?;
+    append_menu_keys(
+        menu.handle(),
+        ID_VIEW_ZOOM_OUT,
+        text.menu_zoom_out,
+        "Ctrl+-",
+        true,
+    )?;
+    append_menu_keys(
         menu.handle(),
         ID_VIEW_ZOOM_RESET,
-        w!("&Actual size\tCtrl+0"),
+        text.menu_actual_size,
+        "Ctrl+0",
+        true,
     )?;
-    let theme_label = format!("Theme: {}", state.theme.preference.label());
+    let theme_label = fill(
+        text.menu_theme,
+        &[("theme", &state.theme.preference.label())],
+    );
     append_menu_owned(menu.handle(), ID_VIEW_THEME, &theme_label)?;
-    append_menu_text(menu.handle(), ID_HELP_ABOUT, w!("&About LeanRows"))?;
+    append_menu_owned(menu.handle(), ID_HELP_ABOUT, text.menu_about)?;
     unsafe { AppendMenuW(menu.handle(), MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
-    append_menu_text(menu.handle(), ID_FILE_EXIT, w!("E&xit"))?;
+    append_menu_owned(menu.handle(), ID_FILE_EXIT, text.menu_exit)?;
 
     let mut anchor = RECT::default();
     // SAFETY: The overflow button belongs to this window and anchor is writable.
@@ -2644,6 +2753,26 @@ fn append_menu_owned(menu: HMENU, command: u16, text: &str) -> Result<(), ShellE
     append_menu_text(menu, command, PCWSTR(encoded.as_ptr()))
 }
 
+/// A menu item: its words in the language shown, then its shortcut after a
+/// tab, which Windows right-aligns. The shortcut is the same in every
+/// language.
+fn append_menu_keys(
+    menu: HMENU,
+    command: u16,
+    text: &str,
+    keys: &str,
+    enabled: bool,
+) -> Result<(), ShellError> {
+    let label = if keys.is_empty() {
+        text.to_owned()
+    } else {
+        [text, "\t", keys].concat()
+    };
+    let mut encoded: Vec<u16> = label.encode_utf16().filter(|unit| *unit != 0).collect();
+    encoded.push(0);
+    append_menu_item(menu, command, PCWSTR(encoded.as_ptr()), enabled)
+}
+
 fn handle_command(window: HWND, command: u16) {
     if sorting::command(window, command) || column_view::command(window, command) {
         return;
@@ -2651,11 +2780,11 @@ fn handle_command(window: HWND, command: u16) {
     match command {
         ID_FILE_OPEN => match choose_files(window) {
             Ok(paths) => open_documents(window, paths),
-            Err(error) => set_status(window, &error.to_string()),
+            Err(error) => set_status(window, &translate_message(&error.to_string())),
         },
         ID_TAB_CLOSE => {
             if let Err(error) = close_active_tab(window) {
-                set_status(window, &format!("Close tab failed: {error}"));
+                set_status(window, &failed(strings().status_close_tab_failed, &error));
             }
         }
         ID_TAB_NEXT => switch_tab(window, true),
@@ -2673,34 +2802,40 @@ fn handle_command(window: HWND, command: u16) {
             if let Some((path, sheet)) = target
                 && let Err(error) = queue_path_sheet(window, path, sheet)
             {
-                set_status(window, &error.to_string());
+                set_status(window, &translate_message(&error.to_string()));
             }
         }
         ID_EDIT_COPY => match copy_selected_rows(window) {
             Ok((rows, bytes)) => set_status(
                 window,
-                &format!("Copied {rows} cached row(s) as tab-delimited text ({bytes} bytes)"),
+                &fill(
+                    strings().status_copied,
+                    &[("rows", &rows), ("bytes", &bytes)],
+                ),
             ),
-            Err(error) => set_status(window, &format!("Copy failed: {error}")),
+            Err(error) => set_status(window, &failed(strings().status_copy_failed, &error)),
         },
         ID_EDIT_GOTO => {
             if let Err(error) = show_goto_row(window) {
-                set_status(window, &format!("Go to row failed: {error}"));
+                set_status(window, &failed(strings().status_goto_failed, &error));
             }
         }
         ID_EDIT_FIND => {
             if let Err(error) = show_find_dialog(window) {
-                set_status(window, &format!("Find failed: {error}"));
+                set_status(window, &failed(strings().status_find_failed, &error));
             }
         }
         ID_EDIT_FIND_NEXT => {
             if let Err(error) = repeat_find(window, QueryDirection::Next) {
-                set_status(window, &format!("Find next failed: {error}"));
+                set_status(window, &failed(strings().status_find_next_failed, &error));
             }
         }
         ID_EDIT_FIND_PREVIOUS => {
             if let Err(error) = repeat_find(window, QueryDirection::Previous) {
-                set_status(window, &format!("Find previous failed: {error}"));
+                set_status(
+                    window,
+                    &failed(strings().status_find_previous_failed, &error),
+                );
             }
         }
         ID_SEARCH_MATCH_CASE => toggle_match_case(window),
@@ -2711,7 +2846,13 @@ fn handle_command(window: HWND, command: u16) {
             if let Some(mode) = ThemeMode::ALL.get(index)
                 && let Err(error) = refresh_theme(window, *mode)
             {
-                set_status(window, &format!("Theme change failed: {error}"));
+                set_status(window, &failed(strings().status_theme_failed, &error));
+            }
+        }
+        settings::ID_SETTINGS_LANGUAGE_FIRST..=settings::ID_SETTINGS_LANGUAGE_LAST => {
+            let index = usize::from(command - settings::ID_SETTINGS_LANGUAGE_FIRST);
+            if let Some(setting) = LanguageSetting::ALL.get(index) {
+                choose_language(window, *setting);
             }
         }
         ID_VIEW_ZOOM_IN => zoom_grid(window, 1),
@@ -2719,30 +2860,39 @@ fn handle_command(window: HWND, command: u16) {
         ID_VIEW_ZOOM_RESET => zoom_grid(window, 0),
         ID_VIEW_THEME => {
             if let Err(error) = cycle_theme(window) {
-                set_status(window, &format!("Theme change failed: {error}"));
+                set_status(window, &failed(strings().status_theme_failed, &error));
             }
         }
         ID_APP_MORE => {
             if let Err(error) = show_overflow_menu(window) {
-                set_status(window, &format!("Menu failed: {error}"));
+                set_status(window, &failed(strings().status_menu_failed, &error));
             }
         }
         ID_FILE_EXIT => {
             let _ = destroy_shell_window(window);
         }
-        ID_HELP_ABOUT => {
-            // SAFETY: Static UTF-16 strings and a valid owner are supplied.
-            let _ = unsafe {
-                MessageBoxW(
-                    Some(window),
-                    w!("LeanRows\nA native viewer for large, row-oriented files."),
-                    w!("About LeanRows"),
-                    MB_OK | MB_ICONINFORMATION,
-                )
-            };
-        }
+        ID_HELP_ABOUT => show_about(window),
         _ => {}
     }
+}
+
+fn show_about(window: HWND) {
+    let text = strings();
+    let body: Vec<u16> = ["LeanRows\n", text.about_body]
+        .concat()
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let title: Vec<u16> = text.about_title.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: NUL-terminated UTF-16 strings and a valid owner are supplied.
+    let _ = unsafe {
+        MessageBoxW(
+            Some(window),
+            PCWSTR(body.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONINFORMATION,
+        )
+    };
 }
 
 /// Zooms the rows one level in (`direction > 0`) or out, or back to actual
@@ -2755,8 +2905,8 @@ fn zoom_grid(window: HWND, direction: i32) {
     };
     let next = crate::zoom::step_zoom(current, direction);
     match set_grid_zoom(window, next) {
-        Ok(()) => set_status(window, &format!("Zoom {next}%")),
-        Err(error) => set_status(window, &format!("Zoom failed: {error}")),
+        Ok(()) => set_status(window, &fill(strings().status_zoom, &[("percent", &next)])),
+        Err(error) => set_status(window, &failed(strings().status_zoom_failed, &error)),
     }
 }
 
@@ -2920,10 +3070,7 @@ fn show_find_dialog(window: HWND) -> Result<(), ShellError> {
             Some(LPARAM(-1)),
         );
     }
-    set_status_handle(
-        state.status,
-        "Find uses literal raw UTF-8 bytes; case-insensitive matching folds ASCII only",
-    );
+    set_status_handle(state.status, strings().find_mode_note);
     Ok(())
 }
 
@@ -2945,7 +3092,7 @@ fn inline_find_needle(edit: HWND) -> Result<Vec<u8>, ShellError> {
     let length = usize::try_from(length.max(0))
         .map_err(|_| ShellError::new("Find input length exceeds the native limit"))?;
     if length >= MAX_FIND_UTF16_UNITS {
-        return Err(ShellError::new("Find text is too long"));
+        return Err(ShellError::new(english().find_too_long));
     }
     let mut buffer = vec![0_u16; length.saturating_add(1)];
     // SAFETY: The writable slice includes one unit for the terminating NUL.
@@ -2967,7 +3114,7 @@ fn find_needle(buffer: &[u16]) -> Result<Vec<u8>, ShellError> {
         .position(|unit| *unit == 0)
         .unwrap_or(buffer.len());
     if length == 0 {
-        return Err(ShellError::new("enter text to find"));
+        return Err(ShellError::new(english().find_empty));
     }
     let text = String::from_utf16(&buffer[..length])
         .map_err(|_| ShellError::new("Find text contains invalid Unicode"))?;
@@ -2986,15 +3133,11 @@ fn start_or_navigate_find(
         .is_some_and(|active| active.needle == needle && active.case_sensitive == case_sensitive);
     if is_repeat {
         navigate_active_find(state, direction)?;
-        return Ok(format!(
-            "Find {} requested | raw UTF-8 bytes | {}",
-            query_direction_label(direction),
-            query_mode_description(case_sensitive)
-        ));
+        return Ok(find_requested(direction, case_sensitive));
     }
     let document_serial = state
         .active_serial
-        .ok_or_else(|| ShellError::new("open a document before searching"))?;
+        .ok_or_else(|| ShellError::new(english().find_no_document))?;
     let query_serial = state
         .worker
         .as_ref()
@@ -3007,9 +3150,9 @@ fn start_or_navigate_find(
     });
     state.pending_reveal = None;
     state.revealed_match = None;
-    Ok(format!(
-        "Find started | raw UTF-8 bytes | {}",
-        query_mode_description(case_sensitive)
+    Ok(fill(
+        strings().find_started,
+        &[("mode", &query_mode_description(case_sensitive))],
     ))
 }
 
@@ -3020,10 +3163,10 @@ fn navigate_active_find(
     let active = state
         .active_find
         .as_ref()
-        .ok_or_else(|| ShellError::new("press Ctrl+F and enter text first"))?;
+        .ok_or_else(|| ShellError::new(english().find_press_ctrl_f))?;
     let document_serial = state
         .active_serial
-        .ok_or_else(|| ShellError::new("open a document before searching"))?;
+        .ok_or_else(|| ShellError::new(english().find_no_document))?;
     let accepted = state.worker.as_ref().is_some_and(|worker| {
         worker.navigate_query(document_serial, active.query_serial, direction)
     });
@@ -3032,29 +3175,33 @@ fn navigate_active_find(
     }
     state.pending_reveal = None;
     state.revealed_match = None;
-    set_status_handle(
-        state.status,
-        &format!(
-            "Find {} requested | raw UTF-8 bytes | {}",
-            query_direction_label(direction),
-            query_mode_description(active.case_sensitive)
-        ),
-    );
+    let status = find_requested(direction, active.case_sensitive);
+    set_status_handle(state.status, &status);
     Ok(())
 }
 
-const fn query_direction_label(direction: QueryDirection) -> &'static str {
+fn find_requested(direction: QueryDirection, case_sensitive: bool) -> String {
+    fill(
+        strings().find_requested,
+        &[
+            ("direction", &query_direction_label(direction)),
+            ("mode", &query_mode_description(case_sensitive)),
+        ],
+    )
+}
+
+fn query_direction_label(direction: QueryDirection) -> &'static str {
     match direction {
-        QueryDirection::Next => "next",
-        QueryDirection::Previous => "previous",
+        QueryDirection::Next => strings().find_next_word,
+        QueryDirection::Previous => strings().find_previous_word,
     }
 }
 
-const fn query_mode_description(case_sensitive: bool) -> &'static str {
+fn query_mode_description(case_sensitive: bool) -> &'static str {
     if case_sensitive {
-        "exact case"
+        strings().find_exact_case
     } else {
-        "ASCII-only case-insensitive; non-ASCII bytes remain exact"
+        strings().find_ascii_case
     }
 }
 
@@ -3103,9 +3250,7 @@ fn selected_local_rows(list: HWND) -> Result<Vec<i32>, ShellError> {
         current = i32::try_from(result.0)
             .map_err(|_| ShellError::new("selected row index exceeds the native limit"))?;
         if selected.len() == MAX_COPY_ROWS {
-            return Err(ShellError::new(
-                "select at most 4,096 rows for one copy operation",
-            ));
+            return Err(ShellError::new(english().copy_too_many));
         }
         selected.push(current);
     }
@@ -3123,9 +3268,7 @@ fn build_copy_text(
     selected: &[i32],
 ) -> Result<Vec<u16>, ShellError> {
     if selected.is_empty() || selected.len() > MAX_COPY_ROWS {
-        return Err(ShellError::new(
-            "copy selection must contain between 1 and 4,096 rows",
-        ));
+        return Err(ShellError::new(english().copy_range));
     }
     let Some(_kind) = columns.kind else {
         return Err(ShellError::new("the document has no copyable data columns"));
@@ -3138,9 +3281,7 @@ fn build_copy_text(
             .local_to_absolute(local_row)
             .ok_or_else(|| ShellError::new("a selected row is outside the native row window"))?;
         if !cache.contains_row(absolute_row) {
-            return Err(ShellError::new(
-                "a selected row is not in the current cache; scroll to load it and retry",
-            ));
+            return Err(ShellError::new(english().copy_not_cached));
         }
         if row_index != 0 {
             append_copy_units(&mut text, &[13, 10])?;
@@ -3151,9 +3292,7 @@ fn build_copy_text(
                 append_copy_units(&mut text, &[9])?;
             }
             if cache.skipped().contains(column) {
-                return Err(ShellError::new(
-                    "a column shown again is still loading; copy again in a moment",
-                ));
+                return Err(ShellError::new(english().copy_column_loading));
             }
             match cache.cell(absolute_row, column) {
                 Some(cell) => {
@@ -3177,9 +3316,7 @@ fn append_copy_units(destination: &mut Vec<u16>, units: &[u16]) -> Result<(), Sh
         .checked_add(units.len())
         .ok_or_else(|| ShellError::new("copied text length overflow"))?;
     if proposed > MAX_COPY_UTF16_UNITS {
-        return Err(ShellError::new(
-            "copied text would exceed the 1 MiB clipboard limit; select fewer rows",
-        ));
+        return Err(ShellError::new(english().copy_too_large));
     }
     destination
         .try_reserve(units.len())
@@ -3229,14 +3366,14 @@ fn show_goto_row(window: HWND) -> Result<(), ShellError> {
     let state = unsafe { pointer.as_mut() }
         .ok_or_else(|| ShellError::new("window state is unavailable"))?;
     begin_reveal(state, row)?;
-    let phase = if state.pending_reveal.is_some() {
-        "Loading"
+    let template = if state.pending_reveal.is_some() {
+        strings().status_loading_row
     } else {
-        "Selected"
+        strings().status_selected_row
     };
     set_status_handle(
         state.status,
-        &format!("{phase} row {}", row.saturating_add(1)),
+        &fill(template, &[("row", &row.saturating_add(1))]),
     );
     Ok(())
 }
@@ -3251,6 +3388,7 @@ unsafe extern "system" fn goto_dialog_proc(
         WM_INITDIALOG => {
             // SAFETY: lparam points to GoToDialogState for the modal call duration.
             unsafe { SetWindowLongPtrW(dialog, DIALOG_USER_INDEX, lparam.0) };
+            label_goto_dialog(dialog);
             let state = lparam.0 as *mut GoToDialogState;
             // SAFETY: The pointer was provided by show_goto_row and remains live.
             if let Some(state) = unsafe { state.as_ref() } {
@@ -3289,12 +3427,17 @@ unsafe extern "system" fn goto_dialog_proc(
                     Err(message) => {
                         let mut text: Vec<u16> = message.encode_utf16().collect();
                         text.push(0);
+                        let title: Vec<u16> = strings()
+                            .goto_invalid_title
+                            .encode_utf16()
+                            .chain(Some(0))
+                            .collect();
                         // SAFETY: The strings are NUL-terminated and the modal dialog is live.
                         let _ = unsafe {
                             MessageBoxW(
                                 Some(dialog),
                                 PCWSTR(text.as_ptr()),
-                                w!("Invalid row number"),
+                                PCWSTR(title.as_ptr()),
                                 MB_OK | MB_ICONWARNING,
                             )
                         };
@@ -3317,40 +3460,75 @@ unsafe extern "system" fn goto_dialog_proc(
     }
 }
 
+/// Writes the Go to row dialog's title, label and buttons in the language
+/// shown. The resource holds the English, which a failed write leaves.
+fn label_goto_dialog(dialog: HWND) {
+    let text = strings();
+    let encode = |value: &str| -> Vec<u16> { value.encode_utf16().chain(Some(0)).collect() };
+    let title = encode(text.goto_title);
+    // SAFETY: The dialog is live during WM_INITDIALOG and each string is
+    // NUL-terminated and outlives its synchronous call.
+    unsafe {
+        let _ = SetWindowTextW(dialog, PCWSTR(title.as_ptr()));
+        for (item, value) in [
+            (IDC_GOTO_ROW_LABEL, text.goto_label),
+            (IDOK.0, text.goto_ok),
+            (IDCANCEL.0, text.goto_cancel),
+        ] {
+            let units = encode(value);
+            let _ = SetDlgItemTextW(dialog, item, PCWSTR(units.as_ptr()));
+        }
+    }
+}
+
 fn parse_one_based_row(input: &[u16]) -> Result<u64, &'static str> {
+    let text = strings();
     if input.is_empty() {
-        return Err("Enter a row number from 1 through 18,446,744,073,709,551,615.");
+        return Err(text.goto_empty);
     }
     let mut value = 0_u64;
     for unit in input {
         let digit = match *unit {
             48..=57 => u64::from(*unit - 48),
-            _ => return Err("Use decimal digits only."),
+            _ => return Err(text.goto_digits),
         };
         value = value
             .checked_mul(10)
             .and_then(|current| current.checked_add(digit))
-            .ok_or("The row number exceeds the 64-bit document limit.")?;
+            .ok_or(text.goto_too_large)?;
     }
-    value
-        .checked_sub(1)
-        .ok_or("Row numbers are 1-based; enter 1 or greater.")
+    value.checked_sub(1).ok_or(text.goto_zero)
 }
 
 fn choose_files(window: HWND) -> Result<Vec<PathBuf>, ShellError> {
     let mut buffer = vec![0_u16; 32_768].into_boxed_slice();
     let dialog_size = u32::try_from(size_of::<OPENFILENAMEW>())
         .map_err(|_| ShellError::new("open-dialog structure size overflow"))?;
+    let text = strings();
+    // The filter is pairs of a name and its patterns, each ending in NUL,
+    // and one more NUL at the end.
+    let filter: Vec<u16> = [
+        text.open_dialog_data_files,
+        "\0*.csv;*.tsv;*.jsonl;*.ndjson;*.log;*.txt;*.xlsx\0",
+        text.open_dialog_all_files,
+        "\0*.*\0\0",
+    ]
+    .concat()
+    .encode_utf16()
+    .collect();
+    let title: Vec<u16> = text
+        .open_dialog_title
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
     let mut dialog = OPENFILENAMEW {
         lStructSize: dialog_size,
         hwndOwner: window,
-        lpstrFilter: w!(
-            "Data and log files\0*.csv;*.tsv;*.jsonl;*.ndjson;*.log;*.txt;*.xlsx\0All files\0*.*\0"
-        ),
+        lpstrFilter: PCWSTR(filter.as_ptr()),
         nFilterIndex: 1,
         lpstrFile: PWSTR(buffer.as_mut_ptr()),
         nMaxFile: 32_768,
-        lpstrTitle: w!("Open a large data file"),
+        lpstrTitle: PCWSTR(title.as_ptr()),
         Flags: OFN_EXPLORER
             | OFN_FILEMUSTEXIST
             | OFN_PATHMUSTEXIST
@@ -3367,13 +3545,11 @@ fn choose_files(window: HWND) -> Result<Vec<PathBuf>, ShellError> {
     if code.0 == 0 {
         Ok(Vec::new())
     } else if code == FNERR_BUFFERTOOSMALL {
-        Err(ShellError::new(
-            "Too many files were selected at once; select fewer files",
-        ))
+        Err(ShellError::new(english().open_dialog_too_many))
     } else {
-        Err(ShellError::new(format!(
-            "Open dialog failed with code 0x{:04X}",
-            code.0
+        Err(ShellError::new(fill(
+            english().open_dialog_failed,
+            &[("code", &format_args!("{:04X}", code.0))],
         )))
     }
 }
@@ -3559,12 +3735,18 @@ fn apply_settings_presentation(state: &WindowState) -> Result<(), ShellError> {
     let panel = &state.settings;
     let fonts = &state.theme.fonts;
     apply_font(panel.title, fonts.title());
-    for handle in [panel.theme_label, panel.zoom_label, panel.shortcuts_label] {
+    for handle in [
+        panel.theme_label,
+        panel.zoom_label,
+        panel.language_label,
+        panel.shortcuts_label,
+    ] {
         apply_font(handle, fonts.legend());
     }
     for handle in panel
         .themes
         .into_iter()
+        .chain(panel.languages)
         .chain(panel.buttons())
         .chain([panel.zoom_value, panel.shortcuts])
     {
@@ -3586,6 +3768,12 @@ fn apply_settings_presentation(state: &WindowState) -> Result<(), ShellError> {
             );
         }
     }
+    check_only(&panel.languages, panel.language_choice(state.language));
+    if !panel.close.0.is_null() {
+        state
+            .accessibility
+            .name_control(panel.close, strings().settings_close)?;
+    }
     if !panel.zoom_value.0.is_null() {
         set_control_text(panel.zoom_value, &format!("{}%", state.theme.zoom))?;
     }
@@ -3604,10 +3792,9 @@ fn apply_settings_presentation(state: &WindowState) -> Result<(), ShellError> {
         }
     }
     if !state.chrome.settings_button.0.is_null() {
-        state.accessibility.name_control(
-            state.chrome.settings_button,
-            "Settings and keyboard shortcuts",
-        )?;
+        state
+            .accessibility
+            .name_control(state.chrome.settings_button, strings().settings_button_name)?;
     }
     Ok(())
 }
@@ -3832,8 +4019,11 @@ fn handle_zoom_wheel(window: HWND, message: &MSG) -> bool {
         return true;
     }
     match set_grid_zoom(window, target) {
-        Ok(()) => set_status(window, &format!("Zoom {target}%")),
-        Err(error) => set_status(window, &format!("Zoom failed: {error}")),
+        Ok(()) => set_status(
+            window,
+            &fill(strings().status_zoom, &[("percent", &target)]),
+        ),
+        Err(error) => set_status(window, &failed(strings().status_zoom_failed, &error)),
     }
     true
 }
@@ -3885,12 +4075,34 @@ fn handle_shell_keyboard(window: HWND, message: &MSG) -> bool {
                 .unwrap_or_default();
             let next = ThemeMode::ALL[(index + step) % ThemeMode::ALL.len()];
             if let Err(error) = refresh_theme(window, next) {
-                set_status(window, &format!("Theme change failed: {error}"));
+                set_status(window, &failed(strings().status_theme_failed, &error));
             }
             // SAFETY: The state is reread after the theme change; focus moves
             // to a live radio button of this window.
             if let Some(state) = unsafe { state_pointer_for(window).as_ref() } {
                 let _ = unsafe { SetFocus(Some(state.settings.theme_choice(next))) };
+            }
+            return true;
+        }
+    }
+    if let Some(setting) = state.settings.language_for(message.hwnd) {
+        let count = LanguageSetting::ALL.len();
+        let step = match key {
+            k if k == VK_UP.0 || k == VK_LEFT.0 => Some(count - 1),
+            k if k == VK_DOWN.0 || k == VK_RIGHT.0 => Some(1),
+            _ => None,
+        };
+        if let Some(step) = step {
+            let index = LanguageSetting::ALL
+                .iter()
+                .position(|candidate| *candidate == setting)
+                .unwrap_or_default();
+            let next = LanguageSetting::ALL[(index + step) % count];
+            choose_language(window, next);
+            // SAFETY: The state is reread after the change; focus moves to a
+            // live radio button of this window.
+            if let Some(state) = unsafe { state_pointer_for(window).as_ref() } {
+                let _ = unsafe { SetFocus(Some(state.settings.language_choice(next))) };
             }
             return true;
         }
@@ -3903,7 +4115,7 @@ fn handle_shell_keyboard(window: HWND, message: &MSG) -> bool {
             QueryDirection::Next
         };
         if let Err(error) = repeat_find(window, direction) {
-            set_status(window, &format!("Find failed: {error}"));
+            set_status(window, &failed(strings().status_find_failed, &error));
         }
         return true;
     }
@@ -3939,7 +4151,11 @@ fn focus_adjacent_control(state: &WindowState) {
         state.list,
     ];
     if state.settings_open {
-        controls.extend(state.settings.focus_order(state.theme.preference));
+        controls.extend(
+            state
+                .settings
+                .focus_order(state.theme.preference, state.language),
+        );
     }
     // SAFETY: These calls query or move focus only among UI-thread-owned controls.
     let current = unsafe { GetFocus() };
@@ -4107,7 +4323,7 @@ fn handle_tab_message(window: HWND, message: u32, wparam: WPARAM) {
     if message == WM_APP_OPEN_PENDING {
         open_pending(window);
     } else if let Err(error) = close_tab(window, wparam.0) {
-        set_status(window, &format!("Close tab failed: {error}"));
+        set_status(window, &failed(strings().status_close_tab_failed, &error));
     }
 }
 
@@ -4245,66 +4461,69 @@ fn control_color(window: HWND, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return LRESULT(0);
     };
     let child = HWND(lparam.0 as *mut c_void);
-    let (brush, background, foreground) = if child == state.status
-        || child == state.chrome.status_backdrop
-    {
-        (
-            state.theme.brushes.surface_muted(),
-            state.theme.palette.surface_muted,
-            state.theme.palette.text_secondary,
-        )
-    } else if child == state.chrome.topbar
-        || child == state.chrome.file_name
-        || child == state.chrome.file_meta
-        || child == state.chrome.open
-        || child == state.chrome.more
-        || child == state.chrome.theme
-        || child == state.chrome.reload
-        || child == state.chrome.goto
-        || child == state.chrome.find_previous
-        || child == state.chrome.find_next
-        || child == state.chrome.match_case
-    {
-        (
-            state.theme.brushes.surface(),
-            state.theme.palette.surface,
-            state.theme.palette.text_primary,
-        )
-    } else if child == state.chrome.wordmark {
-        (
-            state.theme.brushes.surface_muted(),
-            state.theme.palette.surface_muted,
-            state.theme.palette.accent,
-        )
-    } else if state.settings.labels().contains(&child) || state.settings.themes.contains(&child) {
-        let secondary = [
-            state.settings.theme_label,
-            state.settings.zoom_label,
-            state.settings.shortcuts_label,
-        ]
-        .contains(&child);
-        (
-            state.theme.brushes.surface(),
-            state.theme.palette.surface,
-            if secondary {
-                state.theme.palette.text_secondary
-            } else {
-                state.theme.palette.text_primary
-            },
-        )
-    } else if child == state.chrome.empty_eyebrow {
-        (
-            state.theme.brushes.canvas(),
-            state.theme.palette.canvas,
-            state.theme.palette.accent,
-        )
-    } else {
-        (
-            state.theme.brushes.canvas(),
-            state.theme.palette.canvas,
-            state.theme.palette.text_primary,
-        )
-    };
+    let (brush, background, foreground) =
+        if child == state.status || child == state.chrome.status_backdrop {
+            (
+                state.theme.brushes.surface_muted(),
+                state.theme.palette.surface_muted,
+                state.theme.palette.text_secondary,
+            )
+        } else if child == state.chrome.topbar
+            || child == state.chrome.file_name
+            || child == state.chrome.file_meta
+            || child == state.chrome.open
+            || child == state.chrome.more
+            || child == state.chrome.theme
+            || child == state.chrome.reload
+            || child == state.chrome.goto
+            || child == state.chrome.find_previous
+            || child == state.chrome.find_next
+            || child == state.chrome.match_case
+        {
+            (
+                state.theme.brushes.surface(),
+                state.theme.palette.surface,
+                state.theme.palette.text_primary,
+            )
+        } else if child == state.chrome.wordmark {
+            (
+                state.theme.brushes.surface_muted(),
+                state.theme.palette.surface_muted,
+                state.theme.palette.accent,
+            )
+        } else if state.settings.labels().contains(&child)
+            || state.settings.themes.contains(&child)
+            || state.settings.languages.contains(&child)
+        {
+            let secondary = [
+                state.settings.theme_label,
+                state.settings.zoom_label,
+                state.settings.language_label,
+                state.settings.shortcuts_label,
+            ]
+            .contains(&child);
+            (
+                state.theme.brushes.surface(),
+                state.theme.palette.surface,
+                if secondary {
+                    state.theme.palette.text_secondary
+                } else {
+                    state.theme.palette.text_primary
+                },
+            )
+        } else if child == state.chrome.empty_eyebrow {
+            (
+                state.theme.brushes.canvas(),
+                state.theme.palette.canvas,
+                state.theme.palette.accent,
+            )
+        } else {
+            (
+                state.theme.brushes.canvas(),
+                state.theme.palette.canvas,
+                state.theme.palette.text_primary,
+            )
+        };
     let device = HDC(wparam.0 as *mut c_void);
     // SAFETY: The HDC is valid only for this synchronous control-color message.
     unsafe {
@@ -4819,9 +5038,14 @@ fn paint_settings_icon(state: &WindowState, device: HDC, bounds: RECT, color: th
     }
 }
 
-/// One theme choice in the settings panel: a radio mark in the accent colour
-/// when chosen, the theme's dot, and its name.
-fn draw_theme_choice(state: &WindowState, custom: &NMCUSTOMDRAW, mode: ThemeMode) -> bool {
+/// One choice in the settings panel: a radio mark in the accent colour when
+/// chosen, a theme's dot when there is one, and its name.
+fn draw_theme_choice(
+    state: &WindowState,
+    custom: &NMCUSTOMDRAW,
+    swatch: Option<theme::Swatch>,
+    name: &str,
+) -> bool {
     let bounds = custom.rc;
     let height = bounds.bottom.saturating_sub(bounds.top);
     if height <= 0 || bounds.right <= bounds.left {
@@ -4844,7 +5068,7 @@ fn draw_theme_choice(state: &WindowState, custom: &NMCUSTOMDRAW, mode: ThemeMode
             .saturating_add(height.saturating_sub(mark) / 2)
             .saturating_add(mark),
     };
-    let dot = m.swatch_size;
+    let dot = if swatch.is_some() { m.swatch_size } else { 0 };
     let dot_left = mark_rect.right.saturating_add(m.space_2);
     let dot_rect = RECT {
         left: dot_left,
@@ -4885,15 +5109,20 @@ fn draw_theme_choice(state: &WindowState, custom: &NMCUSTOMDRAW, mode: ThemeMode
             }
         }
     }
-    draw_swatch(
-        custom.hdc,
-        dot_rect,
-        mode.swatch(),
-        state.theme.brushes.swatch_ring(),
-    );
-    let mut label: Vec<u16> = mode.label().encode_utf16().collect();
+    let label_left = if let Some(swatch) = swatch {
+        draw_swatch(
+            custom.hdc,
+            dot_rect,
+            swatch,
+            state.theme.brushes.swatch_ring(),
+        );
+        dot_rect.right.saturating_add(m.space_2)
+    } else {
+        dot_left
+    };
+    let mut label: Vec<u16> = name.encode_utf16().collect();
     let mut label_rect = RECT {
-        left: dot_rect.right.saturating_add(m.space_2),
+        left: label_left,
         ..bounds
     };
     // SAFETY: The theme owns the font; the label and rectangle are local.
@@ -4954,7 +5183,7 @@ fn open_settings(window: HWND) {
             return;
         };
         let Ok(handles) = settings::create(HINSTANCE(module.0), window) else {
-            set_status(window, "The settings panel could not be created");
+            set_status(window, strings().status_settings_failed);
             return;
         };
         state.settings = handles;
@@ -4965,16 +5194,13 @@ fn open_settings(window: HWND) {
         )
         .is_err()
         {
-            set_status(
-                window,
-                "The settings panel's scroll bar could not be created",
-            );
+            set_status(window, strings().status_settings_scroll_failed);
         }
         for button in state.settings.buttons() {
             let _ = hover::install(button, window);
         }
         if let Err(error) = apply_settings_presentation(state) {
-            set_status(window, &format!("Settings panel failed: {error}"));
+            set_status(window, &failed(strings().status_settings_error, &error));
         }
     }
     // SAFETY: GetFocus reads this thread's focus window.
@@ -5050,7 +5276,10 @@ fn handle_custom_draw(window: HWND, lparam: LPARAM) -> Option<LRESULT> {
         return None;
     }
     let drawn = if let Some(mode) = state.settings.theme_for(header.hwndFrom) {
-        draw_theme_choice(state, custom, mode)
+        draw_theme_choice(state, custom, Some(mode.swatch()), mode.label())
+    } else if let Some(setting) = state.settings.language_for(header.hwndFrom) {
+        let name = setting.label_in(crate::localization::current());
+        draw_theme_choice(state, custom, None, &name)
     } else if header.hwndFrom == state.chrome.match_case {
         draw_match_case(state, custom)
     } else {
@@ -5216,21 +5445,22 @@ fn create_children(window: HWND) -> Result<(), ()> {
         instance,
         window,
         w!("BUTTON"),
-        w!("Match case"),
+        w!(""),
         WS_CHILD | WS_TABSTOP | control_style(BS_AUTOCHECKBOX),
         Some(ID_SEARCH_MATCH_CASE),
     )?;
     let find_previous = create_button(instance, window, w!("<"), ID_EDIT_FIND_PREVIOUS)?;
     let find_next = create_button(instance, window, w!(">"), ID_EDIT_FIND_NEXT)?;
-    let reload = create_button(instance, window, w!("Reload"), ID_FILE_RELOAD)?;
-    let goto = create_button(instance, window, w!("Go to row"), ID_EDIT_GOTO)?;
-    let theme = create_button(instance, window, w!("Theme"), ID_VIEW_THEME)?;
-    let settings_button = create_button(instance, window, w!("Settings"), ID_VIEW_SETTINGS)?;
+    // The words on these controls are written by `apply_language`.
+    let reload = create_button(instance, window, w!(""), ID_FILE_RELOAD)?;
+    let goto = create_button(instance, window, w!(""), ID_EDIT_GOTO)?;
+    let theme = create_button(instance, window, w!(""), ID_VIEW_THEME)?;
+    let settings_button = create_button(instance, window, w!(""), ID_VIEW_SETTINGS)?;
     let open = create_child(
         instance,
         window,
         w!("BUTTON"),
-        w!("Open file"),
+        w!(""),
         WS_CHILD | WS_TABSTOP | control_style(BS_OWNERDRAW),
         Some(ID_FILE_OPEN),
     )?;
@@ -5239,7 +5469,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         instance,
         window,
         WC_TABCONTROLW,
-        w!("Open files"),
+        w!(""),
         WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS | WINDOW_STYLE(TCS_FIXEDWIDTH),
         Some(ID_TAB_STRIP),
     )?;
@@ -5248,7 +5478,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         instance,
         window,
         WC_LISTVIEWW,
-        w!("Rows"),
+        w!(""),
         WS_CHILD | WS_TABSTOP | WINDOW_STYLE(LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS),
         None,
     )?;
@@ -5280,7 +5510,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         instance,
         window,
         w!("BUTTON"),
-        w!("Open a data file"),
+        w!(""),
         WS_CHILD | WS_TABSTOP | control_style(BS_OWNERDRAW),
         Some(ID_FILE_OPEN),
     )?;
@@ -5331,7 +5561,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
         state.chrome.tooltip,
         window,
         settings_button,
-        "Settings and shortcuts (Ctrl+/)",
+        &fill(strings().settings_tooltip, &[("keys", &"Ctrl+/")]),
     )?;
     // The settings panel is built the first time it opens, so starting
     // LeanRows does not pay for its controls and its shortcut list.
@@ -5357,7 +5587,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
     let row_width = state
         .column_zoom
         .insert(0, ROW_COLUMN_WIDTH, state.theme.zoom);
-    insert_column(list, 0, w!("Row"), row_width)?;
+    insert_column(list, 0, w!(""), row_width)?;
     insert_existing_data_columns(
         list,
         state.columns,
@@ -5381,12 +5611,6 @@ fn create_children(window: HWND) -> Result<(), ()> {
             LVM_SETITEMCOUNT,
             Some(WPARAM(count as usize)),
             Some(LPARAM(0)),
-        );
-        SendMessageW(
-            search_edit,
-            EM_SETCUEBANNER,
-            Some(WPARAM(1)),
-            Some(LPARAM(w!("Find in file").as_ptr() as isize)),
         );
         SendMessageW(progress, PBM_SETRANGE32, Some(WPARAM(0)), Some(LPARAM(100)));
     }
@@ -5423,6 +5647,7 @@ fn create_children(window: HWND) -> Result<(), ()> {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         )
     };
+    apply_language(state).map_err(|_| ())?;
     set_welcome_text(state).map_err(|_| ())?;
     apply_native_presentation(state).map_err(|_| ())?;
     apply_shell_visibility(state);
@@ -5464,7 +5689,7 @@ fn create_tooltip(instance: HINSTANCE, window: HWND, theme_button: HWND) -> Resu
         )
     }
     .map_err(|_| ())?;
-    add_tool(tooltip, window, theme_button, "Theme")?;
+    add_tool(tooltip, window, theme_button, strings().theme_word)?;
     Ok(tooltip)
 }
 
@@ -6162,12 +6387,7 @@ fn queue_path_sheet(window: HWND, path: PathBuf, sheet: Option<usize>) -> Result
     state.grid_visible = false;
     state.progress_visible = true;
     set_file_identity(state, &path, None)?;
-    set_empty_state(
-        state,
-        "OPENING",
-        "Preparing the first rows.",
-        "LeanRows is reading a bounded window from the file. The source stays unchanged.",
-    )?;
+    show_empty_state(state, EmptyKind::Opening)?;
     state.current_path = Some(path);
     state.active_serial = Some(serial);
     apply_shell_visibility(state);
@@ -6182,7 +6402,7 @@ fn queue_path_sheet(window: HWND, path: PathBuf, sheet: Option<usize>) -> Result
         );
     }
     progress::update_position(state.chrome.progress, 0);
-    set_status_handle(state.status, "Opening file...");
+    set_status_handle(state.status, strings().status_opening);
     Ok(())
 }
 
@@ -6216,8 +6436,9 @@ fn open_document(window: HWND, path: PathBuf) -> Result<(), ShellError> {
     let mut new_tab = None;
     if state.current_path.is_some() {
         if state.tab_order.len() >= MAX_OPEN_TABS {
-            return Err(ShellError::new(format!(
-                "close a tab first; LeanRows keeps at most {MAX_OPEN_TABS} files open"
+            return Err(ShellError::new(fill(
+                english().status_tabs_limit,
+                &[("count", &MAX_OPEN_TABS)],
             )));
         }
         let outgoing = stash_active(state)?;
@@ -6254,9 +6475,15 @@ fn open_documents(window: HWND, paths: Vec<PathBuf>) {
     }
     if let Some(error) = first_error {
         let message = if failures == 1 {
-            format!("Could not open a file: {error}")
+            failed(strings().status_open_one_failed, &error)
         } else {
-            format!("Could not open {failures} files: {error}")
+            fill(
+                strings().status_open_many_failed,
+                &[
+                    ("count", &failures),
+                    ("error", &translate_message(&error.to_string())),
+                ],
+            )
         };
         set_status(window, &message);
     }
@@ -6496,7 +6723,7 @@ fn switch_tab(window: HWND, forward: bool) {
     if let Some(id) = target
         && let Err(error) = activate_tab(window, id)
     {
-        set_status(window, &format!("Could not switch tabs: {error}"));
+        set_status(window, &failed(strings().status_switch_tabs_failed, &error));
     }
 }
 
@@ -6515,7 +6742,7 @@ fn select_tab_number(window: HWND, command: u16) {
     if let Some(id) = target
         && let Err(error) = activate_tab(window, id)
     {
-        set_status(window, &format!("Could not switch tabs: {error}"));
+        set_status(window, &failed(strings().status_switch_tabs_failed, &error));
     }
 }
 
@@ -6540,7 +6767,7 @@ fn handle_tab_notification(window: HWND, lparam: LPARAM) -> bool {
         if let Some(id) = target
             && let Err(error) = activate_tab(window, id)
         {
-            set_status(window, &format!("Could not switch tabs: {error}"));
+            set_status(window, &failed(strings().status_switch_tabs_failed, &error));
         }
     }
     true
@@ -6586,11 +6813,11 @@ fn sync_tab_strip(window: HWND) {
     layout_children(window);
 }
 
-fn set_welcome_text(state: &WindowState) -> Result<(), ShellError> {
+fn set_welcome_text(state: &mut WindowState) -> Result<(), ShellError> {
     set_control_text(state.chrome.file_name, IDLE_FILE_NAME)?;
-    set_control_text(state.chrome.file_meta, IDLE_FILE_META)?;
-    set_empty_state(state, WELCOME_EYEBROW, EMPTY_TITLE_CAPTION, WELCOME_BODY)?;
-    set_control_text(state.status, IDLE_STATUS)
+    set_control_text(state.chrome.file_meta, strings().idle_file_meta)?;
+    show_empty_state(state, EmptyKind::Welcome)?;
+    set_control_text(state.status, strings().status_ready)
 }
 
 fn show_welcome(window: HWND, state: &mut WindowState) -> Result<(), ShellError> {
@@ -6610,9 +6837,7 @@ fn capture_chrome(state: &WindowState) -> TabChrome {
     TabChrome {
         file_name: control_text(state.chrome.file_name),
         file_meta: control_text(state.chrome.file_meta),
-        empty_eyebrow: control_text(state.chrome.empty_eyebrow),
-        empty_title: control_text(state.chrome.empty_title),
-        empty_body: control_text(state.chrome.empty_body),
+        empty: state.empty_kind.clone(),
         status: control_text(state.status),
         grid_visible: state.grid_visible,
         progress_visible: state.progress_visible,
@@ -6623,12 +6848,7 @@ fn capture_chrome(state: &WindowState) -> TabChrome {
 fn apply_chrome(state: &mut WindowState, chrome: &TabChrome) -> Result<(), ShellError> {
     set_control_text(state.chrome.file_name, &chrome.file_name)?;
     set_control_text(state.chrome.file_meta, &chrome.file_meta)?;
-    set_empty_state(
-        state,
-        &chrome.empty_eyebrow,
-        &chrome.empty_title,
-        &chrome.empty_body,
-    )?;
+    show_empty_state(state, chrome.empty.clone())?;
     set_status_handle(state.status, &chrome.status);
     state.grid_visible = chrome.grid_visible;
     state.progress_visible = chrome.progress_visible;
@@ -6741,7 +6961,7 @@ fn handle_drop(window: HWND, raw_drop: usize) {
     let paths = match drop_files::paths(raw_drop, MAX_OPEN_TABS) {
         Ok(paths) => paths,
         Err(error) => {
-            set_status(window, &format!("Could not open dropped files: {error}"));
+            set_status(window, &failed(strings().status_drop_failed, &error));
             return;
         }
     };
@@ -6755,9 +6975,7 @@ fn handle_drop(window: HWND, raw_drop: usize) {
     if skipped > 0 {
         set_status(
             window,
-            &format!(
-                "Skipped {skipped} unsupported file(s); use CSV, TSV, JSONL, NDJSON, LOG, TXT, or XLSX"
-            ),
+            &fill(strings().status_drop_skipped, &[("count", &skipped)]),
         );
     }
 }
@@ -6798,20 +7016,141 @@ fn set_file_identity(
 
 fn file_meta_text(source_bytes: Option<u64>) -> String {
     source_bytes.map_or_else(
-        || String::from("Opening local file..."),
-        |bytes| format!("{bytes} bytes | read-only source"),
+        || strings().file_meta_opening.to_owned(),
+        |bytes| fill(strings().file_meta_bytes, &[("bytes", &bytes)]),
     )
 }
 
-fn set_empty_state(
-    state: &WindowState,
-    eyebrow: &str,
-    title: &str,
-    body: &str,
-) -> Result<(), ShellError> {
-    set_control_text(state.chrome.empty_eyebrow, eyebrow)?;
-    set_control_text(state.chrome.empty_title, title)?;
-    set_control_text(state.chrome.empty_body, body)
+/// Shows `kind` in the empty state, in the language shown now, and keeps it
+/// so a language change can write it again.
+fn show_empty_state(state: &mut WindowState, kind: EmptyKind) -> Result<(), ShellError> {
+    let [eyebrow, title, body] = kind.text();
+    state.empty_kind = kind;
+    set_control_text(state.chrome.empty_eyebrow, &eyebrow)?;
+    set_control_text(state.chrome.empty_title, &title)?;
+    set_control_text(state.chrome.empty_body, &body)
+}
+
+/// Writes every word the window shows in the language chosen now: the
+/// toolbar, the welcome or empty state, the column titles, the tooltips,
+/// the screen reader names and, once built, the settings panel. Menus and
+/// dialogs are built when they open, so they follow on their own.
+fn apply_language(state: &mut WindowState) -> Result<(), ShellError> {
+    let text = strings();
+    let chrome = &state.chrome;
+    set_control_text(chrome.match_case, text.match_case)?;
+    set_control_text(chrome.reload, text.reload_button)?;
+    set_control_text(chrome.goto, text.goto_button)?;
+    set_control_text(chrome.settings_button, text.settings_button)?;
+    set_control_text(chrome.open, text.open_button)?;
+    set_control_text(chrome.empty_open, text.empty_open_button)?;
+    set_control_text(chrome.tab_strip, text.tab_strip_name)?;
+    set_control_text(state.list, text.grid_name)?;
+    let cue: Vec<u16> = text.find_cue.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: The edit copies the cue banner during this synchronous call.
+    unsafe {
+        SendMessageW(
+            chrome.search_edit,
+            EM_SETCUEBANNER,
+            Some(WPARAM(1)),
+            Some(LPARAM(cue.as_ptr() as isize)),
+        );
+    }
+    set_tool_text(
+        chrome.tooltip,
+        state.window,
+        chrome.settings_button,
+        &fill(text.settings_tooltip, &[("keys", &"Ctrl+/")]),
+    );
+    retitle_columns(state);
+    let kind = state.empty_kind.clone();
+    show_empty_state(state, kind)?;
+    if state.current_path.is_none() {
+        set_control_text(state.chrome.file_meta, text.idle_file_meta)?;
+    }
+    if !state.settings.panel.0.is_null() {
+        settings::relabel(&state.settings)
+            .map_err(|()| ShellError::new(strings().status_settings_failed))?;
+        state
+            .accessibility
+            .name_control(state.settings.close, text.settings_close)?;
+    }
+    Ok(())
+}
+
+/// Saves the reader's language choice, shows it, and writes every word in
+/// it.
+fn choose_language(window: HWND, setting: LanguageSetting) {
+    let pointer = state_pointer_for(window);
+    // SAFETY: Commands run on the UI thread that owns the state.
+    let Some(state) = (unsafe { pointer.as_mut() }) else {
+        return;
+    };
+    let saved = theme::save_language_setting(setting);
+    state.language = setting;
+    set_current(setting.resolve(&state.system_language));
+    let result = apply_language(state)
+        .and_then(|()| apply_theme_button_text(state))
+        .and_then(|()| state.accessibility.annotate_shell(window, state.list));
+    let chosen = state.settings.language_choice(setting);
+    if !chosen.0.is_null() {
+        check_only(&state.settings.languages, chosen);
+    }
+    layout_children(window);
+    if let Err(error) = result {
+        set_status(window, &failed(strings().status_settings_error, &error));
+    } else if !saved {
+        set_status(window, strings().status_language_failed);
+    }
+    // SAFETY: Repaints the whole window, whose owner-drawn controls now
+    // carry new words.
+    unsafe {
+        let _ = InvalidateRect(Some(window), None, true);
+    }
+}
+
+/// Checks `chosen` and clears the other radio buttons of its group.
+fn check_only(group: &[HWND], chosen: HWND) {
+    for choice in group {
+        let checked = if *choice == chosen { BST_CHECKED.0 } else { 0 };
+        // SAFETY: BM_SETCHECK carries only the documented small state value.
+        unsafe {
+            SendMessageW(
+                *choice,
+                BM_SETCHECK,
+                Some(WPARAM(usize::try_from(checked).unwrap_or_default())),
+                None,
+            );
+        }
+    }
+}
+
+/// Writes the Row and data column titles in the language shown now.
+fn retitle_columns(state: &WindowState) {
+    let mut titles = vec![strings().row_column.to_owned()];
+    if let Some(kind) = state.columns.kind {
+        for file_column in state.hidden_columns.visible(state.columns.data_columns) {
+            titles.push(column_view::column_title(kind, file_column));
+        }
+    }
+    for (index, title) in titles.iter().enumerate() {
+        let mut units: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
+        let column = LVCOLUMNW {
+            mask: LVCF_TEXT,
+            pszText: PWSTR(units.as_mut_ptr()),
+            ..Default::default()
+        };
+        // SAFETY: The column structure and its text outlive this
+        // synchronous message, which copies the text.
+        unsafe {
+            SendMessageW(
+                state.list,
+                windows::Win32::UI::Controls::LVM_SETCOLUMNW,
+                Some(WPARAM(index)),
+                Some(LPARAM((&raw const column) as isize)),
+            );
+        }
+    }
 }
 
 fn document_title(path: &Path) -> Result<Vec<u16>, ShellError> {
@@ -6864,47 +7203,26 @@ fn update_document_chrome(state: &mut WindowState, event: &WorkerEvent) {
     state.progress_visible = chrome.progress_visible;
     progress::update_position(state.chrome.progress, chrome.progress_percent);
     state.grid_visible = chrome.grid_visible;
-    if let Some([eyebrow, title, body]) = chrome.empty_state {
-        let _ = set_empty_state(state, eyebrow, title, body);
+    if let Some(kind) = chrome.empty_state {
+        let _ = show_empty_state(state, kind);
     }
     apply_shell_visibility(state);
 }
 
-fn event_chrome(event: &WorkerEvent) -> EventChrome<'_> {
+fn event_chrome(event: &WorkerEvent) -> EventChrome {
     let source_bytes = match &event.result {
         WorkerResult::Ready { size } => Some(*size),
         WorkerResult::Failed { .. } => None,
     };
     let (grid_visible, empty_state) = match &event.result {
-        WorkerResult::Failed { message } => (
-            false,
-            Some([
-                "COULD NOT OPEN",
-                "This file could not be displayed.",
-                message.as_str(),
-            ]),
-        ),
+        WorkerResult::Failed { message } => (false, Some(EmptyKind::Failed(message.clone()))),
         WorkerResult::Ready { .. }
             if event.progress.complete && event.progress.available_rows == 0 =>
         {
-            (
-                false,
-                Some([
-                    "EMPTY FILE",
-                    "This file has no rows.",
-                    "Choose another supported local file to continue.",
-                ]),
-            )
+            (false, Some(EmptyKind::Empty))
         }
         WorkerResult::Ready { .. } if event.cached_rows > 0 => (true, None),
-        WorkerResult::Ready { .. } => (
-            false,
-            Some([
-                "INDEXING",
-                "Finding the first complete row.",
-                "Memory stays bounded while LeanRows scans forward cooperatively.",
-            ]),
-        ),
+        WorkerResult::Ready { .. } => (false, Some(EmptyKind::Indexing)),
     };
     EventChrome {
         source_bytes,
@@ -6948,7 +7266,10 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
     if let Some(columns) = event.columns
         && let Err(error) = synchronize_data_columns(state, columns)
     {
-        set_status_handle(state.status, &format!("Column update failed: {error}"));
+        set_status_handle(
+            state.status,
+            &failed(strings().status_column_failed, &error),
+        );
         return state.document_smoke;
     }
 
@@ -6963,7 +7284,7 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
     if let Err(error) = state.replace_cache(rows, Arc::clone(&event.cache)) {
         set_status_handle(
             state.status,
-            &format!("Accessibility cache update failed: {error}"),
+            &failed(strings().status_accessibility_failed, &error),
         );
         return state.document_smoke;
     }
@@ -7005,18 +7326,24 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
         if let Err(error) = begin_rank_reveal(state, reveal.absolute_row) {
             set_status_handle(
                 state.status,
-                &format!("Find match could not be displayed: {error}"),
+                &failed(strings().status_match_display_failed, &error),
             );
             return state.document_smoke;
         }
     }
     if let Err(error) = complete_pending_reveal(state) {
-        set_status_handle(state.status, &format!("Row selection failed: {error}"));
+        set_status_handle(
+            state.status,
+            &failed(strings().status_selection_failed, &error),
+        );
         return state.document_smoke;
     }
     set_status_handle(state.status, &status_text);
     if let Err(error) = redraw_shell_children(window) {
-        set_status_handle(state.status, &format!("Display refresh failed: {error}"));
+        set_status_handle(
+            state.status,
+            &failed(strings().status_refresh_failed, &error),
+        );
         return state.document_smoke;
     }
 
@@ -7052,9 +7379,12 @@ fn apply_document_event(window: HWND, event: &WorkerEvent) -> bool {
 fn begin_reveal(state: &mut WindowState, absolute_row: u64) -> Result<(), ShellError> {
     let total_rows = state.rows.total_rows();
     if absolute_row >= total_rows {
-        return Err(ShellError::new(format!(
-            "row {} is not indexed; the current available range is 1 through {total_rows}",
-            absolute_row.saturating_add(1)
+        return Err(ShellError::new(fill(
+            english().status_row_not_indexed,
+            &[
+                ("row", &absolute_row.saturating_add(1)),
+                ("total", &total_rows),
+            ],
         )));
     }
     if state.sort.as_ref().is_some_and(|s| s.committed.is_some()) {
@@ -7079,9 +7409,12 @@ fn begin_rank_reveal(state: &mut WindowState, absolute_row: u64) -> Result<(), S
         return Err(ShellError::new("no indexed rows are available yet"));
     }
     if absolute_row >= total_rows {
-        return Err(ShellError::new(format!(
-            "row {} is not indexed; the current available range is 1 through {total_rows}",
-            absolute_row.saturating_add(1)
+        return Err(ShellError::new(fill(
+            english().status_row_not_indexed,
+            &[
+                ("row", &absolute_row.saturating_add(1)),
+                ("total", &total_rows),
+            ],
         )));
     }
     let serial = state
@@ -7300,15 +7633,13 @@ fn worker_status(
     if hidden.is_empty() {
         return status;
     }
+    let text = strings();
     match kind {
         StatusKind::Failure => {}
-        StatusKind::Find => status.push_str(" | hidden columns are searched too"),
+        StatusKind::Find => status.push_str(text.status_hidden_searched),
         StatusKind::Rows => match hidden.count() {
-            1 => status.push_str(" | 1 column hidden"),
-            count => {
-                use std::fmt::Write as _;
-                let _ = write!(status, " | {count} columns hidden");
-            }
+            1 => status.push_str(text.status_one_hidden),
+            count => status.push_str(&fill(text.status_many_hidden, &[("count", &count)])),
         },
     }
     status
@@ -7327,18 +7658,16 @@ fn event_status(
     active_find: Option<&ActiveFind>,
     hidden: HiddenColumns,
 ) -> (String, StatusKind) {
-    use std::fmt::Write as _;
-
+    let text = strings();
     if let WorkerResult::Failed { message } = &event.result {
         let reload = if failure_requires_reload(message) {
-            " | File changed: press F5 or choose Reload; automatic reload is disabled"
+            text.status_file_changed
         } else {
             ""
         };
-        return (
-            format!("Could not read file: {message}{reload}"),
-            StatusKind::Failure,
-        );
+        let mut status = failed(text.status_read_failed, message);
+        status.push_str(reload);
+        return (status, StatusKind::Failure);
     }
     if let Some(sort) = &event.sort
         && (!matches!(sort.phase, leanrows_core::SortPhase::Complete) || active_find.is_none())
@@ -7360,10 +7689,10 @@ fn event_status(
     let progress = event.progress;
     let percent = progress_percent(progress.scanned_bytes, progress.source_bytes);
     let phase = match event.phase {
-        WorkerPhase::ViewportReady => "Rows ready; indexing",
-        WorkerPhase::Scanning => "Indexing",
-        WorkerPhase::Complete => "Ready",
-        WorkerPhase::Failed => "Failed",
+        WorkerPhase::ViewportReady => text.phase_rows_ready,
+        WorkerPhase::Scanning => text.phase_indexing,
+        WorkerPhase::Complete => text.status_ready,
+        WorkerPhase::Failed => text.phase_failed,
     };
     let mut status = String::new();
     if let Some(sheets) = event.sheets.as_deref()
@@ -7381,60 +7710,79 @@ fn event_status(
                 }
             })
             .collect();
-        let _ = write!(
-            status,
-            "Sheet {} of {}: {name} | ",
-            position + 1,
-            sheets.choices.len()
-        );
+        status.push_str(&fill(
+            text.status_sheet,
+            &[
+                ("number", &(position + 1)),
+                ("count", &sheets.choices.len()),
+                ("name", &name),
+            ],
+        ));
     }
-    let _ = write!(
-        status,
-        "{phase} | {} rows | {} / {} bytes | {percent}%",
-        progress.available_rows, progress.scanned_bytes, progress.source_bytes
-    );
+    status.push_str(&fill(
+        text.status_rows,
+        &[
+            ("phase", &phase),
+            ("rows", &progress.available_rows),
+            ("scanned", &progress.scanned_bytes),
+            ("total", &progress.source_bytes),
+            ("percent", &percent),
+        ],
+    ));
     if event.source_truncated_rows > 0
         || event.display_truncated_rows > 0
         || event.escaped_non_utf8_rows > 0
     {
-        let _ = write!(
-            status,
-            " | warnings: {} source-truncated, {} display-truncated, {} escaped",
-            event.source_truncated_rows, event.display_truncated_rows, event.escaped_non_utf8_rows
-        );
+        status.push_str(&fill(
+            text.status_warnings,
+            &[
+                ("source", &event.source_truncated_rows),
+                ("display", &event.display_truncated_rows),
+                ("escaped", &event.escaped_non_utf8_rows),
+            ],
+        ));
     }
     (status, StatusKind::Rows)
 }
 
 fn query_status(query: &WorkerQueryState, case_sensitive: bool) -> String {
+    let text = strings();
     let phase = match query.phase {
-        WorkerQueryPhase::Searching => "searching",
-        WorkerQueryPhase::MatchReady => "match ready",
-        WorkerQueryPhase::Complete => "complete",
-        WorkerQueryPhase::QuotaExceeded => "hit-cache limit reached",
-        WorkerQueryPhase::Failed => "failed",
+        WorkerQueryPhase::Searching => text.find_phase_searching,
+        WorkerQueryPhase::MatchReady => text.find_phase_match_ready,
+        WorkerQueryPhase::Complete => text.find_phase_complete,
+        WorkerQueryPhase::QuotaExceeded => text.find_phase_quota,
+        WorkerQueryPhase::Failed => text.find_phase_failed,
     };
     let percent = progress_percent(query.scanned_bytes, query.source_bytes);
     let active = match (query.active_hit_index, query.active_row) {
-        (Some(hit), Some(row)) => format!(
-            " | match {} at row {}",
-            hit.saturating_add(1),
-            row.saturating_add(1)
+        (Some(hit), Some(row)) => fill(
+            text.find_active_match,
+            &[
+                ("number", &hit.saturating_add(1)),
+                ("row", &row.saturating_add(1)),
+            ],
         ),
         _ => String::new(),
     };
     let reload = if failure_requires_reload(&query.message) {
-        " | File changed: press F5 or choose File > Reload; automatic reload is disabled"
+        text.find_file_changed
     } else {
         ""
     };
-    format!(
-        "Find: {phase} | {} | {} / {} bytes | {percent}% | {} stored hit(s){active} | raw UTF-8 bytes | {}{reload}",
-        query.message,
-        query.scanned_bytes,
-        query.source_bytes,
-        query.stored_hits,
-        query_mode_description(case_sensitive)
+    fill(
+        text.find_status,
+        &[
+            ("phase", &phase),
+            ("message", &translate_message(&query.message)),
+            ("scanned", &query.scanned_bytes),
+            ("total", &query.source_bytes),
+            ("percent", &percent),
+            ("hits", &query.stored_hits),
+            ("active", &active),
+            ("mode", &query_mode_description(case_sensitive)),
+            ("reload", &reload),
+        ],
     )
 }
 
@@ -7523,14 +7871,13 @@ mod tests {
 
     use super::layout::UiLayout;
     use super::{
-        ActiveFind, EMPTY_TEXT, EMPTY_TITLE_CAPTION, LOADING_TEXT, MAX_COPY_ROWS,
-        MAX_COPY_UTF16_UNITS, MAX_STARTUP_ERROR_UTF16_UNITS, NativeColumns, RevealedMatch,
-        SHELL_SMOKE_TEXT_UNITS, append_copy_units, brush_result, build_copy_text, control_style,
-        display_units, document_event_is_usable, document_smoke_evidence, document_title,
-        event_chrome, failure_requires_reload, file_meta_text, find_needle,
-        is_supported_document_path, parse_one_based_row, parse_open_selection,
-        query_match_to_reveal, query_status, sheet_column_letters, startup_error_text,
-        worker_status,
+        ActiveFind, EMPTY_TEXT, EmptyKind, LOADING_TEXT, MAX_COPY_ROWS, MAX_COPY_UTF16_UNITS,
+        MAX_STARTUP_ERROR_UTF16_UNITS, NativeColumns, RevealedMatch, SHELL_SMOKE_TEXT_UNITS,
+        append_copy_units, brush_result, build_copy_text, control_style, display_units,
+        document_event_is_usable, document_smoke_evidence, document_title, event_chrome,
+        failure_requires_reload, file_meta_text, find_needle, is_supported_document_path,
+        parse_one_based_row, parse_open_selection, query_match_to_reveal, query_status,
+        sheet_column_letters, startup_error_text, worker_status,
     };
     use crate::columns::HiddenColumns;
     use crate::document_engine::{UiColumnKind, UiColumnLayout};
@@ -7656,7 +8003,10 @@ mod tests {
             assert!(rect.width > 0 && rect.height > 0);
         }
 
-        let title: Vec<u16> = EMPTY_TITLE_CAPTION.encode_utf16().collect();
+        let title: Vec<u16> = crate::localization::english()
+            .welcome_caption
+            .encode_utf16()
+            .collect();
         assert_eq!(
             String::from_utf16_lossy(&title),
             "Open large files without loading them all."
@@ -8098,11 +8448,7 @@ mod tests {
         assert!(!chrome.grid_visible && !chrome.progress_visible);
         assert_eq!(
             chrome.empty_state,
-            Some([
-                "COULD NOT OPEN",
-                "This file could not be displayed.",
-                "access was denied"
-            ])
+            Some(EmptyKind::Failed(String::from("access was denied")))
         );
 
         let mut empty = ready_event();
@@ -8113,8 +8459,8 @@ mod tests {
         assert_eq!(
             event_chrome(&empty)
                 .empty_state
-                .map(|[eyebrow, _, _]| eyebrow),
-            Some("EMPTY FILE")
+                .map(|kind| kind.text()[0].clone()),
+            Some(String::from("EMPTY FILE"))
         );
         assert_eq!(file_meta_text(None), "Opening local file...");
         assert_eq!(file_meta_text(Some(12)), "12 bytes | read-only source");

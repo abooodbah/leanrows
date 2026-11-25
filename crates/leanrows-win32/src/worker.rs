@@ -979,7 +979,9 @@ fn start_document_query(
                     stored_hits: progress.stored_hits(),
                     active_hit_index: None,
                     active_row: None,
-                    message: bounded_query_message(String::from("Searching this document...")),
+                    message: bounded_query_message(
+                        crate::localization::english().search_searching.to_owned(),
+                    ),
                 },
             }
         }
@@ -987,7 +989,10 @@ fn start_document_query(
             query_serial,
             generation,
             document.engine.progress().source_bytes(),
-            format!("Search could not start: {error}"),
+            crate::localization::fill(
+                crate::localization::english().search_could_not_start,
+                &[("error", &error)],
+            ),
         ),
     });
     emit_active(runtime, document, current_document_phase(document), None)
@@ -1022,7 +1027,13 @@ fn navigate_document_query(
         QueryDirection::Next => navigate_to_next_hit(query),
     };
     if let Err(error) = result {
-        fail_query(query, format!("Search navigation failed: {error}"));
+        fail_query(
+            query,
+            crate::localization::fill(
+                crate::localization::english().search_navigation_failed,
+                &[("error", &error)],
+            ),
+        );
     }
     emit_active(runtime, document, current_document_phase(document), None)
 }
@@ -1040,10 +1051,12 @@ fn navigate_to_previous_hit(query: &mut ActiveQuery) -> Result<(), QueryError> {
         activate_query_hit(query, previous)?;
     } else if query.state.active_hit_index.is_some() {
         query.state.phase = WorkerQueryPhase::MatchReady;
-        query.state.message = bounded_query_message(String::from("Already at the first match."));
+        query.state.message =
+            bounded_query_message(crate::localization::english().search_first_match.to_owned());
     } else {
         query.state.phase = WorkerQueryPhase::Complete;
-        query.state.message = bounded_query_message(String::from("No previous match is stored."));
+        query.state.message =
+            bounded_query_message(crate::localization::english().search_no_previous.to_owned());
     }
     Ok(())
 }
@@ -1071,7 +1084,7 @@ fn navigate_to_next_hit(query: &mut ActiveQuery) -> Result<(), QueryError> {
             query.demand_hit = Some(target);
             query.state.phase = WorkerQueryPhase::Searching;
             query.state.message =
-                bounded_query_message(String::from("Searching for the next match..."));
+                bounded_query_message(crate::localization::english().search_next.to_owned());
         }
         QueryStepStatus::Complete => set_query_complete(query),
         QueryStepStatus::QuotaExceeded(details) => set_query_quota_exceeded(query, details),
@@ -1105,7 +1118,10 @@ fn advance_query_once(runtime: &WorkerRuntime, document: &mut ActiveDocument) ->
                 runtime.active_serial.store(0, Ordering::Release);
                 fail_query(
                     query,
-                    format!("Search stopped because the source changed: {error}"),
+                    crate::localization::fill(
+                        crate::localization::english().search_source_changed,
+                        &[("error", &error)],
+                    ),
                 );
                 true
             }
@@ -1118,7 +1134,13 @@ fn advance_query_once(runtime: &WorkerRuntime, document: &mut ActiveDocument) ->
                     match activate_query_hit(query, target) {
                         Ok(()) => true,
                         Err(error) => {
-                            fail_query(query, format!("Search result could not be read: {error}"));
+                            fail_query(
+                                query,
+                                crate::localization::fill(
+                                    crate::localization::english().search_result_unreadable,
+                                    &[("error", &error)],
+                                ),
+                            );
                             true
                         }
                     }
@@ -1147,7 +1169,10 @@ fn advance_query_once(runtime: &WorkerRuntime, document: &mut ActiveDocument) ->
             (Err(error), Ok(())) => {
                 fail_query(
                     query,
-                    format!("Search failed: {error}. Reopen the file and try again."),
+                    crate::localization::fill(
+                        crate::localization::english().search_failed,
+                        &[("error", &error)],
+                    ),
                 );
                 true
             }
@@ -1169,10 +1194,12 @@ fn activate_query_hit(query: &mut ActiveQuery, index: u64) -> Result<(), QueryEr
     query.state.phase = WorkerQueryPhase::MatchReady;
     query.state.active_hit_index = Some(index);
     query.state.active_row = Some(hit.row());
-    query.state.message = bounded_query_message(format!(
-        "Match {} ({} stored).",
-        index.saturating_add(1),
-        query.state.stored_hits
+    query.state.message = bounded_query_message(crate::localization::fill(
+        crate::localization::english().search_match,
+        &[
+            ("number", &index.saturating_add(1)),
+            ("count", &query.state.stored_hits),
+        ],
     ));
     Ok(())
 }
@@ -1191,18 +1218,18 @@ fn set_query_complete(query: &mut ActiveQuery) {
     query.demand_hit = None;
     query.state.phase = WorkerQueryPhase::Complete;
     query.state.message = bounded_query_message(if query.state.stored_hits == 0 {
-        String::from("No matches found.")
+        crate::localization::english().search_no_matches.to_owned()
     } else {
-        String::from("No more matches. Use Previous to revisit stored results.")
+        crate::localization::english().search_no_more.to_owned()
     });
 }
 
 fn set_query_quota_exceeded(query: &mut ActiveQuery, details: leanrows_core::QueryQuotaExceeded) {
     query.demand_hit = None;
     query.state.phase = WorkerQueryPhase::QuotaExceeded;
-    query.state.message = bounded_query_message(format!(
-        "Search reached its {}-byte hit-cache limit. Use a more specific search.",
-        details.quota_bytes()
+    query.state.message = bounded_query_message(crate::localization::fill(
+        crate::localization::english().search_quota,
+        &[("bytes", &details.quota_bytes())],
     ));
 }
 
@@ -2702,6 +2729,14 @@ mod tests {
             .ok_or_else(|| io::Error::other("first query state is missing"))?;
         assert_eq!(first_state.active_row, Some(0));
         assert!(first_state.scanned_bytes < first_state.source_bytes);
+        // The message is the English template, which the window translates.
+        assert_eq!(
+            first_state.message,
+            crate::localization::fill(
+                crate::localization::english().search_match,
+                &[("number", &1), ("count", &first_state.stored_hits)],
+            )
+        );
         let progress_deadline = Instant::now() + Duration::from_secs(15);
         let retained_progress = loop {
             let event = wait_event(

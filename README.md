@@ -2,7 +2,7 @@
 
 **Open CSV files too big for Excel, without loading them into memory.**
 
-[Website](https://abooodbah.github.io/leanrows/) · [Microsoft Store](https://apps.microsoft.com/detail/9NMV8GKJXSN0) · [Releases](https://github.com/abooodbah/leanrows/releases) ([feed](https://github.com/abooodbah/leanrows/releases.atom)) · [All Lean apps](https://abooodbah.github.io/)
+[简体中文](#简体中文) · [日本語](#日本語) · [Website](https://abooodbah.github.io/leanrows/) · [Microsoft Store](https://apps.microsoft.com/detail/9NMV8GKJXSN0) · [Releases](https://github.com/abooodbah/leanrows/releases) ([feed](https://github.com/abooodbah/leanrows/releases.atom)) · [All Lean apps](https://abooodbah.github.io/)
 
 [![winget](https://img.shields.io/winget/v/abooodbah.LeanRows)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/a/abooodbah/LeanRows) [![GitHub release](https://img.shields.io/github/v/release/abooodbah/leanrows)](https://github.com/abooodbah/leanrows/releases/latest) [![License: MIT](https://img.shields.io/github/license/abooodbah/leanrows)](LICENSE) [![Downloads](https://img.shields.io/github/downloads/abooodbah/leanrows/total)](https://github.com/abooodbah/leanrows/releases)
 
@@ -325,8 +325,8 @@ qualification records full process-tree memory independently; see
   are LeanMark's, from 50% to 300%. Only the rows and their column titles
   zoom; the toolbar and tabs keep their size. The zoom is remembered.
 - `Ctrl+/` or `F1` opens the settings panel, and `Escape` closes it. The
-  panel, as in LeanMark, has the theme, the zoom, and the list of every
-  keyboard shortcut and mouse action, sorting included. The settings button
+  panel, as in LeanMark, has the theme, the zoom, the language, and the list
+  of every keyboard shortcut and mouse action, sorting included. The settings button
   next to Open does the same.
 - `Ctrl+Shift+T` changes the theme, as the theme button does. The button shows
   a coloured dot for the current theme, and its tooltip names the theme.
@@ -346,6 +346,25 @@ Windows app theme. The application also provides per-monitor DPI
 handling, visible keyboard focus, and Microsoft Active Accessibility names for
 the window, grid, and row items. When Windows high contrast is active,
 application colors yield to the corresponding system colors.
+
+## Languages
+
+The interface is in English, Simplified Chinese or Japanese. By default it
+follows the Windows display language, as LeanMark does: Japanese picks
+Japanese, Simplified Chinese picks Simplified Chinese, and every other
+language, Traditional Chinese included, keeps English. The Language group in the settings panel (`Ctrl+/`) can choose
+System, English, 简体中文 or 日本語 instead. The choice applies at once and is
+saved as `Language` under `HKCU\Software\LeanRows`, next to the theme. Key
+names, file names and numbers stay as they are, and text Windows writes, such
+as a file system error, comes in the language Windows uses.
+
+### 简体中文
+
+LeanRows 是一款免费的大型 CSV 查看器，适用于 Windows。无需把文件全部载入内存即可打开超出 Excel 行数上限的 CSV、TSV、JSONL、日志和 .xlsx 文件，并且只读，不会修改文件。界面支持简体中文：系统显示语言为简体中文时自动使用简体中文，也可以在“设置”的“语言”中选择“跟随系统”、English、简体中文或日本語。安装：`winget install abooodbah.LeanRows`。其余说明见上方的英文文档。
+
+### 日本語
+
+LeanRows は Windows 向けの無料の大きな CSV ビューアーです。ファイル全体をメモリに読み込まずに、Excel の行数の上限を超える CSV、TSV、JSONL、ログ、.xlsx ファイルを開けます。読み取り専用で、ファイルを変更することはありません。画面は日本語に対応しています。Windows の表示言語が日本語のときは自動で日本語になります。「設定」の「言語」で、「システム」、English、简体中文、日本語から選ぶこともできます。インストール：`winget install abooodbah.LeanRows`。そのほかの説明は上の英語のドキュメントを参照してください。
 
 ## Build from source
 

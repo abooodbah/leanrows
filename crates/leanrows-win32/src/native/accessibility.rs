@@ -28,7 +28,22 @@ use crate::{
     AccessibleName, CachedRow, DisplayCell, ImmutableRowCache, ShellError, SlidingRowWindow,
 };
 
-const SMOKE_ITEM_NAME: &str = "Row 1; Preview: Accessibility smoke row";
+const SMOKE_ITEM_TEXT: &str = "Accessibility smoke row";
+
+/// The smoke row's name as a reader hears it in the language shown: the
+/// first row of a log, with its preview.
+fn smoke_item_name() -> String {
+    let strings = crate::localization::strings();
+    let (before, after) = crate::localization::around(strings.accessible_row, "row");
+    [
+        before,
+        "1",
+        after,
+        strings.accessible_preview,
+        SMOKE_ITEM_TEXT,
+    ]
+    .concat()
+}
 
 /// Balances one successful `CoInitializeEx` call on the creating UI thread.
 pub(super) struct ComApartment {
@@ -80,7 +95,12 @@ impl AccessibilityBridge {
     /// Supplies stable names for the top-level client and the row grid itself.
     pub(super) fn annotate_shell(&self, window: HWND, list: HWND) -> Result<(), ShellError> {
         self.set_self_name(window, w!("LeanRows"))?;
-        if let Err(error) = self.set_self_name(list, w!("Rows")) {
+        let grid: Vec<u16> = crate::localization::strings()
+            .grid_name
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        if let Err(error) = self.set_self_name(list, PCWSTR(grid.as_ptr())) {
             let _ = self.clear_self_name(window);
             return Err(error);
         }
@@ -223,11 +243,8 @@ pub(super) struct SmokeEvidence {
 pub(super) fn smoke_cache() -> ImmutableRowCache {
     ImmutableRowCache::new(vec![CachedRow::new_with_accessible_name(
         0,
-        vec![
-            DisplayCell::new("1"),
-            DisplayCell::new("Accessibility smoke row"),
-        ],
-        AccessibleName::compose(0, &[("Preview", "Accessibility smoke row")]),
+        vec![DisplayCell::new("1"), DisplayCell::new(SMOKE_ITEM_TEXT)],
+        AccessibleName::from_preview_utf16(0, &SMOKE_ITEM_TEXT.encode_utf16().collect::<Vec<_>>()),
     )])
 }
 
@@ -259,9 +276,10 @@ pub(super) fn verify_smoke(
         )));
     }
     let grid_name = msaa_name(list, OBJID_CLIENT.0, CHILDID_SELF)?;
-    if grid_name != "Rows" {
+    let expected = crate::localization::strings().grid_name;
+    if grid_name != expected {
         return Err(ShellError::new(format!(
-            "grid MSAA name mismatch: expected Rows, received {grid_name:?}"
+            "grid MSAA name mismatch: expected {expected}, received {grid_name:?}"
         )));
     }
     let grid_role = msaa_role(list, OBJID_CLIENT.0, CHILDID_SELF)?;
@@ -275,9 +293,10 @@ pub(super) fn verify_smoke(
             "owner-data item semantics were not exposed through MSAA: {error}; a custom provider is required"
         ))
     })?;
-    if item_name != SMOKE_ITEM_NAME {
+    let expected_name = smoke_item_name();
+    if item_name != expected_name {
         return Err(ShellError::new(format!(
-            "owner-data item MSAA name mismatch: expected {SMOKE_ITEM_NAME:?}, received {item_name:?}; a custom provider is required"
+            "owner-data item MSAA name mismatch: expected {expected_name:?}, received {item_name:?}; a custom provider is required"
         )));
     }
     let item_role = msaa_role(list, OBJID_CLIENT.0, 1).map_err(|error| {
@@ -295,7 +314,7 @@ pub(super) fn verify_smoke(
     let stale_name = msaa_name(list, OBJID_CLIENT.0, 1).ok();
     let restore_result = bridge.annotate_cached_items(list, rows, cache);
     restore_result?;
-    if stale_name.as_deref() == Some(SMOKE_ITEM_NAME) {
+    if stale_name.as_deref() == Some(expected_name.as_str()) {
         return Err(ShellError::new(
             "cleared owner-data item retained its dynamic accessible name",
         ));

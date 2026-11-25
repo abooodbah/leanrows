@@ -39,8 +39,9 @@ pub(super) fn paths(raw_drop: usize, max_files: usize) -> Result<Vec<PathBuf>, S
         return Err(ShellError::new("the drop contained no files"));
     }
     if count_units > max_files {
-        return Err(ShellError::new(format!(
-            "drop at most {max_files} files at once"
+        return Err(ShellError::new(crate::localization::fill(
+            crate::localization::english().drop_too_many,
+            &[("count", &max_files)],
         )));
     }
     let mut paths = Vec::new();

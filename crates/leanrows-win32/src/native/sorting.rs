@@ -81,10 +81,7 @@ fn submit(state: &mut WindowState, request: Option<SortRequest>) {
         source_bytes: 0,
         error: None,
     });
-    set_status_handle(
-        state.status,
-        "Preparing sort; use More > Cancel sort to stop.",
-    );
+    set_status_handle(state.status, strings().sort_preparing);
 }
 pub(super) fn command(window: HWND, command: u16) -> bool {
     if !(ID_TEXT_ASC..=ID_CANCEL).contains(&command) {
@@ -128,12 +125,13 @@ pub(super) fn command(window: HWND, command: u16) -> bool {
     true
 }
 pub(super) fn append_menu(menu: HMENU) -> Result<(), ShellError> {
-    append_menu_text(menu, ID_TEXT_ASC, w!("Sort &text ascending"))?;
-    append_menu_text(menu, ID_TEXT_DESC, w!("Sort text &descending"))?;
-    append_menu_text(menu, ID_NUMBER_ASC, w!("Sort &numbers ascending"))?;
-    append_menu_text(menu, ID_NUMBER_DESC, w!("Sort numbers d&escending"))?;
-    append_menu_text(menu, ID_SOURCE, w!("Restore source &order"))?;
-    append_menu_text(menu, ID_CANCEL, w!("&Cancel sort"))?;
+    let text = strings();
+    append_menu_owned(menu, ID_TEXT_ASC, text.menu_sort_text_ascending)?;
+    append_menu_owned(menu, ID_TEXT_DESC, text.menu_sort_text_descending)?;
+    append_menu_owned(menu, ID_NUMBER_ASC, text.menu_sort_numbers_ascending)?;
+    append_menu_owned(menu, ID_NUMBER_DESC, text.menu_sort_numbers_descending)?;
+    append_menu_owned(menu, ID_SOURCE, text.menu_restore_order)?;
+    append_menu_owned(menu, ID_CANCEL, text.menu_cancel_sort)?;
     Ok(())
 }
 pub(super) fn header_menu(window: HWND, header: HWND, lparam: LPARAM) -> Result<(), ShellError> {
@@ -248,36 +246,67 @@ pub(super) fn sort_description(
     request: Option<SortRequest>,
     hidden: crate::columns::HiddenColumns,
 ) -> String {
-    request.map_or("source order".to_owned(), |r| {
+    let text = strings();
+    request.map_or(text.sort_source_order.to_owned(), |r| {
         let marker = if hidden.contains(r.column + 1) {
-            " (hidden)"
+            text.sort_hidden_marker
         } else {
             ""
         };
-        format!(
-            "column {}{marker} / {:?} / {:?}",
-            r.column + 1,
-            r.mode,
-            r.direction
+        let mode = match r.mode {
+            SortMode::Text => text.sort_mode_text,
+            SortMode::Numeric => text.sort_mode_numbers,
+        };
+        let direction = match r.direction {
+            SortDirection::Ascending => text.sort_ascending,
+            SortDirection::Descending => text.sort_descending,
+        };
+        fill(
+            text.sort_column,
+            &[
+                ("number", &(r.column + 1)),
+                ("hidden", &marker),
+                ("mode", &mode),
+                ("direction", &direction),
+            ],
         )
     })
 }
 pub(super) fn status(event: &WorkerEvent, hidden: crate::columns::HiddenColumns) -> Option<String> {
     let sort = event.sort.as_ref()?;
+    let text = strings();
     if let Some(error) = &sort.error {
-        return Some(format!("Sort failed: {error}"));
+        return Some(failed(text.sort_failed, error));
     }
     let description = sort_description(sort.request, hidden);
     Some(match sort.phase {
-        SortPhase::Complete => format!(
-            "Ready | {} rows | {description}",
-            event.progress.available_rows
+        SortPhase::Complete => fill(
+            text.sort_ready,
+            &[
+                ("rows", &event.progress.available_rows),
+                ("sort", &description),
+            ],
         ),
-        SortPhase::Cancelled => "Sort cancelled | previous order retained".to_owned(),
-        phase => format!(
-            "Sorting {description} | {phase:?} | {}% | Cancel: More > Cancel sort",
-            progress_percent(sort.scanned_bytes, sort.source_bytes)
-        ),
+        SortPhase::Cancelled => text.sort_cancelled.to_owned(),
+        phase => {
+            let step = match phase {
+                SortPhase::Extracting => text.sort_phase_extracting,
+                SortPhase::SortingRuns => text.sort_phase_sorting_runs,
+                SortPhase::Merging => text.sort_phase_merging,
+                _ => text.sort_phase_building_inverse,
+            };
+            fill(
+                text.sort_progress,
+                &[
+                    ("sort", &description),
+                    ("phase", &step),
+                    (
+                        "percent",
+                        &progress_percent(sort.scanned_bytes, sort.source_bytes),
+                    ),
+                ],
+            )
+        }
     })
 }
 #[cfg(test)]
