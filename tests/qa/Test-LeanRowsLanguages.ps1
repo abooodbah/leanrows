@@ -203,7 +203,7 @@ try {
             -Message "The shell smoke in $choice wrote output: $($smoke.stderr.Trim())"
 
         $texts = @(Get-WindowTexts -Executable $binary)
-        $shown = @($texts | ForEach-Object { $_.Split("`t", 2)[1] })
+        $shown = @($texts | ForEach-Object { ($_ -split "`t", 2)[1] })
         foreach ($key in @('open_button', 'empty_open_button', 'welcome_caption', 'welcome_body', 'idle_file_meta')) {
             Assert-True -Condition ($shown -contains $strings[$key]) `
                 -Message "In $choice the window does not show $key as '$($strings[$key])'. It shows: $($shown -join ' | ')"
