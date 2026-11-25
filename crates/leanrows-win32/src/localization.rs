@@ -450,6 +450,14 @@ mod tests {
             match_template("No matches found.", "No matches found. Ever."),
             None
         );
+        // The text after the last value must end the message.
+        assert_eq!(
+            match_template(
+                "Search failed: {error}. Reopen.",
+                "Search failed: a. Reopen. Later"
+            ),
+            None
+        );
         assert_eq!(
             match_template(
                 "Search failed: {error}. Reopen.",
