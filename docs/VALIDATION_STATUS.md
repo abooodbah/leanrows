@@ -1,10 +1,41 @@
 # Validation status
 
-**Status date:** 2026-11-15<br>
-**Scope:** LeanRows 0.6.1 published patch release and the 0.6.0 release it repackages, Windows x64; tagged-CI,
+**Status date:** 2026-11-25<br>
+**Scope:** LeanRows 0.7.0 published release, and the 0.6.1 and 0.6.0 releases before it, Windows x64; tagged-CI,
 public-package, CI-runner and maintainer-laptop measurements, and the local
 QA receipt on the release commit.<br>
-**Current public release:** LeanRows 0.6.1
+**Current public release:** LeanRows 0.7.0
+
+## Published v0.7.0 verification
+
+LeanRows 0.7.0 adds a Simplified Chinese and Japanese interface (#59). It is
+published on
+[GitHub Releases](https://github.com/abooodbah/leanrows/releases/tag/v0.7.0).
+
+The release is anchored to commit `83eb5cff87431102dc2a5f76d3daa01cc7365575`
+(the merge of #60) and annotated tag `v0.7.0`. Tagged workflow
+[run 45636896813](https://github.com/abooodbah/leanrows/actions/runs/45636896813)
+passed its quality gates and Windows x64 package job, including the window
+check in English, Simplified Chinese and Japanese, published the release, and
+deployed the product page. The Store package workflow
+([run 45636896842](https://github.com/abooodbah/leanrows/actions/runs/45636896842))
+built the MSIX from the published ZIP.
+
+| Published evidence field | v0.7.0 result |
+| --- | --- |
+| Release | [LeanRows v0.7.0](https://github.com/abooodbah/leanrows/releases/tag/v0.7.0) contains exactly the unsigned Windows x64 ZIP and its checksum sidecar. |
+| Public package | The sidecar records ZIP SHA-256 `884285FD7E23DBD667E7C29A4AD5DB3ECE856E5189E557ECF8679CF9141AB649`, and the downloaded 565,843-byte ZIP matched it. |
+| Build provenance | `gh attestation verify LeanRows-v0.7.0-windows-x64-unsigned.zip --repo abooodbah/leanrows` passed. The attestation names `refs/tags/v0.7.0`, commit `83eb5cf` and `.github/workflows/windows.yml`. This is the first release with an attestation. |
+| Public executable | The extracted `leanrows.exe` is 1,164,800 bytes, reports version `0.7.0.0`, and has SHA-256 `8E856138F581BD4EE72C5C014DAAD5CF9FF0C3779C658A4AB89D1B6B647F0811`. A local `cargo build --release --locked` of the version branch had the same size. |
+| Store package | `LeanRows-v0.7.0-x64.msix`, 688,360 bytes, SHA-256 `096e52baa3fadac0f9b721c64e9e6c4eff2c33462757dd059d8c401f6826aa85`. Its manifest: Identity Name `LeanAppsStudio.LeanRows`, publisher `CN=458105B3-C316-480B-BF11-629FB6061AE2`, version `0.7.0.0`, display name `LeanRows CSV Viewer`, executable `leanrows.exe`. |
+| Install | The public ZIP's `install.ps1` installed 0.7.0 over 0.6.1 for the current user on the maintainer's laptop; the installed `leanrows.exe` has the public executable's SHA-256 and reports `0.7.0.0`. |
+| Measurements | From #59, on one `windows-2022` runner with a 250,000,000-byte file open ([run 45572305644](https://github.com/abooodbah/leanrows/actions/runs/45572305644)): peak working set 16.5 MiB against 16.4 MiB for 0.6.1, start time the same. |
+| Distribution | Scoop moved to 0.7.0, winget pull request microsoft/winget-pkgs#489309 opened, Chocolatey 0.7.0 pushed (in moderation). The Store listing text for 0.7.0 is in `store/listing.md` (#61). The Store submission is pending. |
+
+Not repeated for 0.7.0: the full local QA receipt, the maintainer-laptop
+measurements and the live installer cycle. This status update is a
+post-release documentation change on `main`; it is not part of the `v0.7.0`
+tag.
 
 ## Published v0.6.1 verification
 

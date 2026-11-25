@@ -108,16 +108,18 @@ measured the same way.
 | 22. Store name (0.6.1) | [#54](https://github.com/abooodbah/leanrows/pull/54) | The MSIX manifest display name is LeanRows CSV Viewer, the name reserved in Partner Center. |
 | 23. Version 0.6.1 | [#55](https://github.com/abooodbah/leanrows/pull/55) | `docs/releases/v0.6.1.md`. |
 | 25. Simplified Chinese and Japanese (0.7.0) | [#59](https://github.com/abooodbah/leanrows/pull/59) | The interface follows the Windows display language; Settings has a Language choice saved as `Language`. Peak working set with a large file 0.1 MiB higher, start time unchanged. |
-| 26. Version 0.7.0 | this pull request | `docs/releases/v0.7.0.md`. |
+| 26. Version 0.7.0 | [#60](https://github.com/abooodbah/leanrows/pull/60) | Merged as `83eb5cf`. `docs/releases/v0.7.0.md`. |
+| 27. Tag `v0.7.0` | | Annotated, on `83eb5cf`. The tag run published the release with a provenance attestation, deployed the site, and built the Store MSIX. |
+| 28. Store listing (0.7.0) | [#61](https://github.com/abooodbah/leanrows/pull/61) | Features, description and What's new in English, Japanese, Simplified and Traditional Chinese. |
+| 29. Publication record (0.7.0) | this pull request | `docs/VALIDATION_STATUS.md` and the site's QA paragraph. |
 
 ## In progress
 
-- 27. Tag `v0.7.0` on the merge of the version pull request, which starts the
-  release workflow and the Store package workflow.
+- Nothing.
 
 ## Remaining
 
-For 0.7.0: the post-release update of `store/listing.md` (version, features and What's new in English, Japanese, Simplified and Traditional Chinese) and the published-release section of `docs/VALIDATION_STATUS.md`, and the Scoop, winget, Chocolatey and Partner Center steps.
+For 0.7.0: the Partner Center submission (pending), and the moderation of winget pull request microsoft/winget-pkgs#489309 and of Chocolatey 0.7.0. Scoop is done.
 
 ## Known gaps
 
