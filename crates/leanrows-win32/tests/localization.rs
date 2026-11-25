@@ -218,33 +218,46 @@ fn the_system_language_picks_the_interface() {
     for tag in ["ja", "ja-JP", "JA-jp", "ja_JP.UTF-8", "ja_JP", "ja-Jpan-JP"] {
         assert_eq!(system_language(tag), Language::Japanese, "{tag}");
     }
-    // Any Chinese system language gets Simplified Chinese, Traditional too.
+    // The same rule and tags as LeanMark's tests/Test-Localization.mjs:
+    // Simplified Chinese tags pick Simplified Chinese, and Traditional
+    // Chinese keeps English. Windows gives tags such as zh-CN, zh-SG, zh-TW,
+    // zh-HK and zh-Hant-TW.
     for tag in [
-        "zh",
         "zh-CN",
         "zh-cn",
+        "zh",
         "zh-SG",
         "zh-Hans",
         "zh-Hans-CN",
-        "zh-TW",
-        "zh-HK",
-        "zh-MO",
-        "zh-Hant-TW",
+        "zh-Hans-HK",
         "zh_CN.UTF-8",
-        "ZH-tw",
+        "zh_CN",
     ] {
         assert_eq!(system_language(tag), Language::ChineseSimplified, "{tag}");
     }
     for tag in [
-        "", "en", "en-US", "fr-FR", "de-DE", "ko-KR", "jax", "jv-ID", "zhx", "z", "j", "-", "ja@",
+        "en-US",
+        "en",
+        "",
+        "de-DE",
+        "fr-FR",
+        "jax",
+        "jv-ID",
+        "zh-TW",
+        "zh-HK",
+        "zh-MO",
+        "zh-Hant",
+        "zh-Hant-TW",
+        "zh-Hant-HK",
+        "zh_TW.UTF-8",
+        "ZH-tw",
+        "zhx",
+        "z",
+        "-",
     ] {
-        let expected = if tag == "ja@" {
-            Language::Japanese
-        } else {
-            Language::English
-        };
-        assert_eq!(system_language(tag), expected, "{tag:?}");
+        assert_eq!(system_language(tag), Language::English, "{tag:?}");
     }
+    assert_eq!(system_language("ja@euro"), Language::Japanese);
 }
 
 #[test]

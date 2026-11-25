@@ -166,13 +166,19 @@ function Get-WindowTexts {
     }
 }
 
-# The same rule as system_language in the localization module.
+# The same rule as system_language in the localization module and as
+# LeanMark: Simplified Chinese tags pick Simplified Chinese, Traditional
+# Chinese keeps English.
 function Resolve-SystemLanguage {
     param([string]$Tag)
-    $lower = ([string]$Tag).Split('.', '@')[0].Replace('_', '-').ToLowerInvariant()
+    $lower = (([string]$Tag) -split '[.@]')[0].Replace('_', '-').ToLowerInvariant()
     if ($lower -eq 'ja' -or $lower.StartsWith('ja-')) { return 'ja' }
-    if ($lower -eq 'zh' -or $lower.StartsWith('zh-')) { return 'zh-CN' }
-    'en'
+    if ($lower -ne 'zh' -and -not $lower.StartsWith('zh-')) { return 'en' }
+    $rest = '-' + $lower.Substring(2) + '-'
+    if ($rest.Contains('-hant-')) { return 'en' }
+    if ($rest.Contains('-hans-')) { return 'zh-CN' }
+    if ($rest -match '-(tw|hk|mo)-') { return 'en' }
+    'zh-CN'
 }
 
 $binary = (Resolve-Path -LiteralPath $BinaryPath).Path
