@@ -4,6 +4,21 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The interface is available in Simplified Chinese and Japanese.
+
+### Added
+
+- The interface in Simplified Chinese and Japanese: the toolbar, menus,
+  dialogs, the settings panel and its shortcut list, the welcome and empty
+  screens, tooltips, screen reader names and the status bar. By default
+  LeanRows follows the Windows display language, as LeanMark does: Japanese
+  picks Japanese, Simplified Chinese picks Simplified Chinese, and other
+  languages, Traditional Chinese included, keep English. The new Language group in the
+  settings panel chooses System, English, 简体中文 or 日本語, applies at once,
+  and is saved with the theme.
+
 ## [0.6.1] - 2026-11-15
 
 The Microsoft Store lists the app under a new name.
