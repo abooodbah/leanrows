@@ -4,7 +4,7 @@ All notable changes to LeanRows are recorded in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-11-25
 
 The interface is available in Simplified Chinese and Japanese.
 
@@ -18,6 +18,12 @@ The interface is available in Simplified Chinese and Japanese.
   languages, Traditional Chinese included, keep English. The new Language group in the
   settings panel chooses System, English, 简体中文 or 日本語, applies at once,
   and is saved with the theme.
+
+### Measured
+
+On a GitHub Actions Windows runner with a 250 MB file open, the peak working
+set is 16.5 MiB against 16.4 MiB for 0.6.1; start time is unchanged. The
+executable is 1,164,800 bytes in a local build (0.6.1: 1,062,400 bytes).
 
 ## [0.6.1] - 2026-11-15
 
@@ -324,6 +330,7 @@ Column sorting, contributed by @w3bgr3p in #9.
 - File content is displayed as inert native text and no network or telemetry
   path is included.
 
+[0.7.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.7.0
 [0.6.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.6.1
 [0.6.0]: https://github.com/abooodbah/leanrows/releases/tag/v0.6.0
 [0.5.1]: https://github.com/abooodbah/leanrows/releases/tag/v0.5.1

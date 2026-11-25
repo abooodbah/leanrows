@@ -1,6 +1,6 @@
 # Progress
 
-Work for LeanRows desktop 0.5.0, its 0.5.1 patch, 0.6.0 and its 0.6.1 patch. This file is updated with every merge.
+Work for LeanRows desktop 0.5.0, its 0.5.1 patch, 0.6.0, its 0.6.1 patch, and 0.7.0. This file is updated with every merge.
 
 ## Goal for 0.5.0
 
@@ -106,16 +106,18 @@ measured the same way.
 | 19. Hide columns (0.6.0) | [#49](https://github.com/abooodbah/leanrows/pull/49) | Right-click a header for Hide column and Show all columns, also on the More menu. Requested in #39. |
 | 20. Version 0.6.0 | [#50](https://github.com/abooodbah/leanrows/pull/50) | `docs/releases/v0.6.0.md`. |
 | 22. Store name (0.6.1) | [#54](https://github.com/abooodbah/leanrows/pull/54) | The MSIX manifest display name is LeanRows CSV Viewer, the name reserved in Partner Center. |
-| 23. Version 0.6.1 | this pull request | `docs/releases/v0.6.1.md`. |
+| 23. Version 0.6.1 | [#55](https://github.com/abooodbah/leanrows/pull/55) | `docs/releases/v0.6.1.md`. |
+| 25. Simplified Chinese and Japanese (0.7.0) | [#59](https://github.com/abooodbah/leanrows/pull/59) | The interface follows the Windows display language; Settings has a Language choice saved as `Language`. Peak working set with a large file 0.1 MiB higher, start time unchanged. |
+| 26. Version 0.7.0 | this pull request | `docs/releases/v0.7.0.md`. |
 
 ## In progress
 
-- 24. Tag `v0.6.1` on the merge of the version pull request, which starts the
+- 27. Tag `v0.7.0` on the merge of the version pull request, which starts the
   release workflow and the Store package workflow.
 
 ## Remaining
 
-For 0.6.1: the post-release update of `store/listing.md`, `store/submission-steps.md` and the published-release section of `docs/VALIDATION_STATUS.md`, and the Scoop, winget, Chocolatey and Partner Center steps.
+For 0.7.0: the post-release update of `store/listing.md` (version, features and What's new in English, Japanese, Simplified and Traditional Chinese) and the published-release section of `docs/VALIDATION_STATUS.md`, and the Scoop, winget, Chocolatey and Partner Center steps.
 
 ## Known gaps
 

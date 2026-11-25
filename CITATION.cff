@@ -5,8 +5,8 @@ type: software
 authors:
   - family-names: Bahbouh
     given-names: Abdulfatah
-version: 0.6.1
-date-released: 2026-11-15
+version: 0.7.0
+date-released: 2026-11-25
 license: MIT
 repository-code: https://github.com/abooodbah/leanrows
 url: https://abooodbah.github.io/leanrows/
