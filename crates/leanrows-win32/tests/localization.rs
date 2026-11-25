@@ -485,6 +485,16 @@ const NATIVE_NAMES: &[&str] = &[
     "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
 ];
 
+/// Calls whose last argument is text a reader sees.
+const TEXT_CALLS: [&str; 6] = [
+    "set_status(",
+    "set_status_handle(",
+    "set_control_text(",
+    "set_tool_text(",
+    "add_tool(",
+    "name_control(",
+];
+
 #[test]
 fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
     let mut bare = Vec::new();
@@ -515,14 +525,7 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
             }
             // A status call whose text argument is an English literal or a
             // format string.
-            for call in [
-                "set_status(",
-                "set_status_handle(",
-                "set_control_text(",
-                "set_tool_text(",
-                "add_tool(",
-                "name_control(",
-            ] {
+            for call in TEXT_CALLS {
                 if let Some(start) = line.find(call) {
                     let args = &line[start + call.len()..];
                     // The text is the last argument.
@@ -559,17 +562,7 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
         let lines: Vec<&str> = code.lines().collect();
         for pair in lines.windows(8) {
             let call = pair[0].trim_end();
-            if [
-                "set_status(",
-                "set_status_handle(",
-                "set_control_text(",
-                "set_tool_text(",
-                "add_tool(",
-                "name_control(",
-            ]
-            .iter()
-            .any(|c| call.ends_with(c))
-            {
+            if TEXT_CALLS.iter().any(|c| call.ends_with(c)) {
                 for next in &pair[1..] {
                     let next = next.trim();
                     if next.starts_with(')') {
