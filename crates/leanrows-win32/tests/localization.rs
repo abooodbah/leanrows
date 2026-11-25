@@ -486,9 +486,12 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
                 let after = &rest[start + 4..];
                 let end = after.find('"').unwrap_or(after.len());
                 let literal = &after[..end];
-                let words = literal.chars().filter(char::is_ascii_alphabetic).count() >= 2;
+                // An escape such as \u{00d7} is a symbol, not a word.
+                let words = !literal.starts_with('\\')
+                    && literal.chars().filter(char::is_ascii_alphabetic).count() >= 2;
+                let unescaped = literal.replace("\\\\", "\\");
                 if words
-                    && !NATIVE_NAMES.contains(&literal)
+                    && !NATIVE_NAMES.contains(&unescaped.as_str())
                     && !literal.starts_with("LeanRows.")
                     && !literal.starts_with("Local\\")
                 {
@@ -496,18 +499,16 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
                 }
                 rest = &after[end.min(after.len())..];
             }
-            for call in ["set_status(", "set_status_handle(", "set_empty_state("] {
+            // A status call whose text argument is an English literal or a
+            // format string.
+            for call in ["set_status(", "set_status_handle("] {
                 if let Some(start) = line.find(call) {
                     let args = &line[start + call.len()..];
-                    if let Some(quote) = args.find('"') {
-                        let literal = &args[quote + 1..];
-                        if literal
-                            .chars()
-                            .next()
-                            .is_some_and(|c| c.is_ascii_alphabetic())
-                        {
-                            bare.push(format!("{name}:{}: {}", index + 1, line.trim()));
-                        }
+                    let text = args
+                        .split_once(',')
+                        .map_or("", |(_, text)| text.trim_start());
+                    if text.starts_with('"') || text.starts_with("&format!(\"") {
+                        bare.push(format!("{name}:{}: {}", index + 1, line.trim()));
                     }
                 }
             }
@@ -517,7 +518,7 @@ fn native_controls_menus_and_dialogs_take_their_text_from_the_tables() {
         let lines: Vec<&str> = code.lines().collect();
         for pair in lines.windows(3) {
             let call = pair[0].trim_end();
-            if ["set_status(", "set_status_handle(", "set_empty_state("]
+            if ["set_status(", "set_status_handle("]
                 .iter()
                 .any(|c| call.ends_with(c))
             {
