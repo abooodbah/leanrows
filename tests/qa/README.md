@@ -54,6 +54,7 @@ evidence, but it does not replace the full local sparse-scale receipt.
 | Measure-LeanRowsIdle.ps1 | Samples the complete discovered process tree at cold or document-open idle. Missing observations remain explicit with null peaks and can never become a zero-memory result. |
 | New-LeanRowsSparseFixtures.ps1 | Creates sentinel-marked, structurally verified sparse logical-size fixtures with deterministic prefix/tail descriptors. |
 | Observe-LeanRowsNetwork.ps1 | Launches the GUI directly with `UseShellExecute=false` and `CreateNoWindow=true`, polls local TCP/UDP endpoint tables for the complete discovered process tree, exercises open/view, a native list-view seek, reload, clean close, source integrity, and residual-process checks, and persists only counts/protocol/state. |
+| Test-LeanRowsLanguages.ps1 | Saves each interface language (Japanese, Simplified Chinese, English, then System) where the settings panel saves it, runs the native shell smoke in it, starts the window and reads its controls' text against that language's string table, then puts the reader's own choice back. |
 | Test-LeanRowsRandomSeek.ps1 | Repeats deterministically seeded CLI viewport seeks across CSV, JSONL, and log fixtures and verifies source hashes before and after. |
 | Invoke-LeanRowsReleaseQa.ps1 | Coordinates fixtures, positive and negative document smokes, network observation, memory checks, random seeks, package validation, cleanup, and receipt generation. |
 

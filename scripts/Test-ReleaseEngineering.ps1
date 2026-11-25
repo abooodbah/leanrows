@@ -743,6 +743,7 @@ function Test-WorkflowContract {
         'Site validation' = 'node \./site/validate\.mjs'
         'Release app and spike build' = 'cargo \+1\.97\.1 build --release --locked -p leanrows-app -p leanrows-spike'
         'Redirected native smoke test' = 'Invoke-LeanRowsShellSmoke\.ps1'
+        'Interface language smoke' = 'Test-LeanRowsLanguages\.ps1'
         'Reduced CI QA harness' = 'Invoke-LeanRowsReleaseQa\.ps1'
         'Reduced CI QA scale disclosure' = '-SkipSparseScaleFixtures'
         'Reduced CI QA seek bound' = '-RandomSeekRuns 12'

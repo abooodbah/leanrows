@@ -7,6 +7,8 @@ mod column_view;
 mod drop_files;
 mod header;
 mod hover;
+#[cfg(test)]
+mod label_widths;
 mod layout;
 mod process;
 mod progress;

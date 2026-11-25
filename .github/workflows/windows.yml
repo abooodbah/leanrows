@@ -73,6 +73,12 @@ jobs:
           ./tests/qa/Invoke-LeanRowsShellSmoke.ps1 `
             -BinaryPath ./target/release/leanrows.exe
 
+      - name: Open the window in English, Simplified Chinese and Japanese
+        shell: pwsh
+        run: |
+          ./tests/qa/Test-LeanRowsLanguages.ps1 `
+            -BinaryPath ./target/release/leanrows.exe
+
       - name: Run reduced fail-closed CI QA
         shell: pwsh
         run: |
