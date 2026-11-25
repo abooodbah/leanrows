@@ -2729,6 +2729,14 @@ mod tests {
             .ok_or_else(|| io::Error::other("first query state is missing"))?;
         assert_eq!(first_state.active_row, Some(0));
         assert!(first_state.scanned_bytes < first_state.source_bytes);
+        // The message is the English template, which the window translates.
+        assert_eq!(
+            first_state.message,
+            crate::localization::fill(
+                crate::localization::english().search_match,
+                &[("number", &1), ("count", &first_state.stored_hits)],
+            )
+        );
         let progress_deadline = Instant::now() + Duration::from_secs(15);
         let retained_progress = loop {
             let event = wait_event(
