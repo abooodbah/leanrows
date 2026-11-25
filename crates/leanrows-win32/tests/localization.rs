@@ -9,6 +9,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use leanrows_win32::AccessibleName;
 use leanrows_win32::localization::{
     Language, LanguageSetting, MESSAGE_KEYS, strings_for, system_language, translate_message_for,
 };
@@ -630,6 +631,26 @@ fn english_messages_are_message_templates() {
     assert!(
         missing.is_empty(),
         "written in English but never translated: {missing:?}"
+    );
+}
+
+/// A row's screen reader name is in the language shown. No other test here
+/// reads the language shown, so changing it does not race them.
+#[test]
+fn row_names_follow_the_language_shown() {
+    let name = |language: Language| {
+        leanrows_win32::localization::set_current(language);
+        let units = AccessibleName::compose(6, &[]).as_utf16().to_vec();
+        String::from_utf16_lossy(&units[..units.len().saturating_sub(1)])
+    };
+    let japanese = name(Language::Japanese);
+    let english = name(Language::English);
+    assert_eq!(english, "Row 7");
+    assert_eq!(
+        japanese,
+        strings_for(Language::Japanese)
+            .accessible_row
+            .replace("{row}", "7")
     );
 }
 
