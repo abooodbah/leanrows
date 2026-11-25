@@ -3,6 +3,15 @@
 use std::char::decode_utf16;
 
 use crate::columns::HiddenColumns;
+use crate::localization::{around, strings};
+
+/// Starts a row's name: "Row 7" in the language shown now.
+fn push_row(builder: &mut NameBuilder, absolute_row: u64) {
+    let (before, after) = around(strings().accessible_row, "row");
+    builder.push_str(before);
+    builder.push_str(&absolute_row.saturating_add(1).to_string());
+    builder.push_str(after);
+}
 
 /// Maximum UTF-16 storage for one accessible name, including its terminal NUL.
 pub const MAX_ACCESSIBLE_NAME_UTF16_UNITS: usize = 512;
@@ -18,8 +27,7 @@ impl AccessibleName {
     #[must_use]
     pub fn compose(absolute_row: u64, fields: &[(&str, &str)]) -> Self {
         let mut builder = NameBuilder::new();
-        builder.push_str("Row ");
-        builder.push_str(&absolute_row.saturating_add(1).to_string());
+        push_row(&mut builder, absolute_row);
         for (label, value) in fields {
             if label.is_empty() || value.is_empty() {
                 continue;
@@ -46,16 +54,17 @@ impl AccessibleName {
         cells: impl IntoIterator<Item = &'a [u16]>,
         hidden: HiddenColumns,
     ) -> Self {
+        let text = strings();
         let mut builder = NameBuilder::new();
-        builder.push_str("Row ");
-        builder.push_str(&absolute_row.saturating_add(1).to_string());
+        push_row(&mut builder, absolute_row);
         for (index, cell) in cells.into_iter().enumerate() {
             if hidden.contains(index.saturating_add(1)) {
                 continue;
             }
-            builder.push_str("; Column ");
+            let (before, after) = around(text.accessible_column, "number");
+            builder.push_str(before);
             builder.push_str(&index.saturating_add(1).to_string());
-            builder.push_str(": ");
+            builder.push_str(after);
             if cell
                 .iter()
                 .copied()
@@ -63,7 +72,7 @@ impl AccessibleName {
                 .next()
                 .is_none()
             {
-                builder.push_str("(empty)");
+                builder.push_str(text.accessible_empty);
             } else {
                 builder.push_utf16(cell.iter().copied().take_while(|unit| *unit != 0));
             }
@@ -73,9 +82,8 @@ impl AccessibleName {
 
     pub(crate) fn from_preview_utf16(absolute_row: u64, cell: &[u16]) -> Self {
         let mut builder = NameBuilder::new();
-        builder.push_str("Row ");
-        builder.push_str(&absolute_row.saturating_add(1).to_string());
-        builder.push_str("; Preview: ");
+        push_row(&mut builder, absolute_row);
+        builder.push_str(strings().accessible_preview);
         if cell
             .iter()
             .copied()
@@ -83,7 +91,7 @@ impl AccessibleName {
             .next()
             .is_none()
         {
-            builder.push_str("(empty)");
+            builder.push_str(strings().accessible_empty);
         } else {
             builder.push_utf16(cell.iter().copied().take_while(|unit| *unit != 0));
         }

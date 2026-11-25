@@ -41,16 +41,16 @@ pub(super) fn menu_state(
 /// The header title of a data column: `Column 3`, or `C` in a workbook.
 pub(super) fn column_title(kind: UiColumnKind, file_column: usize) -> String {
     match kind {
-        UiColumnKind::Preview => "Preview".to_owned(),
-        UiColumnKind::Fields => format!("Column {file_column}"),
+        UiColumnKind::Preview => strings().preview_column.to_owned(),
+        UiColumnKind::Fields => fill(strings().data_column, &[("number", &file_column)]),
         UiColumnKind::Cells => sheet_column_letters(u8::try_from(file_column).unwrap_or(u8::MAX)),
     }
 }
 
 pub(super) fn hidden_status(title: &str, sorted_by_it: bool) -> String {
-    let mut status = format!("Hid {title} from the view. The file is unchanged.");
+    let mut status = fill(strings().column_hid, &[("title", &title)]);
     if sorted_by_it {
-        status.push_str(" Rows stay sorted by it.");
+        status.push_str(strings().column_hid_sorted);
     }
     status
 }
@@ -90,14 +90,14 @@ pub(super) fn command(window: HWND, command: u16) -> bool {
     } else {
         hide(state, file_column.unwrap_or(state.sort_column))
     };
-    let status = result.unwrap_or_else(|error| error.to_string());
+    let status = result.unwrap_or_else(|error| translate_message(&error.to_string()));
     set_status_handle(state.status, &status);
     true
 }
 
 fn hide(state: &mut WindowState, file_column: usize) -> Result<String, ShellError> {
     let Some(kind) = state.columns.kind else {
-        return Err(ShellError::new("Open a file first."));
+        return Err(ShellError::new(english().column_open_first));
     };
     let mut hidden = state.hidden_columns;
     if !hidden.hide(file_column, state.columns.data_columns) {
@@ -121,17 +121,17 @@ fn hide(state: &mut WindowState, file_column: usize) -> Result<String, ShellErro
 
 fn refusal(hidden: HiddenColumns, columns: NativeColumns, file_column: usize) -> &'static str {
     if file_column == 0 || file_column > usize::from(columns.data_columns) {
-        "Only data columns can be hidden."
+        english().column_only_data
     } else if hidden.contains(file_column) {
-        "That column is already hidden."
+        english().column_already_hidden
     } else {
-        "The last visible column cannot be hidden."
+        english().column_last_visible
     }
 }
 
 fn show_all(state: &mut WindowState) -> Result<String, ShellError> {
     if state.hidden_columns.is_empty() {
-        return Ok("Every column is shown.".to_owned());
+        return Ok(strings().column_all_shown.to_owned());
     }
     apply(state, HiddenColumns::NONE)?;
     // Rows fetched while columns were hidden do not hold them. They show as
@@ -142,9 +142,9 @@ fn show_all(state: &mut WindowState) -> Result<String, ShellError> {
         let top = top_visible_row(state).unwrap_or_else(|| state.rows.first_row());
         let _ = worker.request_viewport(serial, top);
     }
-    Ok(format!(
-        "Showing all {} columns.",
-        state.columns.data_columns
+    Ok(fill(
+        strings().column_showing_all,
+        &[("count", &state.columns.data_columns)],
     ))
 }
 
@@ -225,11 +225,11 @@ pub(super) fn append_header_items(
     let items = menu_state(state.hidden_columns, state.columns, file_column);
     // SAFETY: The caller owns the popup until tracking returns.
     unsafe { AppendMenuW(menu, MF_SEPARATOR, 0, None) }.map_err(menu_error)?;
-    append_column_item(menu, ID_COLUMN_HIDE, "&Hide column", items.hide)?;
+    append_column_item(menu, ID_COLUMN_HIDE, strings().menu_hide_column, items.hide)?;
     append_column_item(
         menu,
         ID_COLUMN_SHOW_ALL,
-        "Sho&w all columns",
+        strings().menu_show_all_columns,
         items.show_all,
     )
 }
@@ -259,13 +259,26 @@ pub(super) fn append_overflow_items(menu: HMENU, state: &WindowState) -> Result<
     }
     let flags = if any { MF_POPUP } else { MF_POPUP | MF_GRAYED };
     // SAFETY: The parent takes ownership of the submenu once this succeeds.
-    unsafe { AppendMenuW(menu, flags, submenu.handle().0.addr(), w!("Hide co&lumn")) }
-        .map_err(menu_error)?;
+    let label: Vec<u16> = strings()
+        .menu_hide_column_submenu
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    // SAFETY: As above; the label outlives this synchronous call.
+    unsafe {
+        AppendMenuW(
+            menu,
+            flags,
+            submenu.handle().0.addr(),
+            PCWSTR(label.as_ptr()),
+        )
+    }
+    .map_err(menu_error)?;
     submenu.release();
     append_column_item(
         menu,
         ID_COLUMN_SHOW_ALL,
-        "Sho&w all columns",
+        strings().menu_show_all_columns,
         !hidden.is_empty(),
     )
 }

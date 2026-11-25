@@ -1,5 +1,5 @@
-//! The settings panel: theme, zoom and every keyboard shortcut, as in
-//! `LeanMark`.
+//! The settings panel: theme, zoom, language and every keyboard shortcut,
+//! as in `LeanMark`.
 //!
 //! The panel is a child window on the right edge below the chrome. Its
 //! controls are ordinary buttons, radio buttons, labels and a read-only list,
@@ -33,6 +33,7 @@ use windows::core::{PCWSTR, PWSTR, w};
 use super::layout::UiRect;
 use super::theme::{ThemeMode, ThemeResources};
 use crate::ShellError;
+use crate::localization::{LanguageSetting, strings};
 use crate::shortcuts::{SHORTCUTS, groups};
 
 const PANEL_CLASS_NAME: PCWSTR = w!("LeanRows.SettingsPanel");
@@ -41,6 +42,9 @@ pub(super) const ID_SETTINGS_CLOSE: u16 = 127;
 /// The five theme choices, in `ThemeMode::ALL` order.
 pub(super) const ID_SETTINGS_THEME_FIRST: u16 = 161;
 pub(super) const ID_SETTINGS_THEME_LAST: u16 = 165;
+/// The four language choices, in `LanguageSetting::ALL` order.
+pub(super) const ID_SETTINGS_LANGUAGE_FIRST: u16 = 166;
+pub(super) const ID_SETTINGS_LANGUAGE_LAST: u16 = 169;
 /// Item data marking a group heading in the shortcut list.
 const HEADING: isize = 1;
 
@@ -57,18 +61,21 @@ pub(super) struct SettingsHandles {
     pub(super) zoom_value: HWND,
     pub(super) zoom_in: HWND,
     pub(super) zoom_reset: HWND,
+    pub(super) language_label: HWND,
+    pub(super) languages: [HWND; 4],
     pub(super) shortcuts_label: HWND,
     pub(super) shortcuts: HWND,
 }
 
 impl SettingsHandles {
     /// The panel's static labels, painted on the panel's surface.
-    pub(super) fn labels(&self) -> [HWND; 5] {
+    pub(super) fn labels(&self) -> [HWND; 6] {
         [
             self.title,
             self.theme_label,
             self.zoom_label,
             self.zoom_value,
+            self.language_label,
             self.shortcuts_label,
         ]
     }
@@ -94,14 +101,31 @@ impl SettingsHandles {
             .map(|index| ThemeMode::ALL[index])
     }
 
+    /// The radio button for `setting`.
+    pub(super) fn language_choice(&self, setting: LanguageSetting) -> HWND {
+        LanguageSetting::ALL
+            .iter()
+            .position(|candidate| *candidate == setting)
+            .map_or(HWND::default(), |index| self.languages[index])
+    }
+
+    /// The language a radio button chooses, if `control` is one.
+    pub(super) fn language_for(&self, control: HWND) -> Option<LanguageSetting> {
+        self.languages
+            .iter()
+            .position(|choice| *choice == control && !control.0.is_null())
+            .map(|index| LanguageSetting::ALL[index])
+    }
+
     /// The controls Tab moves through while the panel is open, in order.
-    pub(super) fn focus_order(&self, chosen: ThemeMode) -> [HWND; 6] {
+    pub(super) fn focus_order(&self, chosen: ThemeMode, language: LanguageSetting) -> [HWND; 7] {
         [
             self.close,
             self.theme_choice(chosen),
             self.zoom_out,
             self.zoom_in,
             self.zoom_reset,
+            self.language_choice(language),
             self.shortcuts,
         ]
     }
@@ -130,7 +154,7 @@ pub(super) fn create(instance: HINSTANCE, window: HWND) -> Result<SettingsHandle
         instance,
         window,
         PANEL_CLASS_NAME,
-        w!("Settings"),
+        w!(""),
         WS_CHILD | WS_CLIPCHILDREN,
         None,
     )?;
@@ -157,49 +181,36 @@ pub(super) fn create(instance: HINSTANCE, window: HWND) -> Result<SettingsHandle
             Some(id),
         )
     };
-    let title = label(w!("Settings"))?;
+    let title = label(w!(""))?;
     let close = button(w!("\u{00d7}"), ID_SETTINGS_CLOSE)?;
-    let theme_label = label(w!("THEME"))?;
+    let theme_label = label(w!(""))?;
     let mut themes = [HWND::default(); 5];
-    for (index, mode) in ThemeMode::ALL.into_iter().enumerate() {
-        let mut text: Vec<u16> = mode.label().encode_utf16().chain(Some(0)).collect();
-        // The first radio starts the group so arrow keys stay within it.
-        let group = if index == 0 {
-            WS_GROUP | WS_TABSTOP
-        } else {
-            WINDOW_STYLE(0)
-        };
-        themes[index] = child(
-            instance,
-            panel,
-            w!("BUTTON"),
-            PCWSTR(text.as_mut_ptr()),
-            WS_CHILD
-                | WS_VISIBLE
-                | group
-                | WINDOW_STYLE(u32::try_from(BS_AUTORADIOBUTTON).unwrap_or_default()),
-            Some(ID_SETTINGS_THEME_FIRST + u16::try_from(index).unwrap_or_default()),
-        )?;
+    for (index, slot) in themes.iter_mut().enumerate() {
+        *slot = radio(instance, panel, ID_SETTINGS_THEME_FIRST, index)?;
     }
-    let zoom_label = label(w!("ZOOM"))?;
+    let zoom_label = label(w!(""))?;
     let zoom_out = button(w!("\u{2212}"), super::ID_VIEW_ZOOM_OUT)?;
     let zoom_value = label(w!("100%"))?;
     let zoom_in = button(w!("+"), super::ID_VIEW_ZOOM_IN)?;
-    let zoom_reset = button(w!("Reset"), super::ID_VIEW_ZOOM_RESET)?;
-    let shortcuts_label = label(w!("KEYBOARD SHORTCUTS"))?;
+    let zoom_reset = button(w!(""), super::ID_VIEW_ZOOM_RESET)?;
+    let language_label = label(w!(""))?;
+    let mut languages = [HWND::default(); 4];
+    for (index, slot) in languages.iter_mut().enumerate() {
+        *slot = radio(instance, panel, ID_SETTINGS_LANGUAGE_FIRST, index)?;
+    }
+    let shortcuts_label = label(w!(""))?;
     let shortcuts = child(
         instance,
         panel,
         WC_LISTVIEWW,
-        w!("Keyboard shortcuts"),
+        w!(""),
         WS_CHILD
             | WS_VISIBLE
             | WS_TABSTOP
             | WINDOW_STYLE(LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SINGLESEL),
         None,
     )?;
-    fill_shortcuts(shortcuts)?;
-    Ok(SettingsHandles {
+    let handles = SettingsHandles {
         panel,
         title,
         close,
@@ -210,9 +221,69 @@ pub(super) fn create(instance: HINSTANCE, window: HWND) -> Result<SettingsHandle
         zoom_value,
         zoom_in,
         zoom_reset,
+        language_label,
+        languages,
         shortcuts_label,
         shortcuts,
-    })
+    };
+    insert_columns(shortcuts)?;
+    relabel(&handles)?;
+    Ok(handles)
+}
+
+/// Writes every label of the panel, and its shortcut list, in the language
+/// shown now.
+pub(super) fn relabel(handles: &SettingsHandles) -> Result<(), ()> {
+    let text = strings();
+    let set = |handle: HWND, value: &str| {
+        let mut units: Vec<u16> = value.encode_utf16().chain(Some(0)).collect();
+        // SAFETY: The handle is a live child of the panel and the text is
+        // NUL-terminated and outlives the call.
+        unsafe {
+            windows::Win32::UI::WindowsAndMessaging::SetWindowTextW(
+                handle,
+                PCWSTR(units.as_mut_ptr()),
+            )
+        }
+        .map_err(|_| ())
+    };
+    set(handles.panel, text.settings_title)?;
+    set(handles.title, text.settings_title)?;
+    set(handles.theme_label, text.settings_theme)?;
+    for (choice, mode) in handles.themes.iter().zip(ThemeMode::ALL) {
+        set(*choice, mode.label())?;
+    }
+    set(handles.zoom_label, text.settings_zoom)?;
+    set(handles.zoom_reset, text.settings_zoom_reset)?;
+    set(handles.language_label, text.settings_language)?;
+    for (choice, setting) in handles.languages.iter().zip(LanguageSetting::ALL) {
+        set(*choice, &setting.label_in(crate::localization::current()))?;
+    }
+    set(handles.shortcuts_label, text.settings_shortcuts)?;
+    set(handles.shortcuts, text.settings_shortcut_list)?;
+    fill_shortcuts(handles.shortcuts)
+}
+
+/// One radio button of a group whose first command is `first`. The first
+/// radio starts the group so arrow keys stay within it. Its label is written
+/// by `relabel`, in the language shown.
+fn radio(instance: HINSTANCE, panel: HWND, first: u16, index: usize) -> Result<HWND, ()> {
+    let group = if index == 0 {
+        WS_GROUP | WS_TABSTOP
+    } else {
+        WINDOW_STYLE(0)
+    };
+    child(
+        instance,
+        panel,
+        w!("BUTTON"),
+        w!(""),
+        WS_CHILD
+            | WS_VISIBLE
+            | group
+            | WINDOW_STYLE(u32::try_from(BS_AUTORADIOBUTTON).unwrap_or_default()),
+        Some(first + u16::try_from(index).unwrap_or_default()),
+    )
 }
 
 fn child(
@@ -248,8 +319,8 @@ fn child(
     .map_err(|_| ())
 }
 
-/// Two columns, keys and action, with one heading row before each group.
-fn fill_shortcuts(list: HWND) -> Result<(), ()> {
+/// The list's two columns, keys and action.
+fn insert_columns(list: HWND) -> Result<(), ()> {
     for subitem in 0..2 {
         let column = LVCOLUMNW {
             mask: LVCF_WIDTH | LVCF_SUBITEM,
@@ -270,14 +341,21 @@ fn fill_shortcuts(list: HWND) -> Result<(), ()> {
             return Err(());
         }
     }
+    Ok(())
+}
+
+/// One heading row before each group, then its shortcuts, in the language
+/// shown now.
+fn fill_shortcuts(list: HWND) -> Result<(), ()> {
+    let text = strings();
     // SAFETY: LVM_DELETEALLITEMS carries no pointers.
     unsafe { SendMessageW(list, LVM_DELETEALLITEMS, None, None) };
     let mut index = 0;
-    for group in groups() {
+    for group in groups(text) {
         insert_row(list, index, group, None, HEADING)?;
         index += 1;
-        for entry in SHORTCUTS.iter().filter(|entry| entry.group == group) {
-            insert_row(list, index, entry.keys, Some(entry.action), 0)?;
+        for entry in SHORTCUTS.iter().filter(|entry| entry.group(text) == group) {
+            insert_row(list, index, entry.keys(text), Some(entry.action(text)), 0)?;
             index += 1;
         }
     }
@@ -428,6 +506,24 @@ pub(super) fn layout(handles: &SettingsHandles, bounds: UiRect, theme: &ThemeRes
     y = y
         .saturating_add(button)
         .saturating_add(m.space_4.saturating_add(m.space_1));
+    place(handles.language_label, left, y, width, label_height);
+    y = y.saturating_add(label_height).saturating_add(m.space_2);
+    // The four languages take two rows of two, so the shortcut list keeps
+    // most of the room it had.
+    let half = width / 2;
+    for (index, choice) in handles.languages.into_iter().enumerate() {
+        let column = i32::try_from(index % 2).unwrap_or_default();
+        let row = i32::try_from(index / 2).unwrap_or_default();
+        place(
+            choice,
+            left.saturating_add(half.saturating_mul(column)),
+            y.saturating_add(choice_height.saturating_mul(row)),
+            half,
+            choice_height,
+        );
+    }
+    y = y.saturating_add(choice_height.saturating_mul(2));
+    y = y.saturating_add(m.space_4.saturating_add(m.space_1));
     place(handles.shortcuts_label, left, y, width, label_height);
     y = y.saturating_add(label_height).saturating_add(m.space_1);
     let list_height = bounds.height.saturating_sub(y).saturating_sub(m.space_6);
@@ -636,10 +732,11 @@ pub(super) fn shortcut_row_heights(list: HWND, theme: &ThemeResources, row_width
     if device.0.is_null() {
         return Vec::new();
     }
+    let text = strings();
     let mut fits = Vec::with_capacity(SHORTCUTS.len());
     for entry in &SHORTCUTS {
-        let keys: Vec<u16> = entry.keys.encode_utf16().collect();
-        let mut action: Vec<u16> = entry.action.encode_utf16().collect();
+        let keys: Vec<u16> = entry.keys(text).encode_utf16().collect();
+        let mut action: Vec<u16> = entry.action(text).encode_utf16().collect();
         let mut size = windows::Win32::Foundation::SIZE::default();
         // SAFETY: The fonts outlive the DC; the buffers are local.
         unsafe {

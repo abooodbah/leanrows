@@ -71,7 +71,7 @@ impl ClipboardGuard {
         // the duration of this synchronous command.
         if unsafe { open_clipboard(owner.0) } == 0 {
             Err(ShellError::new(
-                "the clipboard is busy; close another clipboard operation and retry",
+                crate::localization::english().clipboard_busy,
             ))
         } else {
             Ok(Self)

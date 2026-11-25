@@ -125,24 +125,19 @@ fn expected_rows(rows: u64, complete: bool, scanned: u64, source: u64) -> u64 {
 fn check_sort_space(rows: u64, quota_left: u64, quota: u64, free: u64) -> Result<(), String> {
     let needed = rows.saturating_mul(SORT_SCRATCH_BYTES_PER_ROW);
     if needed > quota {
-        return Err(format!(
-            "This file is too large to sort: it needs about {} of temporary disk space, more than the {} sort limit",
-            size_text(needed),
-            size_text(quota)
+        return Err(crate::localization::fill(
+            crate::localization::english().sort_too_large,
+            &[("needed", &size_text(needed)), ("limit", &size_text(quota))],
         ));
     }
     if needed > quota_left {
-        return Err(
-            "Other sorted views are using the sort space; restore source order in one of them and try again"
-                .to_owned(),
-        );
+        return Err(crate::localization::english().sort_space_busy.to_owned());
     }
     let wanted = needed.saturating_add(SORT_FREE_SPACE_MARGIN);
     if wanted > free {
-        return Err(format!(
-            "Not enough free disk space to sort: it needs about {} and the drive has {} free",
-            size_text(wanted),
-            size_text(free)
+        return Err(crate::localization::fill(
+            crate::localization::english().sort_disk_full,
+            &[("needed", &size_text(wanted)), ("free", &size_text(free))],
         ));
     }
     Ok(())
@@ -294,7 +289,12 @@ fn complete_sort(runtime: &WorkerRuntime, document: &mut ActiveDocument) {
     if !is_latest(&runtime.latest_sort_serial, active.serial)
         || runtime.sort_cancellation.is_cancelled(active.generation)
     {
-        sort_failed(document, "sorting was cancelled".to_owned());
+        sort_failed(
+            document,
+            crate::localization::english()
+                .sort_cancelled_reason
+                .to_owned(),
+        );
         let _ = emit_active(runtime, document, current_document_phase(document), None);
         return;
     }
@@ -345,7 +345,12 @@ fn complete_sort(runtime: &WorkerRuntime, document: &mut ActiveDocument) {
                 state.committed = Some(active.request);
             }
         }
-        Ok(None) => sort_failed(document, "sorting was cancelled".to_owned()),
+        Ok(None) => sort_failed(
+            document,
+            crate::localization::english()
+                .sort_cancelled_reason
+                .to_owned(),
+        ),
         Err(e) => sort_failed(document, e),
     }
     let _ = emit_active(runtime, document, current_document_phase(document), None);

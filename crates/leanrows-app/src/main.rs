@@ -109,7 +109,7 @@ fn main() {
             }
         }
         Err(error) => {
-            report_startup_error(automation, &format!("LeanRows could not start: {error}"));
+            report_startup_error(automation, &leanrows_win32::startup_error_text(&error));
             std::process::exit(1);
         }
     }

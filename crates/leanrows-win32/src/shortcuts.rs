@@ -1,15 +1,45 @@
 //! Every keyboard shortcut and pointer action the settings panel lists,
-//! grouped as `LeanMark` groups its own.
+//! grouped as `LeanMark` groups its own. The words come from the interface
+//! strings; key names such as Ctrl+O are the same in every language.
 
-/// One row of the shortcut list.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Shortcut {
-    pub(crate) group: &'static str,
-    pub(crate) keys: &'static str,
-    pub(crate) action: &'static str,
+use crate::localization::Strings;
+
+/// One string of a language's table.
+pub(crate) type Text = fn(&Strings) -> &'static str;
+
+/// What a row shows in its key box: key names, or words for a gesture.
+#[derive(Clone, Copy)]
+pub(crate) enum Keys {
+    Name(&'static str),
+    Text(Text),
 }
 
-const fn row(group: &'static str, keys: &'static str, action: &'static str) -> Shortcut {
+/// One row of the shortcut list.
+#[derive(Clone, Copy)]
+pub(crate) struct Shortcut {
+    group: Text,
+    keys: Keys,
+    action: Text,
+}
+
+impl Shortcut {
+    pub(crate) fn group(&self, strings: &Strings) -> &'static str {
+        (self.group)(strings)
+    }
+
+    pub(crate) fn keys(&self, strings: &Strings) -> &'static str {
+        match self.keys {
+            Keys::Name(name) => name,
+            Keys::Text(text) => text(strings),
+        }
+    }
+
+    pub(crate) fn action(&self, strings: &Strings) -> &'static str {
+        (self.action)(strings)
+    }
+}
+
+const fn row(group: Text, keys: Keys, action: Text) -> Shortcut {
     Shortcut {
         group,
         keys,
@@ -20,72 +50,197 @@ const fn row(group: &'static str, keys: &'static str, action: &'static str) -> S
 /// The list in the order the panel shows it. A test checks it against the
 /// accelerator table in `leanrows.rc`.
 pub(crate) const SHORTCUTS: [Shortcut; 41] = [
-    row("File", "Ctrl+O", "Open files"),
-    row("File", "F5", "Reload the file"),
-    row("Rows", "Ctrl+C", "Copy the selected rows"),
-    row("Rows", "Ctrl+G", "Go to a row"),
-    row("Rows", "Arrow keys", "Move through the rows"),
-    row("Rows", "Page Up", "Up one page"),
-    row("Rows", "Page Down", "Down one page"),
-    row("Rows", "Ctrl++", "Zoom in"),
-    row("Rows", "Ctrl+-", "Zoom out"),
-    row("Rows", "Ctrl+0", "Actual size"),
-    row("Rows", "Ctrl+wheel", "Zoom in or out"),
-    row("Find", "Ctrl+F", "Find in the file"),
-    row("Find", "F3", "Next match"),
-    row("Find", "Shift+F3", "Previous match"),
-    row("Find box", "Enter", "Next match"),
-    row("Find box", "Shift+Enter", "Previous match"),
-    row("Find box", "Esc", "Back to the rows"),
     row(
-        "Sorting",
-        "Click a column header",
-        "Sort by it, again to reverse",
+        |s| s.group_file,
+        Keys::Name("Ctrl+O"),
+        |s| s.action_open_files,
+    ),
+    row(|s| s.group_file, Keys::Name("F5"), |s| s.action_reload),
+    row(
+        |s| s.group_rows,
+        Keys::Name("Ctrl+C"),
+        |s| s.action_copy_rows,
+    ),
+    row(|s| s.group_rows, Keys::Name("Ctrl+G"), |s| s.action_goto),
+    row(
+        |s| s.group_rows,
+        Keys::Text(|s| s.gesture_arrows),
+        |s| s.action_move_rows,
     ),
     row(
-        "Sorting",
-        "Right-click a column header",
-        "Sort as text or numbers",
+        |s| s.group_rows,
+        Keys::Name("Page Up"),
+        |s| s.action_page_up,
     ),
-    row("Sorting", "Click Row", "Restore source order"),
-    row("Sorting", "More menu", "Sort, restore, or cancel a sort"),
     row(
-        "Columns",
-        "Right-click a column header",
-        "Hide it, or show all columns",
+        |s| s.group_rows,
+        Keys::Name("Page Down"),
+        |s| s.action_page_down,
     ),
-    row("Columns", "More menu", "Hide a column, or show all"),
-    row("Tabs", "Ctrl+Tab", "Next tab"),
-    row("Tabs", "Ctrl+Shift+Tab", "Previous tab"),
-    row("Tabs", "Ctrl+Page Down", "Next tab"),
-    row("Tabs", "Ctrl+Page Up", "Previous tab"),
-    row("Tabs", "Ctrl+1 to Ctrl+8", "Go to a tab by position"),
-    row("Tabs", "Ctrl+9", "Go to the last tab"),
-    row("Tabs", "Ctrl+W", "Close the tab"),
-    row("Tabs", "Ctrl+F4", "Close the tab"),
-    row("Tabs", "Middle click", "Close a tab"),
+    row(|s| s.group_rows, Keys::Name("Ctrl++"), |s| s.action_zoom_in),
     row(
-        "Tabs",
-        "Left or right arrow",
-        "Move between tabs in the strip",
+        |s| s.group_rows,
+        Keys::Name("Ctrl+-"),
+        |s| s.action_zoom_out,
     ),
-    row("Window", "Ctrl+Shift+T", "Change the theme"),
-    row("Window", "Ctrl+/", "Settings and shortcuts"),
-    row("Window", "F1", "Settings and shortcuts"),
-    row("Window", "Esc", "Close the settings panel"),
-    row("Window", "Tab", "Next control"),
-    row("Window", "Shift+Tab", "Previous control"),
-    row("Window", "Up or down arrow", "Next theme in the panel"),
-    row("Window", "Drop files", "Open them in tabs"),
+    row(
+        |s| s.group_rows,
+        Keys::Name("Ctrl+0"),
+        |s| s.action_actual_size,
+    ),
+    row(
+        |s| s.group_rows,
+        Keys::Text(|s| s.gesture_ctrl_wheel),
+        |s| s.action_zoom_wheel,
+    ),
+    row(|s| s.group_find, Keys::Name("Ctrl+F"), |s| s.action_find),
+    row(|s| s.group_find, Keys::Name("F3"), |s| s.action_next_match),
+    row(
+        |s| s.group_find,
+        Keys::Name("Shift+F3"),
+        |s| s.action_previous_match,
+    ),
+    row(
+        |s| s.group_find_box,
+        Keys::Name("Enter"),
+        |s| s.action_next_match,
+    ),
+    row(
+        |s| s.group_find_box,
+        Keys::Name("Shift+Enter"),
+        |s| s.action_previous_match,
+    ),
+    row(
+        |s| s.group_find_box,
+        Keys::Name("Esc"),
+        |s| s.action_back_to_rows,
+    ),
+    row(
+        |s| s.group_sorting,
+        Keys::Text(|s| s.gesture_click_header),
+        |s| s.action_sort_header,
+    ),
+    row(
+        |s| s.group_sorting,
+        Keys::Text(|s| s.gesture_right_click_header),
+        |s| s.action_sort_text_numbers,
+    ),
+    row(
+        |s| s.group_sorting,
+        Keys::Text(|s| s.gesture_click_row),
+        |s| s.action_restore_order,
+    ),
+    row(
+        |s| s.group_sorting,
+        Keys::Text(|s| s.gesture_more_menu),
+        |s| s.action_sort_menu,
+    ),
+    row(
+        |s| s.group_columns,
+        Keys::Text(|s| s.gesture_right_click_header),
+        |s| s.action_hide_header,
+    ),
+    row(
+        |s| s.group_columns,
+        Keys::Text(|s| s.gesture_more_menu),
+        |s| s.action_hide_menu,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Name("Ctrl+Tab"),
+        |s| s.action_next_tab,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Name("Ctrl+Shift+Tab"),
+        |s| s.action_previous_tab,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Name("Ctrl+Page Down"),
+        |s| s.action_next_tab,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Name("Ctrl+Page Up"),
+        |s| s.action_previous_tab,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Text(|s| s.gesture_tab_numbers),
+        |s| s.action_tab_by_position,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Name("Ctrl+9"),
+        |s| s.action_last_tab,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Name("Ctrl+W"),
+        |s| s.action_close_tab,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Name("Ctrl+F4"),
+        |s| s.action_close_tab,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Text(|s| s.gesture_middle_click),
+        |s| s.action_close_a_tab,
+    ),
+    row(
+        |s| s.group_tabs,
+        Keys::Text(|s| s.gesture_left_right),
+        |s| s.action_move_tabs,
+    ),
+    row(
+        |s| s.group_window,
+        Keys::Name("Ctrl+Shift+T"),
+        |s| s.action_change_theme,
+    ),
+    row(
+        |s| s.group_window,
+        Keys::Name("Ctrl+/"),
+        |s| s.action_settings,
+    ),
+    row(|s| s.group_window, Keys::Name("F1"), |s| s.action_settings),
+    row(
+        |s| s.group_window,
+        Keys::Name("Esc"),
+        |s| s.action_close_settings,
+    ),
+    row(
+        |s| s.group_window,
+        Keys::Name("Tab"),
+        |s| s.action_next_control,
+    ),
+    row(
+        |s| s.group_window,
+        Keys::Name("Shift+Tab"),
+        |s| s.action_previous_control,
+    ),
+    row(
+        |s| s.group_window,
+        Keys::Text(|s| s.gesture_up_down),
+        |s| s.action_next_theme,
+    ),
+    row(
+        |s| s.group_window,
+        Keys::Text(|s| s.gesture_drop_files),
+        |s| s.action_open_dropped,
+    ),
 ];
 
-/// The groups in the order they first appear.
+/// The groups in the order they first appear, in `strings`' language.
 #[must_use]
-pub(crate) fn groups() -> Vec<&'static str> {
+pub(crate) fn groups(strings: &Strings) -> Vec<&'static str> {
     let mut groups: Vec<&'static str> = Vec::new();
     for entry in SHORTCUTS {
-        if !groups.contains(&entry.group) {
-            groups.push(entry.group);
+        let group = entry.group(strings);
+        if !groups.contains(&group) {
+            groups.push(group);
         }
     }
     groups
@@ -94,6 +249,7 @@ pub(crate) fn groups() -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::{SHORTCUTS, groups};
+    use crate::localization::english;
     use std::collections::BTreeSet;
 
     /// Reads the accelerator table the executable embeds and names each key
@@ -146,7 +302,10 @@ mod tests {
     fn every_embedded_shortcut_is_listed() {
         let accelerators = embedded_accelerators();
         assert!(accelerators.len() >= 30, "{accelerators:?}");
-        let listed: BTreeSet<&str> = SHORTCUTS.iter().map(|entry| entry.keys).collect();
+        let listed: BTreeSet<&str> = SHORTCUTS
+            .iter()
+            .map(|entry| entry.keys(english()))
+            .collect();
         for name in &accelerators {
             assert!(listed.contains(name.as_str()), "{name} is not listed");
         }
@@ -163,7 +322,7 @@ mod tests {
         let find = |group: &str, keys: &str| {
             SHORTCUTS
                 .iter()
-                .any(|entry| entry.group == group && entry.keys == keys)
+                .any(|entry| entry.group(english()) == group && entry.keys(english()) == keys)
         };
         assert!(find("Sorting", "Click a column header"));
         assert!(find("Sorting", "Right-click a column header"));
@@ -181,19 +340,16 @@ mod tests {
     #[test]
     fn each_group_is_listed_once_and_in_order() {
         assert_eq!(
-            groups(),
+            groups(english()),
             [
                 "File", "Rows", "Find", "Find box", "Sorting", "Columns", "Tabs", "Window"
             ]
         );
         for entry in SHORTCUTS {
-            assert!(!entry.keys.is_empty() && !entry.action.is_empty());
-            assert!(!entry.keys.contains('&') && !entry.action.contains('&'));
-            assert!(
-                entry.keys.len() <= 32 && entry.action.len() <= 48,
-                "{}",
-                entry.keys
-            );
+            let (keys, action) = (entry.keys(english()), entry.action(english()));
+            assert!(!keys.is_empty() && !action.is_empty());
+            assert!(!keys.contains('&') && !action.contains('&'));
+            assert!(keys.len() <= 32 && action.len() <= 48, "{keys}");
         }
     }
 }

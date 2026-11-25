@@ -32,6 +32,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{Result as WindowsResult, w};
 
 use crate::ShellError;
+use crate::localization::fill;
 
 const BASE_DPI: u32 = 96;
 const REGISTRY_THEME_BUFFER_UNITS: usize = 16;
@@ -66,13 +67,14 @@ impl ThemeMode {
     }
 
     #[must_use]
-    pub(super) const fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
+        let strings = crate::localization::strings();
         match self {
-            Self::System => "System",
-            Self::Light => "Light",
-            Self::Dark => "Dark",
-            Self::Dim => "Dim",
-            Self::Dusk => "Dusk",
+            Self::System => strings.theme_system,
+            Self::Light => strings.theme_light,
+            Self::Dark => strings.theme_dark,
+            Self::Dim => strings.theme_dim,
+            Self::Dusk => strings.theme_dusk,
         }
     }
 
@@ -137,12 +139,20 @@ pub(super) const THEME_SHORTCUT: &str = "Ctrl+Shift+T";
 /// says so.
 #[must_use]
 pub(super) fn theme_display_name(preference: ThemeMode, effective: EffectiveTheme) -> String {
+    let strings = crate::localization::strings();
     if effective == EffectiveTheme::HighContrast {
-        return format!("{} (Windows high contrast)", preference.label());
+        return fill(
+            strings.theme_high_contrast,
+            &[("theme", &preference.label())],
+        );
     }
     if preference == ThemeMode::System {
-        let shown = if effective.is_dark() { "Dark" } else { "Light" };
-        return format!("System ({shown})");
+        let shown = if effective.is_dark() {
+            ThemeMode::Dark
+        } else {
+            ThemeMode::Light
+        };
+        return fill(strings.theme_system_resolved, &[("theme", &shown.label())]);
     }
     preference.label().to_owned()
 }
@@ -150,18 +160,21 @@ pub(super) fn theme_display_name(preference: ThemeMode, effective: EffectiveThem
 /// The theme button's tooltip, as in `LeanMark`.
 #[must_use]
 pub(super) fn theme_tooltip(preference: ThemeMode, effective: EffectiveTheme) -> String {
-    format!(
-        "Theme: {} ({THEME_SHORTCUT})",
-        theme_display_name(preference, effective)
+    fill(
+        crate::localization::strings().theme_tooltip,
+        &[
+            ("theme", &theme_display_name(preference, effective)),
+            ("keys", &THEME_SHORTCUT),
+        ],
     )
 }
 
 /// The theme button's accessible name, as `LeanMark`'s `aria-label`.
 #[must_use]
 pub(super) fn theme_accessible_name(preference: ThemeMode, effective: EffectiveTheme) -> String {
-    format!(
-        "Theme: {}. Activate to change theme.",
-        theme_display_name(preference, effective)
+    fill(
+        crate::localization::strings().theme_accessible,
+        &[("theme", &theme_display_name(preference, effective))],
     )
 }
 
@@ -871,6 +884,86 @@ fn matches_ascii(value: &[u16], expected: &[u8]) -> bool {
         && value.iter().zip(expected).all(|(left, right)| {
             u8::try_from(*left).is_ok_and(|left| left.eq_ignore_ascii_case(right))
         })
+}
+
+/// The saved interface language choice, `Language` beside `Theme`. A
+/// missing, unreadable or unknown value follows the system.
+#[must_use]
+pub(super) fn load_language_setting() -> crate::localization::LanguageSetting {
+    let mut buffer = [0_u16; REGISTRY_THEME_BUFFER_UNITS];
+    let Ok(mut byte_count) = u32::try_from(size_of_val(&buffer)) else {
+        return crate::localization::LanguageSetting::System;
+    };
+    // SAFETY: path/name are static; buffer and byte count are valid writable
+    // storage for this synchronous bounded read.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!("Software\\LeanRows"),
+            w!("Language"),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&raw mut byte_count),
+        )
+    };
+    if status != ERROR_SUCCESS || byte_count % 2 != 0 {
+        return crate::localization::LanguageSetting::System;
+    }
+    let units = usize::try_from(byte_count / 2)
+        .unwrap_or_default()
+        .min(buffer.len());
+    let end = buffer[..units]
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(units);
+    String::from_utf16(&buffer[..end])
+        .map_or(crate::localization::LanguageSetting::System, |name| {
+            crate::localization::LanguageSetting::parse(&name)
+        })
+}
+
+/// Saves the interface language choice. Returns false on a non-fatal
+/// registry failure.
+pub(super) fn save_language_setting(setting: crate::localization::LanguageSetting) -> bool {
+    let mut raw_key = HKEY::default();
+    // SAFETY: The root and subkey are fixed; raw_key is valid writable output.
+    if unsafe {
+        RegCreateKeyW(
+            HKEY_CURRENT_USER,
+            w!("Software\\LeanRows"),
+            &raw mut raw_key,
+        )
+    } != ERROR_SUCCESS
+    {
+        return false;
+    }
+    let key = OwnedRegistryKey(raw_key);
+    let data: Vec<u8> = setting
+        .name()
+        .encode_utf16()
+        .chain(Some(0))
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    // SAFETY: key is live and data is a complete NUL-terminated REG_SZ payload.
+    (unsafe { RegSetValueExW(key.0, w!("Language"), None, REG_SZ, Some(&data)) }) == ERROR_SUCCESS
+}
+
+/// The Windows display language as a tag such as `ja-JP`, or empty.
+#[must_use]
+pub(super) fn system_language_tag() -> String {
+    use windows::Win32::Globalization::{
+        GetUserDefaultUILanguage, LCIDToLocaleName, LOCALE_ALLOW_NEUTRAL_NAMES,
+    };
+    let mut name = [0_u16; 85];
+    // SAFETY: Queries the user's display language; the buffer is writable
+    // and LOCALE_NAME_MAX_LENGTH units long.
+    let length = unsafe {
+        let language = u32::from(GetUserDefaultUILanguage());
+        LCIDToLocaleName(language, Some(&mut name), LOCALE_ALLOW_NEUTRAL_NAMES)
+    };
+    let length = usize::try_from(length).unwrap_or_default();
+    String::from_utf16_lossy(&name[..length.saturating_sub(1).min(name.len())])
 }
 
 /// The saved grid zoom, snapped to a level; 100% when missing or unreadable.

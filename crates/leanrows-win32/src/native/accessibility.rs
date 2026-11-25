@@ -80,7 +80,12 @@ impl AccessibilityBridge {
     /// Supplies stable names for the top-level client and the row grid itself.
     pub(super) fn annotate_shell(&self, window: HWND, list: HWND) -> Result<(), ShellError> {
         self.set_self_name(window, w!("LeanRows"))?;
-        if let Err(error) = self.set_self_name(list, w!("Rows")) {
+        let grid: Vec<u16> = crate::localization::strings()
+            .grid_name
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        if let Err(error) = self.set_self_name(list, PCWSTR(grid.as_ptr())) {
             let _ = self.clear_self_name(window);
             return Err(error);
         }
@@ -259,9 +264,10 @@ pub(super) fn verify_smoke(
         )));
     }
     let grid_name = msaa_name(list, OBJID_CLIENT.0, CHILDID_SELF)?;
-    if grid_name != "Rows" {
+    let expected = crate::localization::strings().grid_name;
+    if grid_name != expected {
         return Err(ShellError::new(format!(
-            "grid MSAA name mismatch: expected Rows, received {grid_name:?}"
+            "grid MSAA name mismatch: expected {expected}, received {grid_name:?}"
         )));
     }
     let grid_role = msaa_role(list, OBJID_CLIENT.0, CHILDID_SELF)?;

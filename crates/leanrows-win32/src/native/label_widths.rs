@@ -186,10 +186,11 @@ fn checks<'a>(
             font: fonts.body(),
         });
     }
+    // The language choices sit two to a row.
     list.push(Check {
         key: "language_system",
         text: strings.language_system,
-        room: panel - radio,
+        room: panel / 2 - radio,
         font: fonts.body(),
     });
     for (key, text) in [
@@ -274,7 +275,7 @@ fn every_fixed_width_label_fits_in_every_language() {
                 let width = text_width(device, resources.fonts.body(), &label);
                 let panel = layout.settings_panel_width
                     - (resources.metrics.space_4 + resources.metrics.space_1) * 2;
-                if width > panel - resources.metrics.space_6 {
+                if width > panel / 2 - resources.metrics.space_6 {
                     failures.push(format!("{} {label:?} is {width} px", language.tag()));
                 }
             }

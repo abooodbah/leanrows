@@ -9,6 +9,7 @@
 mod accessibility;
 mod columns;
 mod document_engine;
+pub mod localization;
 mod mailbox;
 mod model;
 #[cfg(windows)]
@@ -157,6 +158,21 @@ pub fn run_shell(options: ShellOptions) -> Result<ShellOutcome, ShellError> {
     {
         native_stub::run(options)
     }
+}
+
+/// The message shown when the shell cannot start, in the reader's interface
+/// language: their saved choice, or the Windows display language.
+#[must_use]
+pub fn startup_error_text(error: &ShellError) -> String {
+    #[cfg(windows)]
+    native::load_interface_language();
+    localization::fill(
+        localization::strings().startup_failed,
+        &[(
+            "error",
+            &localization::translate_message(&error.to_string()),
+        )],
+    )
 }
 
 /// Shows a bounded native error dialog for an ordinary interactive startup.

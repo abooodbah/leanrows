@@ -1868,36 +1868,49 @@ impl From<FieldProjectionError> for DocumentEngineError {
 impl fmt::Display for DocumentEngineError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyPath => formatter.write_str("a file path is required"),
-            Self::PathTooLong => formatter.write_str("the file path exceeds the supported limit"),
+            Self::EmptyPath => {
+                formatter.write_str(crate::localization::english().error_path_required)
+            }
+            Self::PathTooLong => {
+                formatter.write_str(crate::localization::english().error_path_too_long)
+            }
             Self::RemotePathUnsupported => {
-                formatter.write_str("remote and UNC paths are not supported in LeanRows 0.1")
+                formatter.write_str(crate::localization::english().error_remote_path)
             }
             Self::UnsupportedPathSyntax => {
-                formatter.write_str("the Windows device path syntax is not supported")
+                formatter.write_str(crate::localization::english().error_device_path)
             }
-            Self::UnsupportedVolume => formatter.write_str("the file volume is not locally usable"),
+            Self::UnsupportedVolume => {
+                formatter.write_str(crate::localization::english().error_volume)
+            }
             Self::VolumeQueryFailed => {
-                formatter.write_str("the file volume could not be validated as local")
+                formatter.write_str(crate::localization::english().error_volume_check)
             }
-            Self::UnsupportedFormat => formatter
-                .write_str("unsupported file type; use CSV, TSV, JSONL, NDJSON, LOG, TXT, or XLSX"),
-            Self::NotRegularFile => formatter.write_str("the selected path is not a regular file"),
+            Self::UnsupportedFormat => {
+                formatter.write_str(crate::localization::english().error_format)
+            }
+            Self::NotRegularFile => {
+                formatter.write_str(crate::localization::english().error_not_file)
+            }
             Self::ReparsePointUnsupported => {
-                formatter.write_str("reparse-point and symbolic-link files are not supported")
+                formatter.write_str(crate::localization::english().error_link)
             }
             Self::SourceChanged {
                 change,
                 expected_size,
                 actual_size,
-            } => write!(
-                formatter,
-                "the open document changed ({change:?}) from size {expected_size} to {actual_size}; reload it to continue"
-            ),
-            Self::SourceIntegrityLost => formatter.write_str(
-                "the open document snapshot is no longer trustworthy; reload it to continue",
-            ),
-            Self::Cancelled => formatter.write_str("the document operation was cancelled"),
+            } => formatter.write_str(&crate::localization::fill(
+                crate::localization::english().error_changed,
+                &[
+                    ("change", &format!("{change:?}")),
+                    ("expected", expected_size),
+                    ("actual", actual_size),
+                ],
+            )),
+            Self::SourceIntegrityLost => {
+                formatter.write_str(crate::localization::english().error_untrusted)
+            }
+            Self::Cancelled => formatter.write_str(crate::localization::english().error_cancelled),
             Self::AllocationUnavailable => {
                 formatter.write_str("bounded document cache allocation is unavailable")
             }
@@ -1912,10 +1925,10 @@ impl fmt::Display for DocumentEngineError {
             Self::Projection(error) => write!(formatter, "row projection failed: {error}"),
             Self::Xlsx(error) => write!(formatter, "workbook: {error}"),
             Self::FindUnavailable => {
-                formatter.write_str("Find is not available for .xlsx workbooks yet")
+                formatter.write_str(crate::localization::english().error_find_xlsx)
             }
             Self::SortUnavailable => {
-                formatter.write_str("Sorting is not available for .xlsx workbooks yet")
+                formatter.write_str(crate::localization::english().error_sort_xlsx)
             }
         }
     }
